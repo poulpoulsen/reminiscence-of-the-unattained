@@ -1,0 +1,12 @@
+build/
+dist/
+*.o
+*.d
+*.so
+*.dylib
+*.dll
+*.vcvplugin
+.vscode/
+compile_commands.json
+build.log
+dep/

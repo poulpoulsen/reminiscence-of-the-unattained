@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.py text
+*.cpp text
+*.hpp text
+*.json text
+*.md text
+*.png binary
+*.jpg binary
+*.wav binary
+*.vcvplugin binary

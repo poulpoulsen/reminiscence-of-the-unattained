@@ -1,0 +1,32 @@
+{
+  "slug": "Marf248",
+  "name": "MARF 248t",
+  "version": "2.0.0",
+  "license": "GPL-3.0-or-later",
+  "author": "Kinovice",
+  "authorEmail": "",
+  "authorUrl": "",
+  "pluginUrl": "",
+  "sourceUrl": "",
+  "changelogUrl": "",
+  "modules": [
+    {
+      "slug": "Marf248",
+      "name": "MARF 248t",
+      "description": "Buchla/Tiptop 248t Multiple Arbitrary Function Generator emulation",
+      "tags": ["Sequencer", "Function generator", "Dual"]
+    },
+    {
+      "slug": "Marf248TriggerExpander",
+      "name": "MARF 248t Trigger Expander",
+      "description": "Trigger/CV expander for MARF 248t: Clear, Reset Values, 12 preset loads, Scale/Key select, and Start/End of Cycle outputs",
+      "tags": ["Expander", "Sequencer", "Utility"]
+    },
+    {
+      "slug": "Marf248CvExpander",
+      "name": "MARF 248t CV Expander",
+      "description": "Poly CV expander for MARF 248t: additive Stage Time CV and per-stage Gate A/B outputs",
+      "tags": ["Expander", "Sequencer", "Utility", "Polyphonic"]
+    }
+  ]
+}
