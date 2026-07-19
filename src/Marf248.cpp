@@ -347,6 +347,18 @@ struct Marf248 : Module {
 	dsp::SchmittTrigger stagePulse2Trigger[NUM_STAGES];
 	dsp::SchmittTrigger stageSkipTrigger[NUM_STAGES];
 
+	// CPU-Optimierung (siehe perf-Profiling-Session): die Klick-Button-
+	// Erkennung + Light-Update fuer alle 16 Stages (weiter unten in
+	// process()) muss nicht bei jedem einzelnen Audio-Sample laufen -
+	// Taster-Zustandswechsel und LED-Helligkeit sind fuer menschliche
+	// Bedienung ohnehin nicht schneller als im Millisekundenbereich
+	// wahrnehmbar. Divisor 32 haelt die maximale Reaktionsverzoegerung
+	// selbst bei den vom Nutzer typischerweise gefahrenen 24-32kHz
+	// Sample-Rates unter ~1,3ms - unhoerbar/unspuerbar, aber deutliche
+	// CPU-Ersparnis, da der Block ca. 450 Operationen/Sample kostet
+	// (14 SchmittTrigger + 14 Light-Updates x 16 Stages).
+	dsp::ClockDivider stageButtonDivider;
+
 	Afg afgA;
 	Afg afgB;
 
@@ -362,6 +374,8 @@ struct Marf248 : Module {
 			lastCurveKnob[i] = -1.f;
 			cachedCurvePower[i] = SLEW_CURVE_POWER;
 		}
+
+		stageButtonDivider.setDivision(32);
 
 		for (int i = 0; i < NUM_STAGES; i++) {
 			StageVoltageQuantity* vq = configParam<StageVoltageQuantity>(STAGE_VOLTAGE_PARAM + i, 0.f, 10.f, 0.f,
@@ -703,6 +717,10 @@ struct Marf248 : Module {
 
 		// Klick-Buttons pro Stage: jeder Druck togglet das jeweilige Bit,
 		// gleiches Prinzip wie beim Start/Stop-Button von Section A/B.
+		// Dezimiert per stageButtonDivider (siehe Deklaration oben) - Taster-
+		// Erkennung und LED-Helligkeit muessen nicht mit voller Sample-Rate
+		// laufen, das war laut perf-Profiling der dominante CPU-Kostenblock.
+		if (stageButtonDivider.process()) {
 		for (int i = 0; i < NUM_STAGES; i++) {
 			if (stageFirstTrigger[i].process(params[STAGE_FIRST_PARAM + i].getValue())) {
 				stageModifier[i] ^= MOD_FIRST;
@@ -794,6 +812,7 @@ struct Marf248 : Module {
 			lights[STAGE_PULSE1_LIGHT + i].setBrightness(stageModifier[i] & MOD_PULSE1 ? 1.f : 0.f);
 			lights[STAGE_PULSE2_LIGHT + i].setBrightness(stageModifier[i] & MOD_PULSE2 ? 1.f : 0.f);
 			lights[STAGE_SKIP_LIGHT + i].setBrightness(stageModifier[i] & MOD_SKIP ? 1.f : 0.f);
+		}
 		}
 
 		float stageVoltage[NUM_STAGES];

@@ -11,3 +11,4 @@ compile_commands.json
 build.log
 dep/
 src/*.zip
+perf.data*
