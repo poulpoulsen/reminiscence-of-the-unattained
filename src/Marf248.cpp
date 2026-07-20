@@ -345,6 +345,11 @@ struct Marf248 : Module {
 	dsp::SchmittTrigger expResetValuesTrigger;
 	dsp::SchmittTrigger expPresetLoadTrigger[12];
 	dsp::SchmittTrigger expScaleMajorTrigger, expScaleMinorTrigger, expScaleChromaticTrigger;
+	// SEXT (externe Strobe-Pulse, Buchla-Book-Begriff): getrennter Trigger-
+	// Detektor pro Section, wird VOR dem eigentlichen Stage-Address-Block
+	// ausgewertet und mit dem Panel-Strobe-Taster ODER-verknuepft (siehe
+	// process()).
+	dsp::SchmittTrigger expStrobeATrigger, expStrobeBTrigger;
 
 	dsp::SchmittTrigger stageFirstTrigger[NUM_STAGES];
 	dsp::SchmittTrigger stageLastTrigger[NUM_STAGES];
@@ -604,6 +609,22 @@ struct Marf248 : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
+		// Marf248TriggerExpander-Lookup: bewusst ganz an den Anfang von
+		// process() gezogen (frueher stand dieser Block erst nach der Stage-
+		// Address-Verarbeitung), da der Stage-Address-Block weiter unten den
+		// SEXT-Trigger (externe Strobe-Pulse) bereits kennen muss, bevor
+		// applyStageAddress() aufgerufen wird. Sucht links UND rechts, damit
+		// der Expander auf beiden Seiten andocken kann.
+		Module* leftNeighbor = getLeftExpander().module;
+		Module* rightNeighbor = getRightExpander().module;
+		Module* trigExp = nullptr;
+		if (leftNeighbor && leftNeighbor->getModel() == modelMarf248TriggerExpander) {
+			trigExp = leftNeighbor;
+		}
+		else if (rightNeighbor && rightNeighbor->getModel() == modelMarf248TriggerExpander) {
+			trigExp = rightNeighbor;
+		}
+
 		// Global Clear: momentary Taster, loescht die Programmierung aller 16
 		// Stages (Manual: Output Voltage -> Continuous/Full Range/Internal
 		// Source, alle Operating-Mode-Modifier geloescht). Da unsere
@@ -1055,6 +1076,15 @@ struct Marf248 : Module {
 			addrValueA = (int) std::round(params[STAGE_ADDR_KNOB_A_PARAM].getValue());
 		}
 		bool strobeA = addrStrobeATrigger.process(params[STAGE_ADDR_STROBE_A_PARAM].getValue());
+		// SEXT A: externer Strobe-Puls vom Trigger-Expander, ODER-verknuepft
+		// mit dem Panel-Taster. Keine zusaetzliche Continuous-Abfrage noetig -
+		// applyStageAddress() ignoriert strobePressed ohnehin, wenn
+		// addrContOnA aktiv ist (fruehes return im Continuous-Zweig, siehe
+		// Marf248.hpp), das SEXT-Verhalten entspricht damit automatisch
+		// exakt dem Panel-Taster.
+		if (trigExp && expStrobeATrigger.process(trigExp->getInput(Marf248TriggerExpander::STROBE_A_INPUT).getVoltage())) {
+			strobeA = true;
+		}
 		bool resetA = addrResetATrigger.process(params[STAGE_ADDR_RESET_A_PARAM].getValue());
 		if (strobeA) addrStrobeAFlash.trigger(0.15f);
 		if (resetA) addrResetAFlash.trigger(0.15f);
@@ -1079,6 +1109,10 @@ struct Marf248 : Module {
 			addrValueB = (int) std::round(params[STAGE_ADDR_KNOB_B_PARAM].getValue());
 		}
 		bool strobeB = addrStrobeBTrigger.process(params[STAGE_ADDR_STROBE_B_PARAM].getValue());
+		// SEXT B: siehe Kommentar bei strobeA weiter oben, analog.
+		if (trigExp && expStrobeBTrigger.process(trigExp->getInput(Marf248TriggerExpander::STROBE_B_INPUT).getVoltage())) {
+			strobeB = true;
+		}
 		bool resetB = addrResetBTrigger.process(params[STAGE_ADDR_RESET_B_PARAM].getValue());
 		if (strobeB) addrStrobeBFlash.trigger(0.15f);
 		if (resetB) addrResetBFlash.trigger(0.15f);
@@ -1118,19 +1152,9 @@ struct Marf248 : Module {
 
 		// Marf248TriggerExpander: einfacher "Host liest/schreibt direkt"-
 		// Ansatz (kein Message-Passing noetig, da der Expander selbst keine
-		// eigene Verarbeitung hat - siehe Marf248TriggerExpander.hpp). Sucht
-		// links UND rechts, damit der Expander auf beiden Seiten andocken
-		// kann.
-		Module* leftNeighbor = getLeftExpander().module;
-		Module* rightNeighbor = getRightExpander().module;
-		Module* trigExp = nullptr;
-		if (leftNeighbor && leftNeighbor->getModel() == modelMarf248TriggerExpander) {
-			trigExp = leftNeighbor;
-		}
-		else if (rightNeighbor && rightNeighbor->getModel() == modelMarf248TriggerExpander) {
-			trigExp = rightNeighbor;
-		}
-
+		// eigene Verarbeitung hat - siehe Marf248TriggerExpander.hpp).
+		// trigExp wurde bereits am Anfang von process() ermittelt (siehe
+		// dort - SEXT braucht ihn frueher als den Rest dieses Blocks).
 		if (trigExp) {
 			if (expClearTrigger.process(trigExp->getInput(Marf248TriggerExpander::CLEAR_INPUT).getVoltage())) {
 				performGlobalClear();

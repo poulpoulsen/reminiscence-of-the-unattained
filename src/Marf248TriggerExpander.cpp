@@ -51,7 +51,12 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		// Reihen 2-7: Preset Load 1-12, zwei Spalten (1,3,5,7,9,11 links /
 		// 2,4,6,8,10,12 rechts), direkter Zugriff ohne Load-Arm-Taster.
 		const float presetStartY = 30.f;
-		const float presetStepY = 9.5f;
+		// War 9.5mm; auf 8.8mm verengt, um unten Platz fuer die neue SEXT-
+		// Reihe (Strobe A/B) zu schaffen, ohne mit den unteren Befestigungs-
+		// schrauben (~y=123.4mm) zu kollidieren. NICHT weiter verengen ohne
+		// visuellen Check auf dem echten System (Sandbox hat kein Display,
+		// siehe Projektnotizen) - 8.8mm ist bewusst konservativ gewaehlt.
+		const float presetStepY = 8.8f;
 		for (int row = 0; row < 6; row++) {
 			float y = presetStartY + row * presetStepY;
 			int leftPreset = row * 2;
@@ -78,6 +83,12 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		float yCycleB = yCycleA + presetStepY;
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colA, yCycleB)), module, Marf248TriggerExpander::START_CYCLE_B_OUTPUT));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colB, yCycleB)), module, Marf248TriggerExpander::END_CYCLE_B_OUTPUT));
+
+		// Reihe 12: SEXT - externe Strobe-Pulse Section A / B (siehe
+		// Marf248TriggerExpander.hpp und Marf248::process()).
+		float ySext = yCycleB + presetStepY;
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, ySext)), module, Marf248TriggerExpander::STROBE_A_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, ySext)), module, Marf248TriggerExpander::STROBE_B_INPUT));
 	}
 };
 

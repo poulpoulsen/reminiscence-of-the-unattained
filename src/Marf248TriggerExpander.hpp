@@ -34,6 +34,15 @@ struct Marf248TriggerExpander : Module {
 		// Stage-Address-CV im Hauptmodul - Spannungshoehe bestimmt den Wert
 		// direkt, kein Arm/Commit noetig (siehe Marf248::process()).
 		KEY_CV_INPUT,
+		// SEXT (Buchla-Book-Begriff fuer externe Strobe-Pulse): loest exakt
+		// dieselbe Aktion aus wie der jeweilige Panel-Strobe-Taster
+		// (STAGE_ADDR_STROBE_A/B_PARAM in Marf248) - inklusive der
+		// bestehenden Continuous-Sperre, da Afg::applyStageAddress() im
+		// Continuous-Zweig vorzeitig returned und strobePressed dort
+		// ignoriert (siehe Marf248.hpp). Getrennt pro Section, analog zu
+		// den getrennten Panel-Tastern.
+		STROBE_A_INPUT,
+		STROBE_B_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
@@ -67,6 +76,8 @@ struct Marf248TriggerExpander : Module {
 		configInput(SCALE_MINOR_INPUT, "Select Minor scale trigger");
 		configInput(SCALE_CHROMATIC_INPUT, "Select Chromatic scale trigger");
 		configInput(KEY_CV_INPUT, "Key select CV (0-10V = C..B)");
+		configInput(STROBE_A_INPUT, "Section A external Strobe (SEXT)");
+		configInput(STROBE_B_INPUT, "Section B external Strobe (SEXT)");
 
 		configOutput(START_CYCLE_A_OUTPUT, "Section A Start of Cycle trigger");
 		configOutput(END_CYCLE_A_OUTPUT, "Section A End of Cycle trigger");
