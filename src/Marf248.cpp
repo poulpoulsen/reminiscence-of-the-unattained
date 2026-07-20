@@ -194,6 +194,17 @@ struct Marf248 : Module {
 		STAGE_ADDR_CONT_A_LIGHT,
 		STAGE_ADDR_MODE_B_LIGHT,
 		STAGE_ADDR_CONT_B_LIGHT,
+		// Kurzer Blitz beim Druecken von Strobe/Reset (reine Momentary-
+		// Aktionen ohne Dauerzustand, daher Blitz statt Toggle-Licht -
+		// gleiches Muster wie CLEAR_LIGHT/RESET_VALUES_LIGHT weiter unten,
+		// aber blau statt gelb, um optisch in derselben Stage-Address-
+		// Spalte wie Mode/Continuous zu bleiben). War zuvor komplett
+		// unverdrahtet (kein Light-ID, kein addChild im Widget) - siehe
+		// Bugfix-Session.
+		STAGE_ADDR_STROBE_A_LIGHT,
+		STAGE_ADDR_RESET_A_LIGHT,
+		STAGE_ADDR_STROBE_B_LIGHT,
+		STAGE_ADDR_RESET_B_LIGHT,
 		// Kurzer Blitz beim Druecken von Global Clear, als Rueckmeldung
 		// (der Taster selbst hat sonst keinen dauerhaften Zustand).
 		CLEAR_LIGHT,
@@ -250,6 +261,9 @@ struct Marf248 : Module {
 	bool addrContOnB = false;
 	dsp::SchmittTrigger addrModeATrigger, addrContATrigger, addrStrobeATrigger, addrResetATrigger;
 	dsp::SchmittTrigger addrModeBTrigger, addrContBTrigger, addrStrobeBTrigger, addrResetBTrigger;
+	// Blitz-Feedback fuer Strobe/Reset (siehe STAGE_ADDR_STROBE_A_LIGHT
+	// etc.), gleiches Muster wie resetValuesFlash weiter unten.
+	dsp::PulseGenerator addrStrobeAFlash, addrResetAFlash, addrStrobeBFlash, addrResetBFlash;
 
 	// Global Clear: Momentary-Taster + kurzer Licht-Blitz als Rueckmeldung.
 	dsp::SchmittTrigger clearTrigger;
@@ -1042,6 +1056,10 @@ struct Marf248 : Module {
 		}
 		bool strobeA = addrStrobeATrigger.process(params[STAGE_ADDR_STROBE_A_PARAM].getValue());
 		bool resetA = addrResetATrigger.process(params[STAGE_ADDR_RESET_A_PARAM].getValue());
+		if (strobeA) addrStrobeAFlash.trigger(0.15f);
+		if (resetA) addrResetAFlash.trigger(0.15f);
+		lights[STAGE_ADDR_STROBE_A_LIGHT].setBrightness(addrStrobeAFlash.process(args.sampleTime) ? 1.f : 0.f);
+		lights[STAGE_ADDR_RESET_A_LIGHT].setBrightness(addrResetAFlash.process(args.sampleTime) ? 1.f : 0.f);
 		afgA.applyStageAddress(addrContOnA, addrValueA, strobeA, resetA, stageModifier);
 
 		if (addrModeBTrigger.process(params[STAGE_ADDR_MODE_B_PARAM].getValue())) {
@@ -1062,6 +1080,10 @@ struct Marf248 : Module {
 		}
 		bool strobeB = addrStrobeBTrigger.process(params[STAGE_ADDR_STROBE_B_PARAM].getValue());
 		bool resetB = addrResetBTrigger.process(params[STAGE_ADDR_RESET_B_PARAM].getValue());
+		if (strobeB) addrStrobeBFlash.trigger(0.15f);
+		if (resetB) addrResetBFlash.trigger(0.15f);
+		lights[STAGE_ADDR_STROBE_B_LIGHT].setBrightness(addrStrobeBFlash.process(args.sampleTime) ? 1.f : 0.f);
+		lights[STAGE_ADDR_RESET_B_LIGHT].setBrightness(addrResetBFlash.process(args.sampleTime) ? 1.f : 0.f);
 		afgB.applyStageAddress(addrContOnB, addrValueB, strobeB, resetB, stageModifier);
 
 		float vA, tA, apA, p1A, p2A, scA, ecA, rgA;
@@ -1652,6 +1674,8 @@ struct Marf248Widget : ModuleWidget {
 		int addrContLights[2] = {Marf248::STAGE_ADDR_CONT_A_LIGHT, Marf248::STAGE_ADDR_CONT_B_LIGHT};
 		int addrStrobeParams[2] = {Marf248::STAGE_ADDR_STROBE_A_PARAM, Marf248::STAGE_ADDR_STROBE_B_PARAM};
 		int addrResetParams[2] = {Marf248::STAGE_ADDR_RESET_A_PARAM, Marf248::STAGE_ADDR_RESET_B_PARAM};
+		int addrStrobeLights[2] = {Marf248::STAGE_ADDR_STROBE_A_LIGHT, Marf248::STAGE_ADDR_STROBE_B_LIGHT};
+		int addrResetLights[2] = {Marf248::STAGE_ADDR_RESET_A_LIGHT, Marf248::STAGE_ADDR_RESET_B_LIGHT};
 		int addrExtInputs[2] = {Marf248::STAGE_ADDR_EXT_A_INPUT, Marf248::STAGE_ADDR_EXT_B_INPUT};
 		int timeMultParams[2] = {Marf248::TIME_MULT_A_PARAM, Marf248::TIME_MULT_B_PARAM};
 		int timeMultAttenParams[2] = {Marf248::TIME_MULT_ATTEN_A_PARAM, Marf248::TIME_MULT_ATTEN_B_PARAM};
@@ -1719,7 +1743,9 @@ struct Marf248Widget : ModuleWidget {
 			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 93)), module, addrContParams[s]));
 			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 93)), module, addrContLights[s]));
 			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 102)), module, addrStrobeParams[s]));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 102)), module, addrStrobeLights[s]));
 			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 111)), module, addrResetParams[s]));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 111)), module, addrResetLights[s]));
 
 			// --- Jacks-Spalte, von oben nach unten: Start/Stop-Trigger (eng,
 			// 8mm), Time-Multiplier-CV-Eingang, Voltage/Time-Out (eng, 8mm),
