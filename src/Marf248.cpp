@@ -17,6 +17,16 @@ struct StageVoltageQuantity : ParamQuantity {
 // "Lim +0" ... "Lim +8"), statt einer nackten Zahl 0-6. Braucht keinen
 // Modul-Zugriff, da die Position selbst schon den vollstaendigen Zustand
 // codiert (anders als bei StageVoltageQuantity/Quantize).
+// Zeigt den (jetzt normalisierten 0..1) Time-Regler-Wert als tatsaechliche
+// Sekundenzahl an, aufgeloest gegen den aktuell gewaehlten Time-Range (TR1-4,
+// siehe MOD_TRANGE_*-Bits in Marf248.hpp) - analog zu StageVoltageQuantity,
+// die den Voltage-Regler je nach Quantize-Zustand anders anzeigt. Wird erst
+// nach der vollstaendigen Definition von Marf248 implementiert (siehe unten).
+struct StageTimeQuantity : ParamQuantity {
+	int stageIndex = 0;
+	std::string getDisplayValueString() override;
+};
+
 struct StageRangeQuantity : ParamQuantity {
 	std::string getDisplayValueString() override {
 		static const char* labels[7] = {"Full", "Half", "Lim +0", "Lim +2", "Lim +4", "Lim +6", "Lim +8"};
@@ -56,6 +66,11 @@ struct Marf248 : Module {
 		ENUMS(STAGE_PULSE1_PARAM, NUM_STAGES),
 		ENUMS(STAGE_PULSE2_PARAM, NUM_STAGES),
 		ENUMS(STAGE_SKIP_PARAM, NUM_STAGES),
+		// Time Range (TR1-4): Zyklus-Taster wie Shape, togglet die exklusiven
+		// MOD_TRANGE_*-Bits durch (siehe Marf248.hpp). Zeigt seinen Zustand
+		// direkt als eingeblendete Ziffer 1-4 auf dem Knopf selbst an (siehe
+		// TrangeButton), daher keine eigene Light-Id noetig.
+		ENUMS(STAGE_TRANGE_PARAM, NUM_STAGES),
 		RUN_A_PARAM,
 		RUN_B_PARAM,
 		// Laufrichtung pro Section jetzt als zwei unabhaengige Schalter statt
@@ -365,6 +380,7 @@ struct Marf248 : Module {
 	dsp::SchmittTrigger stagePulse1Trigger[NUM_STAGES];
 	dsp::SchmittTrigger stagePulse2Trigger[NUM_STAGES];
 	dsp::SchmittTrigger stageSkipTrigger[NUM_STAGES];
+	dsp::SchmittTrigger stageTrangeTrigger[NUM_STAGES];
 
 	// CPU-Optimierung (siehe perf-Profiling-Session): die Klick-Button-
 	// Erkennung + Light-Update fuer alle 16 Stages (weiter unten in
@@ -400,8 +416,19 @@ struct Marf248 : Module {
 			StageVoltageQuantity* vq = configParam<StageVoltageQuantity>(STAGE_VOLTAGE_PARAM + i, 0.f, 10.f, 0.f,
 				string::f("Stage %d Voltage", i + 1), " V");
 			vq->stageIndex = i;
-			configParam(STAGE_TIME_PARAM + i, 0.02f, 0.3f, 0.1f,
-				string::f("Stage %d Time", i + 1), " s");
+			// Domaenen-Umstellung fuer Time Range (TR1-4): der Time-Knob
+			// speichert jetzt eine normalisierte Position 0..1 statt direkt
+			// Sekunden (vorher fest 0.02-0.3s) - die tatsaechliche Sekundenzahl
+			// ergibt sich erst aus der Kombination mit dem gewaehlten TR-
+			// Bereich (siehe resolvedTime[] in process()), analog dazu wie der
+			// Voltage-Regler immer 0-10V bleibt und applyRange() erst danach
+			// skaliert. ACHTUNG Kinovice: bestehende Patches interpretieren den
+			// gespeicherten Rohwert dadurch anders als vorher (alte 0.1
+			// bedeutete 0.1s, jetzt 10% Position im gewaehlten TR-Bereich) -
+			// Time-Slider in alten Patches ggf. neu einstellen.
+			StageTimeQuantity* tq = configParam<StageTimeQuantity>(STAGE_TIME_PARAM + i, 0.f, 1.f, 0.5f,
+				string::f("Stage %d Time", i + 1));
+			tq->stageIndex = i;
 			configButton(STAGE_FIRST_PARAM + i, string::f("Stage %d First", i + 1));
 			configButton(STAGE_LAST_PARAM + i, string::f("Stage %d Last", i + 1));
 			configButton(STAGE_STOP_PARAM + i, string::f("Stage %d Stop", i + 1));
@@ -423,6 +450,8 @@ struct Marf248 : Module {
 			configButton(STAGE_PULSE1_PARAM + i, string::f("Stage %d Pulse 1", i + 1));
 			configButton(STAGE_PULSE2_PARAM + i, string::f("Stage %d Pulse 2", i + 1));
 			configButton(STAGE_SKIP_PARAM + i, string::f("Stage %d Skip", i + 1));
+			configButton(STAGE_TRANGE_PARAM + i, string::f(
+				"Stage %d Time Range (TR1 .002-.03s / TR2 .02-.3s / TR3 .2-3s Default / TR4 2-30s)", i + 1));
 		}
 		configButton(RUN_A_PARAM, "Section A Start/Stop");
 		configButton(RUN_B_PARAM, "Section B Start/Stop");
@@ -601,7 +630,9 @@ struct Marf248 : Module {
 	void performResetValues() {
 		for (int i = 0; i < NUM_STAGES; i++) {
 			params[STAGE_VOLTAGE_PARAM + i].setValue(0.f);
-			params[STAGE_TIME_PARAM + i].setValue(0.1f);
+			// 0.5 = Mitte der normalisierten Time-Range-Position (siehe
+			// configParam-Umstellung), nicht mehr die alte feste 0.1s.
+			params[STAGE_TIME_PARAM + i].setValue(0.5f);
 			pickupVoltage[i].pending = false;
 			pickupTime[i].pending = false;
 		}
@@ -832,6 +863,25 @@ struct Marf248 : Module {
 			if (stageNormalizeTrigger[i].process(params[STAGE_NORMALIZE_PARAM + i].getValue())) {
 				stageModifier[i] ^= MOD_SLEW_NORMALIZE;
 			}
+			if (stageTrangeTrigger[i].process(params[STAGE_TRANGE_PARAM + i].getValue())) {
+				// Zyklus TR1 -> TR2 -> TR3 (Default, kein Bit) -> TR4 -> TR1.
+				if (stageModifier[i] & MOD_TRANGE_1) {
+					stageModifier[i] &= ~MOD_TRANGE_1;
+					stageModifier[i] |= MOD_TRANGE_2;
+				}
+				else if (stageModifier[i] & MOD_TRANGE_2) {
+					stageModifier[i] &= ~MOD_TRANGE_2;
+					// -> TR3: keines der drei Bits gesetzt.
+				}
+				else if (stageModifier[i] & MOD_TRANGE_4) {
+					stageModifier[i] &= ~MOD_TRANGE_4;
+					stageModifier[i] |= MOD_TRANGE_1;
+				}
+				else {
+					// war TR3 (kein Bit gesetzt) -> TR4.
+					stageModifier[i] |= MOD_TRANGE_4;
+				}
+			}
 			lights[STAGE_FIRST_LIGHT + i].setBrightness(stageModifier[i] & MOD_FIRST ? 1.f : 0.f);
 			lights[STAGE_LAST_LIGHT + i].setBrightness(stageModifier[i] & MOD_LAST ? 1.f : 0.f);
 			lights[STAGE_STOP_LIGHT + i].setBrightness(stageModifier[i] & MOD_STOP ? 1.f : 0.f);
@@ -874,13 +924,6 @@ struct Marf248 : Module {
 			inputs[EXT_C_INPUT].isConnected(),
 			inputs[EXT_D_INPUT].isConnected(),
 		};
-		// Time-Range-Umschalter (TIME1-4 im Manual) sind im Port noch nicht
-		// implementiert (siehe Projektstatus); bis dahin dient der aktuelle,
-		// feste Parameterbereich des Time-Knobs als Referenzbereich fuer die
-		// Kanalwahl und die CV-zu-Zeit-Skalierung bei External Time.
-		const float TIME_PARAM_MIN = 0.02f;
-		const float TIME_PARAM_MAX = 0.3f;
-
 		// Marf248CvExpander: gleicher "Host liest/schreibt direkt"-Ansatz wie
 		// beim Trigger-Expander (siehe dortiger Scan weiter unten), aber hier
 		// VOR der Stage-Schleife noetig, da die additive Stage-Time-CV schon
@@ -897,30 +940,23 @@ struct Marf248 : Module {
 			cvExp = cvRightNeighbor;
 		}
 
-		// Additive Stage-Time-CV (Sekunden), wirkt unabhaengig davon, ob die
-		// Stage intern oder ueber Time External laeuft (siehe resolvedTime[i]
-		// weiter unten) - Entscheidung von Kinovice. CV-Skalierung analog zum
-		// Time-Multiplier-Attenuverter-Muster: +-1 Attenuverter-Ausschlag bei
-		// +-5V CV deckt die volle Stage-Zeit-Spanne (TIME_PARAM_MIN..MAX) ab.
-		// Offset-Trimpot wird VOR dem Attenuverter von der rohen CV
-		// abgezogen - macht eine rein unipolare Quelle (z.B. 0-10V Envelope)
-		// bipolar nutzbar: Offset auf die Quellen-Mitte stellen, dann
-		// verkuerzt die untere Haelfte und verlaengert die obere (bei
-		// positivem Attenuverter) - Kinovice-Entscheidung (eigener Regler
-		// statt festem Unipolar-Menue-Modus).
-		float stageTimeCvAdd[NUM_STAGES] = {};
+		// Attenuverter/Offset/Input-Referenz fuer die additive Stage-Time-CV
+		// einmalig ausgelesen (skalar, gilt fuer alle Stages gleich) - die
+		// tatsaechliche Sekunden-Spanne fuer die CV-Skalierung ist jetzt PRO
+		// STAGE variabel (haengt vom gewaehlten Time Range TR1-4 ab, siehe
+		// MOD_TRANGE_*-Bits in Marf248.hpp), daher wird stageTimeCvAdd erst
+		// INNERHALB der Stage-Schleife berechnet statt wie bisher vorab in
+		// einem eigenen Loop mit einer einzigen festen Spanne.
+		float cvAttenTime = 0.f, cvOffsetTime = 0.f;
+		int cvTimeChannels = 0;
+		Input* cvTimeInput = nullptr;
 		if (cvExp) {
-			const float TIME_CV_SPAN_VOLTS = 5.f;
-			const float TIME_CV_RANGE_SPAN = TIME_PARAM_MAX - TIME_PARAM_MIN;
-			float atten = cvExp->getParam(Marf248CvExpander::TIME_CV_ATTEN_PARAM).getValue();
-			float offset = cvExp->getParam(Marf248CvExpander::TIME_CV_OFFSET_PARAM).getValue();
-			Input& timeCvInput = cvExp->getInput(Marf248CvExpander::STAGE_TIME_CV_INPUT);
-			int cvChannels = timeCvInput.getChannels();
-			for (int i = 0; i < NUM_STAGES && i < cvChannels; i++) {
-				float cv = timeCvInput.getVoltage(i) - offset;
-				stageTimeCvAdd[i] = atten * (cv / TIME_CV_SPAN_VOLTS) * TIME_CV_RANGE_SPAN;
-			}
+			cvAttenTime = cvExp->getParam(Marf248CvExpander::TIME_CV_ATTEN_PARAM).getValue();
+			cvOffsetTime = cvExp->getParam(Marf248CvExpander::TIME_CV_OFFSET_PARAM).getValue();
+			cvTimeInput = &cvExp->getInput(Marf248CvExpander::STAGE_TIME_CV_INPUT);
+			cvTimeChannels = cvTimeInput->getChannels();
 		}
+		const float TIME_CV_SPAN_VOLTS = 5.f;
 
 		for (int i = 0; i < NUM_STAGES; i++) {
 			// Pickup: siehe loadPreset()/PickupState. Ausserhalb eines
@@ -928,7 +964,23 @@ struct Marf248 : Module {
 			// Reglerwert unveraendert zurueck (kein Verhaltensunterschied zu
 			// vorher).
 			stageVoltage[i] = pickupVoltage[i].resolve(params[STAGE_VOLTAGE_PARAM + i].getValue());
+			// stageTime[i] ist jetzt eine normalisierte Position 0..1 (nicht
+			// mehr direkt Sekunden, siehe configParam-Umstellung oben) - die
+			// tatsaechliche Sekundenzahl ergibt sich erst weiter unten aus der
+			// Kombination mit dem gewaehlten Time Range (TR1-4).
 			stageTime[i] = pickupTime[i].resolve(params[STAGE_TIME_PARAM + i].getValue());
+
+			// Time Range (TR1-4, MOD_TRANGE_1/2/4 in Marf248.hpp): bestimmt
+			// die Sekunden-Spanne, auf die die normalisierte Time-Knob-
+			// Position sowie External Time/CV-Expander-Skalierung abgebildet
+			// werden - analog zu applyRange() fuer die Voltage-Seite, aber
+			// hier direkt in Marf248::process() aufgeloest statt in
+			// Afg::process() (Afg kennt ohnehin nur die fertige Sekundenzeit,
+			// keine Aenderung an Afg/Marf248.hpp::Afg noetig).
+			int trIdx = getTimeRangeIndex(stageModifier[i]);
+			float timeRangeMin = TIME_RANGE_MIN[trIdx];
+			float timeRangeMax = TIME_RANGE_MAX[trIdx];
+			float timeRangeSpan = timeRangeMax - timeRangeMin;
 
 			// Voltage Source External/Internal: bei External bestimmt die
 			// Sliderposition (0-10V in 4 gleich grossen Zonen) welcher der
@@ -950,26 +1002,41 @@ struct Marf248 : Module {
 			// zurueck (Manual: "the interval time defaults to the fastest
 			// value of the selected range").
 			if (stageModifier[i] & MOD_TIME_EXT) {
-				float frac = (stageTime[i] - TIME_PARAM_MIN) / (TIME_PARAM_MAX - TIME_PARAM_MIN);
-				int ch = (int) rack::clamp(frac * 4.f, 0.f, 3.f);
+				// Wie beim Voltage-External-Modus dient die (jetzt bereits
+				// normalisierte 0..1) Slider-Position selbst als Kanalwahl
+				// (A-D) in 4 gleich grossen Zonen - keine Rueckrechnung ueber
+				// TIME_PARAM_MIN/MAX mehr noetig, da stageTime[i] schon 0..1 ist.
+				int ch = (int) rack::clamp(stageTime[i] * 4.f, 0.f, 3.f);
 				if (extConnected[ch]) {
 					float v = rack::clamp(extVoltage[ch], 0.f, 10.f);
-					resolvedTime[i] = TIME_PARAM_MIN + (v / 10.f) * (TIME_PARAM_MAX - TIME_PARAM_MIN);
+					resolvedTime[i] = timeRangeMin + (v / 10.f) * timeRangeSpan;
 				}
 				else {
-					resolvedTime[i] = TIME_PARAM_MIN;
+					resolvedTime[i] = timeRangeMin;
 				}
 			}
 			else {
-				resolvedTime[i] = stageTime[i];
+				resolvedTime[i] = timeRangeMin + stageTime[i] * timeRangeSpan;
 			}
 
-			// Additive Stage-Time-CV vom CV-Expander (siehe stageTimeCvAdd[]
-			// oben) - wirkt auf beide Faelle (External/Internal) gleichermassen
-			// und NOCH VOR dem Time-Multiplier weiter unten. Untere Schranke
-			// verhindert eine negative/Null-Zeit (kein Hard-Limit nach oben,
-			// da eine sehr lange Stage-Zeit unproblematisch ist).
-			resolvedTime[i] = rack::clamp(resolvedTime[i] + stageTimeCvAdd[i], 0.001f, 10.f);
+			// Additive Stage-Time-CV vom CV-Expander: +-1 Attenuverter-
+			// Ausschlag bei +-5V CV deckt jetzt die Spanne des JEWEILS
+			// gewaehlten Time Range ab (vorher fest TIME_PARAM_MIN..MAX) -
+			// haelt die CV-Modulationstiefe konsistent zum sichtbaren Knob-
+			// Verhalten in jedem Bereich. Offset-Trimpot wird VOR dem
+			// Attenuverter von der rohen CV abgezogen - macht eine rein
+			// unipolare Quelle (z.B. 0-10V Envelope) bipolar nutzbar (siehe
+			// bisherige Begruendung, unveraendert).
+			float stageTimeCvAdd = 0.f;
+			if (cvExp && i < cvTimeChannels) {
+				float cv = cvTimeInput->getVoltage(i) - cvOffsetTime;
+				stageTimeCvAdd = cvAttenTime * (cv / TIME_CV_SPAN_VOLTS) * timeRangeSpan;
+			}
+			// Untere Schranke verhindert eine negative/Null-Zeit. Obere
+			// Schranke jetzt 30s (TR4-Maximum, der langsamste aller vier
+			// Bereiche) statt vorher fest 10s, da TR4 sonst abgeschnitten
+			// wuerde.
+			resolvedTime[i] = rack::clamp(resolvedTime[i] + stageTimeCvAdd, 0.001f, 30.f);
 
 			// Knob 0..1, Mitte (0.5) = SLEW_CURVE_POWER (bisheriges Verhalten).
 			// Der Exponent-Faktor selbst wandert quadratisch geglaettet von
@@ -1413,6 +1480,26 @@ std::string StageVoltageQuantity::getDisplayValueString() {
 	return ParamQuantity::getDisplayValueString();
 }
 
+// Loest die normalisierte 0..1-Position des Time-Reglers gegen den aktuell
+// gewaehlten Time Range (TR1-4) auf und zeigt das Ergebnis als Sekundenzahl
+// an - ohne diesen Override wuerde der Tooltip nur die nackte 0..1-Position
+// zeigen, was ohne Kontext bedeutungslos waere.
+std::string StageTimeQuantity::getDisplayValueString() {
+	Marf248* m = dynamic_cast<Marf248*>(module);
+	if (!m) {
+		return ParamQuantity::getDisplayValueString();
+	}
+	int idx = getTimeRangeIndex(m->stageModifier[stageIndex]);
+	float seconds = TIME_RANGE_MIN[idx] + getValue() * (TIME_RANGE_MAX[idx] - TIME_RANGE_MIN[idx]);
+	// TR1/TR2 bewegen sich im Millisekunden- bis niedrigen Zehntelbereich und
+	// brauchen daher mehr Nachkommastellen als TR3/TR4, sonst wuerde z.B.
+	// ".00 s" fuer den gesamten TR1-Bereich angezeigt.
+	if (seconds < 1.f) {
+		return string::f("%.3f s", seconds);
+	}
+	return string::f("%.2f s", seconds);
+}
+
 
 // Einfache helle Panel-Hintergrundflaeche im Buchla/Tiptop-Silber-Look, da
 // bisher kein SVG-Panel gesetzt ist und das Modul sonst transparent bleibt.
@@ -1459,6 +1546,105 @@ struct HDivider : TransparentWidget {
 		nvgStrokeColor(args.vg, strokeColor);
 		nvgStrokeWidth(args.vg, 1.f);
 		nvgStroke(args.vg);
+	}
+};
+
+
+// Zyklus-Taster fuer Time Range (TR1-4, siehe MOD_TRANGE_*-Bits). Erbt von
+// LEDButton nur die Klick-/Trigger-Mechanik (SvgSwitch-Basis unveraendert -
+// Mausereignisse haengen nicht an draw()), ersetzt aber draw() komplett durch
+// eine eigene, groesser dimensionierte Darstellung: die kleine Original-LED-
+// Button-Grafik liess die Ziffer 1-4 kaum lesbar werden (Kinovice-Feedback),
+// daher wird hier bewusst NICHT LEDButton::draw() aufgerufen (das wuerde die
+// zur vergroesserten box.size nicht mehr passende Original-SVG zeichnen),
+// sondern Hintergrund+Ziffer komplett per NVG selbst gezeichnet - gleiche
+// Technik wie StageFrame/PanelBackground weiter oben in dieser Datei, kein
+// SVG-Asset noetig. Die tatsaechliche Groesse (9x9mm statt LEDButton-Default)
+// wird im Widget-Konstruktor gesetzt, siehe dortiger Kommentar.
+struct TrangeButton : LEDButton {
+	void draw(const DrawArgs& args) override {
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0.5f, 0.5f, box.size.x - 1.f, box.size.y - 1.f, 2.5f);
+		nvgFillColor(args.vg, nvgRGB(40, 40, 44));
+		nvgFill(args.vg);
+		nvgStrokeColor(args.vg, nvgRGBA(90, 90, 100, 200));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+
+		ParamQuantity* pq = getParamQuantity();
+		if (!pq) {
+			return;
+		}
+		Marf248* m = dynamic_cast<Marf248*>(pq->module);
+		if (!m) {
+			return;
+		}
+		int stageIndex = pq->paramId - Marf248::STAGE_TRANGE_PARAM;
+		if (stageIndex < 0 || stageIndex >= NUM_STAGES) {
+			return;
+		}
+		int idx = getTimeRangeIndex(m->stageModifier[stageIndex]);
+
+		std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+		if (!font || !font->handle) {
+			return;
+		}
+		static const char* labels[4] = {"1", "2", "3", "4"};
+		float cx = box.size.x / 2.f;
+		float cy = box.size.y / 2.f;
+		nvgFontFaceId(args.vg, font->handle);
+		// Gleiche Schriftgroesse/Optik wie RangeKnob (fester Wert 18px statt
+		// relativ zur box.size, siehe dortiger Kommentar): Outline-Trick,
+		// Text 4x leicht versetzt in Dunkel, dann obenauf in Amber - selbe
+		// zwei Farben, selbe Versatzwerte, damit beide Anzeigen im Panel
+		// einheitlich wirken.
+		nvgFontSize(args.vg, 18.f);
+		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+
+		nvgFillColor(args.vg, nvgRGB(20, 20, 20));
+		nvgText(args.vg, cx - 0.8f, cy, labels[idx], NULL);
+		nvgText(args.vg, cx + 0.8f, cy, labels[idx], NULL);
+		nvgText(args.vg, cx, cy - 0.8f, labels[idx], NULL);
+		nvgText(args.vg, cx, cy + 0.8f, labels[idx], NULL);
+
+		nvgFillColor(args.vg, nvgRGB(235, 170, 60));
+		nvgText(args.vg, cx, cy, labels[idx], NULL);
+	}
+
+	// Direkte Auswahl per Rechtsklick-Menue, aus demselben Grund wie bei
+	// RangeKnob::appendContextMenu (siehe dortiger Kommentar) - bei einem
+	// Momentary-Taster wie diesem macht eine numerische Texteingabe ohnehin
+	// wenig Sinn (kein "Wert" im ueblichen Sinn, nur ein Zyklus-Trigger).
+	// Manipuliert daher bewusst direkt die stageModifier-Bits statt ueber
+	// den Param-Rohwert/SchmittTrigger zu gehen - klar, sofort wirksam,
+	// unabhaengig vom Momentary-Verhalten des zugrundeliegenden Buttons.
+	void appendContextMenu(ui::Menu* menu) override {
+		ParamQuantity* pq = getParamQuantity();
+		if (!pq) {
+			return;
+		}
+		Marf248* m = dynamic_cast<Marf248*>(pq->module);
+		if (!m) {
+			return;
+		}
+		int stageIndex = pq->paramId - Marf248::STAGE_TRANGE_PARAM;
+		if (stageIndex < 0 || stageIndex >= NUM_STAGES) {
+			return;
+		}
+		menu->addChild(new ui::MenuSeparator);
+		static const char* trLabels[4] = {"TR1 (.002-.03s)", "TR2 (.02-.3s)", "TR3 (.2-3s, Default)", "TR4 (2-30s)"};
+		// 0 fuer TR3 (Index 2), da TR3 durch Abwesenheit aller drei Bits
+		// kodiert wird (siehe MOD_TRANGE_*-Kommentar in Marf248.hpp).
+		static const int trBits[4] = {MOD_TRANGE_1, MOD_TRANGE_2, 0, MOD_TRANGE_4};
+		for (int t = 0; t < 4; t++) {
+			menu->addChild(createCheckMenuItem(trLabels[t], "",
+				[=]() { return getTimeRangeIndex(m->stageModifier[stageIndex]) == t; },
+				[=]() {
+					m->stageModifier[stageIndex] &= ~(MOD_TRANGE_1 | MOD_TRANGE_2 | MOD_TRANGE_4);
+					m->stageModifier[stageIndex] |= trBits[t];
+				}
+			));
+		}
 	}
 };
 
@@ -1530,6 +1716,30 @@ struct RangeKnob : RoundBlackKnob {
 
 		nvgFillColor(args.vg, nvgRGB(235, 170, 60));
 		nvgText(args.vg, cx, cy, labels[pos], NULL);
+	}
+
+	// Direkte Auswahl per Rechtsklick-Menue: die normale Texteingabe im
+	// Standard-Kontextmenue (Rack-Bordmittel) hat sich fuer diesen Regler als
+	// unzuverlaessig herausgestellt (Kinovice-Feedback: Eingabe moeglich,
+	// wird aber nicht uebernommen) - vermutlich eine Rack-Eigenheit bei
+	// snapEnabled-Reglern mit eigener ParamQuantity-Anzeigeklasse. Diese
+	// Checklisten-Variante ruft direkt setValue() aus einem expliziten
+	// Menu-Klick auf, was zuverlaessig funktioniert und obendrein die
+	// moeglichen Zustaende klar benannt zur Auswahl stellt statt eine
+	// nackte Zahl 0-6 eintippen zu muessen.
+	void appendContextMenu(ui::Menu* menu) override {
+		ParamQuantity* pq = getParamQuantity();
+		if (!pq) {
+			return;
+		}
+		menu->addChild(new ui::MenuSeparator);
+		static const char* fullLabels[7] = {"Full", "Half", "Limited +0", "Limited +2", "Limited +4", "Limited +6", "Limited +8"};
+		for (int i = 0; i < 7; i++) {
+			menu->addChild(createCheckMenuItem(fullLabels[i], "",
+				[=]() { return (int) std::round(pq->getValue()) == i; },
+				[=]() { pq->setValue((float) i); }
+			));
+		}
 	}
 };
 
@@ -1824,32 +2034,32 @@ struct Marf248Widget : ModuleWidget {
 
 			addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(x, 18)), module, Marf248::STAGE_VOLTAGE_PARAM + i));
 			addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(x, 30)), module, Marf248::STAGE_TIME_PARAM + i));
-			addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(x - 1.5f, 44)), module, Marf248::STAGE_LIGHT_A + i));
-			addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(x + 1.5f, 44)), module, Marf248::STAGE_LIGHT_B + i));
+			addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(x - 1.5f, 40)), module, Marf248::STAGE_LIGHT_A + i));
+			addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(x + 1.5f, 40)), module, Marf248::STAGE_LIGHT_B + i));
 
 			// Modifier-Buttons dreispaltig, horizontale Aufteilung:
 			//   Reihe 1: Pulse 1 | Pulse 2 | Skip
 			//   Reihe 2: Stop    | Sustain | Enable
 			//   Reihe 3: First   | Last    | Slope
 			//   Reihe 4: Quantize| Volt-Source (Ext) | Time-Source (Ext)
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x - tripleSpreadStage, 52)), module, Marf248::STAGE_PULSE1_PARAM + i));
-			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x - tripleSpreadStage, 52)), module, Marf248::STAGE_PULSE1_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x, 52)), module, Marf248::STAGE_PULSE2_PARAM + i));
-			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x, 52)), module, Marf248::STAGE_PULSE2_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + tripleSpreadStage, 52)), module, Marf248::STAGE_SKIP_PARAM + i));
-			addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(x + tripleSpreadStage, 52)), module, Marf248::STAGE_SKIP_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x - tripleSpreadStage, 48)), module, Marf248::STAGE_PULSE1_PARAM + i));
+			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x - tripleSpreadStage, 48)), module, Marf248::STAGE_PULSE1_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x, 48)), module, Marf248::STAGE_PULSE2_PARAM + i));
+			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x, 48)), module, Marf248::STAGE_PULSE2_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + tripleSpreadStage, 48)), module, Marf248::STAGE_SKIP_PARAM + i));
+			addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(x + tripleSpreadStage, 48)), module, Marf248::STAGE_SKIP_LIGHT + i));
 
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x - tripleSpreadStage, 60)), module, Marf248::STAGE_STOP_PARAM + i));
-			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x - tripleSpreadStage, 60)), module, Marf248::STAGE_STOP_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x, 60)), module, Marf248::STAGE_SUSTAIN_PARAM + i));
-			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x, 60)), module, Marf248::STAGE_SUSTAIN_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + tripleSpreadStage, 60)), module, Marf248::STAGE_ENABLE_PARAM + i));
-			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + tripleSpreadStage, 60)), module, Marf248::STAGE_ENABLE_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x - tripleSpreadStage, 56)), module, Marf248::STAGE_STOP_PARAM + i));
+			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x - tripleSpreadStage, 56)), module, Marf248::STAGE_STOP_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x, 56)), module, Marf248::STAGE_SUSTAIN_PARAM + i));
+			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x, 56)), module, Marf248::STAGE_SUSTAIN_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + tripleSpreadStage, 56)), module, Marf248::STAGE_ENABLE_PARAM + i));
+			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + tripleSpreadStage, 56)), module, Marf248::STAGE_ENABLE_LIGHT + i));
 
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x - tripleSpreadStage, 68)), module, Marf248::STAGE_FIRST_PARAM + i));
-			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x - tripleSpreadStage, 68)), module, Marf248::STAGE_FIRST_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x, 68)), module, Marf248::STAGE_LAST_PARAM + i));
-			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x, 68)), module, Marf248::STAGE_LAST_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x - tripleSpreadStage, 64)), module, Marf248::STAGE_FIRST_PARAM + i));
+			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x - tripleSpreadStage, 64)), module, Marf248::STAGE_FIRST_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x, 64)), module, Marf248::STAGE_LAST_PARAM + i));
+			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x, 64)), module, Marf248::STAGE_LAST_LIGHT + i));
 			// Slope-Button (MOD_SLOPED): war im Code seit je vollstaendig
 			// implementiert (Param, Trigger, Light), hatte aber nie einen
 			// addParam()/addChild()-Aufruf im Widget - der Regler war also
@@ -1857,31 +2067,48 @@ struct Marf248Widget : ModuleWidget {
 			// haengen. Fix: nutzt die bisher bewusst freigelassene dritte
 			// Position dieser Reihe (gleiches Muster wie Pulse1/2/Skip und
 			// Stop/Sustain/Enable).
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + tripleSpreadStage, 68)), module, Marf248::STAGE_SLOPE_PARAM + i));
-			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + tripleSpreadStage, 68)), module, Marf248::STAGE_SLOPE_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + tripleSpreadStage, 64)), module, Marf248::STAGE_SLOPE_PARAM + i));
+			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + tripleSpreadStage, 64)), module, Marf248::STAGE_SLOPE_LIGHT + i));
 
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x - tripleSpreadStage, 76)), module, Marf248::STAGE_QUANT_PARAM + i));
-			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x - tripleSpreadStage, 76)), module, Marf248::STAGE_QUANT_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x, 76)), module, Marf248::STAGE_VOLTEXT_PARAM + i));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x, 76)), module, Marf248::STAGE_VOLTEXT_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + tripleSpreadStage, 76)), module, Marf248::STAGE_TIMEEXT_PARAM + i));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + tripleSpreadStage, 76)), module, Marf248::STAGE_TIMEEXT_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x - tripleSpreadStage, 72)), module, Marf248::STAGE_QUANT_PARAM + i));
+			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x - tripleSpreadStage, 72)), module, Marf248::STAGE_QUANT_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x, 72)), module, Marf248::STAGE_VOLTEXT_PARAM + i));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x, 72)), module, Marf248::STAGE_VOLTEXT_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + tripleSpreadStage, 72)), module, Marf248::STAGE_TIMEEXT_PARAM + i));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + tripleSpreadStage, 72)), module, Marf248::STAGE_TIMEEXT_LIGHT + i));
 
-			// Shape-Button: zyklisch Lin/Exp/Log. Beide LEDs aus = Linear,
-			// linke LED = Exponentiell, rechte LED = Logarithmisch.
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x, 86)), module, Marf248::STAGE_SHAPE_PARAM + i));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x - 4.f, 86)), module, Marf248::STAGE_SHAPE_EXP_LIGHT + i));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + 4.f, 86)), module, Marf248::STAGE_SHAPE_LOG_LIGHT + i));
+			// Shape + Curve jetzt in einer gemeinsamen Reihe statt zwei
+			// getrennten (Platzgewinn fuer die vergroesserte Time-Range-
+			// Anzeige weiter unten, siehe Kinovice-Feedback): Shape nach
+			// rechts, Curve-Trimmer links daneben.
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + 6.f, 82)), module, Marf248::STAGE_SHAPE_PARAM + i));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + 2.f, 82)), module, Marf248::STAGE_SHAPE_EXP_LIGHT + i));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + 10.f, 82)), module, Marf248::STAGE_SHAPE_LOG_LIGHT + i));
 
 			// Curve-Trimmer: Mitte = Referenzkruemmung, links linearer, rechts kurviger.
-			addParam(createParamCentered<Trimpot>(mm2px(Vec(x, 94)), module, Marf248::STAGE_CURVE_PARAM + i));
+			addParam(createParamCentered<Trimpot>(mm2px(Vec(x - 6.f, 82)), module, Marf248::STAGE_CURVE_PARAM + i));
 
-			// Normalize: reine Port-Erweiterung (siehe MOD_SLEW_NORMALIZE),
-			// gelb wie Skip (gleiche Kategorie: Software-Extension ohne
-			// Hardware-Vorbild). Nur bei Exp/Log wirksam, siehe
-			// applySlewCurve() in Marf248.hpp.
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x, 101)), module, Marf248::STAGE_NORMALIZE_PARAM + i));
-			addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(x, 101)), module, Marf248::STAGE_NORMALIZE_LIGHT + i));
+			// Normalize nach rechts verschoben (gleiche Reihe wie Time
+			// Range, die den frei gewordenen linken/mittleren Platz bekommt).
+			// Y=92 statt 90: die vergroesserte Time-Range-Box (9mm) braucht
+			// etwas mehr Abstand zur Shape/Curve-Reihe darueber als ein
+			// normaler LEDButton, sonst wuerden sich beide Reihen beruehren.
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + 6.f, 92)), module, Marf248::STAGE_NORMALIZE_PARAM + i));
+			addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(x + 6.f, 92)), module, Marf248::STAGE_NORMALIZE_LIGHT + i));
+
+			// Time Range (TR1-4): jetzt deutlich groesser als ein normaler
+			// LEDButton, damit die Ziffer 1-4 lesbar bleibt (siehe Kinovice-
+			// Feedback "Ziffer viel zu klein"). TrangeButton zeichnet sich
+			// komplett selbst (kein SVG-Frame), daher ist eine freie
+			// box.size-Wahl hier unproblematisch - createParamCentered()
+			// zentriert zunaechst mit der ererbten LEDButton-Default-Groesse,
+			// danach wird box.size auf 9x9mm vergroessert und um denselben
+			// Mittelpunkt neu zentriert.
+			TrangeButton* trangeBtn = createParamCentered<TrangeButton>(mm2px(Vec(x - 4.f, 92)), module, Marf248::STAGE_TRANGE_PARAM + i);
+			Vec trangeCenter = trangeBtn->box.getCenter();
+			trangeBtn->box.size = mm2px(Vec(9.f, 9.f));
+			trangeBtn->box.pos = trangeCenter.minus(trangeBtn->box.size.div(2));
+			addParam(trangeBtn);
 
 			// Range: eigene Reihe unten, gleiche Groesse/Optik wie die
 			// Voltage/Time-CV-Knoepfe, mit eingeblendeter Zustands-Abkuerzung

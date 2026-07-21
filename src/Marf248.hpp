@@ -61,7 +61,33 @@ enum StageModifierBits {
 	// stillen Korrektur, da sich dadurch die Kurvenform selbst spuerbar
 	// aendert (flacher an den Raendern, steiler in der Mitte).
 	MOD_SLEW_NORMALIZE = 1 << 19,
+	// Time Range (Manual-Aequivalent TR1-4, im Python-Original MOD_TRANGE1-4):
+	// 4 exklusive Zeitbereiche fuer die Stage-Zeit, analog zum Voltage-Range-
+	// Modifier oben, aber wirkt NICHT in Afg::process() (Afg kennt nur die
+	// bereits fertig aufgeloeste Sekundenzeit) - stattdessen ausschliesslich
+	// in Marf248::process() (interner Time-Knob, Time External, additive CV
+	// vom CV-Expander, siehe dortige Kommentare). Kein Bit gesetzt = TR3
+	// (.2-3s, Default), analog zum "kein Bit = Default"-Muster bei Slope/
+	// Range/Shape oben. Drei statt vier Bits genuegen, da TR3 implizit durch
+	// Abwesenheit aller drei kodiert wird (spart ein Bit, gleiches Prinzip
+	// wie MOD_RANGE_HALF/LIMITED).
+	MOD_TRANGE_1 = 1 << 20,  // .002 - .03s (schnellster Bereich)
+	MOD_TRANGE_2 = 1 << 21,  // .02  - .3s
+	MOD_TRANGE_4 = 1 << 22,  // 2    - 30s (langsamster Bereich)
 };
+
+// Sekunden-Spannen der 4 Time-Range-Bereiche, indiziert 0..3 (TR1..TR4).
+// getTimeRangeIndex() loest die exklusiven MOD_TRANGE_*-Bits zu diesem Index
+// auf; TR3 (Index 2) ist der Default, wenn keines der drei Bits gesetzt ist.
+static const float TIME_RANGE_MIN[4] = {0.002f, 0.02f, 0.2f, 2.f};
+static const float TIME_RANGE_MAX[4] = {0.03f,  0.3f,  3.f,  30.f};
+
+inline int getTimeRangeIndex(int mod) {
+	if (mod & MOD_TRANGE_1) return 0;
+	if (mod & MOD_TRANGE_2) return 1;
+	if (mod & MOD_TRANGE_4) return 3;
+	return 2; // TR3, Default
+}
 
 // Oktav-Offset im Limited-Range-Modus: 3 Bits kodieren einen Index 0..4, der
 // auf +0/+2/+4/+6/+8 Volt Offset abgebildet wird (siehe RANGE_OFFSET_VOLTS).
