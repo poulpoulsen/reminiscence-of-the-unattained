@@ -92,6 +92,12 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		float yRunGate = ySext + stepY;
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yRunGate)), module, Marf248TriggerExpander::RUN_GATE_A_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yRunGate)), module, Marf248TriggerExpander::RUN_GATE_B_INPUT));
+
+		// Reihe 9 (NEU): Stage SKIP Poly-Gate - mittig wie Preset Load, da
+		// nur eine einzelne Buchse fuer alle 16 Stages (Kanal i = Stage i+1,
+		// siehe Marf248TriggerExpander.hpp und Marf248::process()).
+		float yStageSkip = yRunGate + stepY;
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec((colA + colB) / 2.f, yStageSkip)), module, Marf248TriggerExpander::STAGE_SKIP_POLY_INPUT));
 	}
 };
 

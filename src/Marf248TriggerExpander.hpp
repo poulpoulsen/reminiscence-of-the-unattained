@@ -59,6 +59,16 @@ struct Marf248TriggerExpander : Module {
 		// Gate-Jitter am Umschaltpunkt, siehe Afg::runGateTrigger.
 		RUN_GATE_A_INPUT,
 		RUN_GATE_B_INPUT,
+		// Stage SKIP (Poly, Kanal i = Stage i+1): Pegel-Override statt Trigger,
+		// analog zu RUN_GATE_A/B_INPUT - Kanal-Spannung >= GATE_THRESHOLD (2V,
+		// siehe Marf248::process()) erzwingt MOD_SKIP fuer die betreffende
+		// Stage, unterhalb loescht es das Bit. Wirkt nur, solange die Buchse
+		// gepatcht ist (isConnected()); dann hat das CV Vorrang und
+		// ueberschreibt einen manuellen Klick auf STAGE_SKIP_PARAM in
+		// Marf248::process() noch im selben Frame. Ohne Kabel bleibt exakt
+		// der zuletzt per Klick gesetzte Zustand erhalten - identisches
+		// Rueckfall-Verhalten wie bei RUN_GATE_A/B_INPUT.
+		STAGE_SKIP_POLY_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
@@ -94,6 +104,7 @@ struct Marf248TriggerExpander : Module {
 		configInput(STROBE_B_INPUT, "Section B external Strobe (SEXT)");
 		configInput(RUN_GATE_A_INPUT, "Section A Start/Stop gate (high = run, OR'd with panel button)");
 		configInput(RUN_GATE_B_INPUT, "Section B Start/Stop gate (high = run, OR'd with panel button)");
+		configInput(STAGE_SKIP_POLY_INPUT, "Stage SKIP gate (poly, ch. 1-16 = stage 1-16, high overrides panel button)");
 
 		configOutput(START_CYCLE_A_OUTPUT, "Section A Start of Cycle trigger");
 		configOutput(END_CYCLE_A_OUTPUT, "Section A End of Cycle trigger");

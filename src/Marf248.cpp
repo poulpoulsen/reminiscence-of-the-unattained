@@ -900,6 +900,35 @@ struct Marf248 : Module {
 		}
 		}
 
+		// Stage SKIP Poly-Gate vom Trigger-Expander: bewusst AUSSERHALB des
+		// stageButtonDivider-Blocks oben und jeden Frame verarbeitet, da CV
+		// pegelgetreu reagieren soll, statt mit dessen Dezimierungs-Latenz
+		// (anders als die reinen Klick-Buttons, wo das laut Profiling
+		// unerheblich ist). Nur wirksam, solange die Buchse gepatcht ist -
+		// dann hat das CV Vorrang und ueberschreibt einen im selben Frame
+		// verarbeiteten manuellen Klick auf STAGE_SKIP_PARAM (siehe
+		// stageSkipTrigger-Verarbeitung oben). Ohne Kabel bleibt exakt der
+		// zuletzt per Klick gesetzte Zustand erhalten. getPolyVoltage(i)
+		// liefert 0V fuer nicht gepatchte/unbenutzte Kanaele (siehe
+		// PRESET_LOAD_POLY_INPUT-Kommentar in Marf248TriggerExpander.hpp),
+		// loescht MOD_SKIP fuer die betreffende Stage also automatisch.
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_SKIP_POLY_INPUT).isConnected()) {
+			const float GATE_THRESHOLD = 2.f;
+			for (int i = 0; i < NUM_STAGES; i++) {
+				bool skipGateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_SKIP_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
+				if (skipGateHigh) {
+					stageModifier[i] |= MOD_SKIP;
+				}
+				else {
+					stageModifier[i] &= ~MOD_SKIP;
+				}
+				// Eigenstaendiges Licht-Update statt auf den naechsten
+				// stageButtonDivider-Zyklus zu warten - CV-Override soll
+				// optisch ohne Dezimierungs-Latenz sichtbar sein.
+				lights[STAGE_SKIP_LIGHT + i].setBrightness(skipGateHigh ? 1.f : 0.f);
+			}
+		}
+
 		float stageVoltage[NUM_STAGES];
 		float stageTime[NUM_STAGES];
 		float resolvedVoltage[NUM_STAGES];
@@ -2107,7 +2136,7 @@ struct Marf248Widget : ModuleWidget {
 			addParam(createParamCentered<LEDButton>(mm2px(Vec(x, 48)), module, Marf248::STAGE_PULSE2_PARAM + i));
 			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x, 48)), module, Marf248::STAGE_PULSE2_LIGHT + i));
 			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + tripleSpreadStage, 48)), module, Marf248::STAGE_SKIP_PARAM + i));
-			addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(x + tripleSpreadStage, 48)), module, Marf248::STAGE_SKIP_LIGHT + i));
+			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + tripleSpreadStage, 48)), module, Marf248::STAGE_SKIP_LIGHT + i));
 
 			addParam(createParamCentered<LEDButton>(mm2px(Vec(x - tripleSpreadStage, 56)), module, Marf248::STAGE_STOP_PARAM + i));
 			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x - tripleSpreadStage, 56)), module, Marf248::STAGE_STOP_LIGHT + i));
