@@ -23,10 +23,15 @@ struct Marf248TriggerExpander : Module {
 	enum InputId {
 		CLEAR_INPUT,
 		RESET_VALUES_INPUT,
-		// Direkter Zugriff: Trigger p laedt Preset p+1 sofort, ohne den
-		// Arm-Mechanismus (Load-Taster) des Hauptpanels - siehe
-		// Marf248::process().
-		ENUMS(PRESET_LOAD_INPUT, 12),
+		// Poly-Umbau (ersetzt die vorherigen 12 Einzelbuchsen ENUMS
+		// (PRESET_LOAD_INPUT, 12) - Breaking Change fuer bestehende Patches,
+		// die auf die alten Einzel-Inputs gepatcht hatten): ein einzelner
+		// polyphoner Eingang, Kanal p (0-11) laedt Preset p+1 sofort, ohne
+		// den Arm-Mechanismus (Load-Taster) des Hauptpanels - siehe
+		// Marf248::process(). Unbenutzte/unpatchte Kanaele liefern 0V
+		// (getPolyVoltage() faellt automatisch darauf zurueck), loesen also
+		// keinen Trigger aus.
+		PRESET_LOAD_POLY_INPUT,
 		SCALE_MAJOR_INPUT,
 		SCALE_MINOR_INPUT,
 		SCALE_CHROMATIC_INPUT,
@@ -43,6 +48,17 @@ struct Marf248TriggerExpander : Module {
 		// den getrennten Panel-Tastern.
 		STROBE_A_INPUT,
 		STROBE_B_INPUT,
+		// Start/Stop-Gate pro Section: reine Pegel-Logik (Gate high =
+		// running, Gate low = kein Einfluss mehr), unabhaengig vom
+		// Start/Stop-Taster (RUN_A/B_PARAM) des Hauptmoduls - ODER-
+		// verknuepft (siehe Afg::process() in Marf248.hpp: effectiveRunning
+		// = running || runGateHigh). Der Taster-Zustand selbst bleibt dabei
+		// unveraendert erhalten: sobald das Gate wieder auf Low faellt,
+		// greift wieder genau der Zustand, den der Taster zuletzt
+		// eingestellt hat. Schmitt-Trigger-Hysterese (0.1V/1V) gegen
+		// Gate-Jitter am Umschaltpunkt, siehe Afg::runGateTrigger.
+		RUN_GATE_A_INPUT,
+		RUN_GATE_B_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
@@ -69,15 +85,15 @@ struct Marf248TriggerExpander : Module {
 
 		configInput(CLEAR_INPUT, "Global Clear trigger");
 		configInput(RESET_VALUES_INPUT, "Reset Values trigger");
-		for (int p = 0; p < 12; p++) {
-			configInput(PRESET_LOAD_INPUT + p, string::f("Load preset %d trigger", p + 1));
-		}
+		configInput(PRESET_LOAD_POLY_INPUT, "Load preset trigger (poly, ch. 1-12 = preset 1-12)");
 		configInput(SCALE_MAJOR_INPUT, "Select Major scale trigger");
 		configInput(SCALE_MINOR_INPUT, "Select Minor scale trigger");
 		configInput(SCALE_CHROMATIC_INPUT, "Select Chromatic scale trigger");
 		configInput(KEY_CV_INPUT, "Key select CV (0-10V = C..B)");
 		configInput(STROBE_A_INPUT, "Section A external Strobe (SEXT)");
 		configInput(STROBE_B_INPUT, "Section B external Strobe (SEXT)");
+		configInput(RUN_GATE_A_INPUT, "Section A Start/Stop gate (high = run, OR'd with panel button)");
+		configInput(RUN_GATE_B_INPUT, "Section B Start/Stop gate (high = run, OR'd with panel button)");
 
 		configOutput(START_CYCLE_A_OUTPUT, "Section A Start of Cycle trigger");
 		configOutput(END_CYCLE_A_OUTPUT, "Section A End of Cycle trigger");

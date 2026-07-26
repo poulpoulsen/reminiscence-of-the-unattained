@@ -316,6 +316,16 @@ struct Afg {
 
 	int currentStage = 0;
 	bool running = false;
+	// Effektiver Lauf-Zustand dieses Frames: running (Taster/Start-Stop-
+	// Puls) ODER-verknuepft mit einem high anliegenden Start/Stop-Gate vom
+	// Trigger-Expander (RUN_GATE_A/B_INPUT). Bewusst getrennt von running
+	// gehalten (statt running direkt zu ueberschreiben), da running den
+	// Taster-Zustand dauerhaft speichert - faellt das Gate wieder auf Low,
+	// soll wieder genau der zuletzt vom Taster eingestellte Zustand gelten,
+	// ohne dass der High-Moment des Gates das persistente running
+	// veraendert hat. Wird von Marf248::process() fuer RUN-Light/Status
+	// anstelle von running ausgelesen (siehe dort).
+	bool effectiveRunning = false;
 	float elapsed = 0.f;
 
 	// Slew-Zustand: voltageOut ist der zuletzt ausgegebene Wert; voltageFrom
@@ -328,6 +338,12 @@ struct Afg {
 	dsp::SchmittTrigger startTrigger;
 	dsp::SchmittTrigger stopTrigger;
 	dsp::SchmittTrigger runButtonTrigger;
+	// Pegel-Erkennung (kein Edge-Trigger) fuer das Start/Stop-Gate vom
+	// Trigger-Expander: .process() wird jeden Frame aufgerufen, aber nur
+	// .isHigh() ausgewertet - das liefert den aktuellen Gate-Zustand
+	// inklusive 0.1V/1V-Schmitt-Hysterese gegen Jitter am Umschaltpunkt
+	// (siehe Afg::process()).
+	dsp::SchmittTrigger runGateTrigger;
 	dsp::PulseGenerator allPulseGen;
 	// Programmed Pulse Outputs P1/P2: eigene Pulsgeneratoren, unabhaengig von
 	// allPulseGen (das bei JEDER neuen Stage feuert). Diese hier feuern nur,
@@ -593,6 +609,7 @@ struct Afg {
 	             int quantKey, int quantScaleMode,
 	             float runButtonValue, bool startConnected, float startVoltage,
 	             bool stopConnected, float stopVoltage,
+	             bool runGateConnected, float runGateVoltage,
 	             float* outVoltage, float* outTime, float* outAllPulse,
 	             float* outP1, float* outP2,
 	             float* outStartCycle, float* outEndCycle, float* outRegateGap) {
@@ -607,6 +624,18 @@ struct Afg {
 		if (stopConnected && stopTrigger.process(stopVoltage)) {
 			running = false;
 		}
+
+		// Start/Stop-Gate (Trigger-Expander, RUN_GATE_A/B_INPUT): reine
+		// Pegel-Logik statt Trigger-Flanke, mit 0.1V/1V-Schmitt-Hysterese
+		// gegen Gate-Jitter am Umschaltpunkt. ODER-verknuepft mit running
+		// (Taster/Start-Stop-Puls) statt es zu ueberschreiben, siehe
+		// effectiveRunning-Kommentar oben. .process() wird auch bei nicht
+		// verbundenem Eingang mit 0V aufgerufen, damit der interne
+		// Hysterese-Zustand sauber auf Low faellt (statt "haengen" zu
+		// bleiben), falls das Kabel waehrend eines High-Gates gezogen wird.
+		runGateTrigger.process(runGateConnected ? runGateVoltage : 0.f, 0.1f, 1.f);
+		bool runGateHigh = runGateConnected && runGateTrigger.isHigh();
+		effectiveRunning = running || runGateHigh;
 
 		bool stageIsStop = stageModifier[currentStage] & MOD_STOP;
 		bool stageIsSustain = stageModifier[currentStage] & MOD_SUSTAIN;
@@ -639,7 +668,7 @@ struct Afg {
 		}
 		sustainEnableWasHeld = statusHeld;
 
-		if (running && !stageIsStop && !heldBySustain && !heldByEnable) {
+		if (effectiveRunning && !stageIsStop && !heldBySustain && !heldByEnable) {
 			if (stageIsSkip) {
 				// Skip wirkt sofort, nicht erst nach Ablauf der Stage-Zeit -
 				// falls z.B. Reset/Strobe auf eine Skip-Stage gelandet ist,

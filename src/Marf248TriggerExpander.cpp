@@ -48,47 +48,50 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, 20)), module, Marf248TriggerExpander::CLEAR_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, 20)), module, Marf248TriggerExpander::RESET_VALUES_INPUT));
 
-		// Reihen 2-7: Preset Load 1-12, zwei Spalten (1,3,5,7,9,11 links /
-		// 2,4,6,8,10,12 rechts), direkter Zugriff ohne Load-Arm-Taster.
-		const float presetStartY = 30.f;
-		// War 9.5mm; auf 8.8mm verengt, um unten Platz fuer die neue SEXT-
-		// Reihe (Strobe A/B) zu schaffen, ohne mit den unteren Befestigungs-
-		// schrauben (~y=123.4mm) zu kollidieren. NICHT weiter verengen ohne
-		// visuellen Check auf dem echten System (Sandbox hat kein Display,
-		// siehe Projektnotizen) - 8.8mm ist bewusst konservativ gewaehlt.
-		const float presetStepY = 8.8f;
-		for (int row = 0; row < 6; row++) {
-			float y = presetStartY + row * presetStepY;
-			int leftPreset = row * 2;
-			int rightPreset = row * 2 + 1;
-			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, y)), module, Marf248TriggerExpander::PRESET_LOAD_INPUT + leftPreset));
-			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, y)), module, Marf248TriggerExpander::PRESET_LOAD_INPUT + rightPreset));
-		}
+		// Reihen ab hier: 9.5mm-Raster (statt der vorherigen 8.8mm) - durch
+		// den Umbau der 12 Einzel-Preset-Buchsen auf einen einzelnen Poly-
+		// Input ist genug Platz frei, um wieder auf das grosszuegigere
+		// Original-Raster zurueckzugehen UND die neue Run-Gate-Reihe
+		// unterzubringen, ohne mit den unteren Befestigungsschrauben
+		// (~y=123.4mm) zu kollidieren.
+		const float stepY = 9.5f;
 
-		// Reihe 8: Scale Major / Minor.
-		float yScale1 = presetStartY + 6 * presetStepY;
+		// Reihe 2: Preset Load (Poly, Kanal 1-12 = Preset 1-12) - mittig
+		// zwischen den beiden Spalten, da nur noch eine Buchse.
+		float yPreset = 20.f + stepY;
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec((colA + colB) / 2.f, yPreset)), module, Marf248TriggerExpander::PRESET_LOAD_POLY_INPUT));
+
+		// Reihe 3: Scale Major / Minor.
+		float yScale1 = yPreset + stepY;
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yScale1)), module, Marf248TriggerExpander::SCALE_MAJOR_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yScale1)), module, Marf248TriggerExpander::SCALE_MINOR_INPUT));
 
-		// Reihe 9: Scale Chromatic / Key CV.
-		float yScale2 = yScale1 + presetStepY;
+		// Reihe 4: Scale Chromatic / Key CV.
+		float yScale2 = yScale1 + stepY;
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yScale2)), module, Marf248TriggerExpander::SCALE_CHROMATIC_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yScale2)), module, Marf248TriggerExpander::KEY_CV_INPUT));
 
-		// Reihe 10-11: Start-/End-of-Cycle, Section A dann B.
-		float yCycleA = yScale2 + presetStepY;
+		// Reihe 5-6: Start-/End-of-Cycle, Section A dann B.
+		float yCycleA = yScale2 + stepY;
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colA, yCycleA)), module, Marf248TriggerExpander::START_CYCLE_A_OUTPUT));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colB, yCycleA)), module, Marf248TriggerExpander::END_CYCLE_A_OUTPUT));
 
-		float yCycleB = yCycleA + presetStepY;
+		float yCycleB = yCycleA + stepY;
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colA, yCycleB)), module, Marf248TriggerExpander::START_CYCLE_B_OUTPUT));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colB, yCycleB)), module, Marf248TriggerExpander::END_CYCLE_B_OUTPUT));
 
-		// Reihe 12: SEXT - externe Strobe-Pulse Section A / B (siehe
+		// Reihe 7: SEXT - externe Strobe-Pulse Section A / B (siehe
 		// Marf248TriggerExpander.hpp und Marf248::process()).
-		float ySext = yCycleB + presetStepY;
+		float ySext = yCycleB + stepY;
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, ySext)), module, Marf248TriggerExpander::STROBE_A_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, ySext)), module, Marf248TriggerExpander::STROBE_B_INPUT));
+
+		// Reihe 8 (NEU): Start/Stop-Gate Section A / B (Pegel, ODER-
+		// verknuepft mit dem Panel-Taster - siehe Marf248TriggerExpander.hpp
+		// und Afg::process() in Marf248.hpp).
+		float yRunGate = ySext + stepY;
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yRunGate)), module, Marf248TriggerExpander::RUN_GATE_A_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yRunGate)), module, Marf248TriggerExpander::RUN_GATE_B_INPUT));
 	}
 };
 

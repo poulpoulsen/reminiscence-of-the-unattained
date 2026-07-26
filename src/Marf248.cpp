@@ -958,6 +958,27 @@ struct Marf248 : Module {
 		}
 		const float TIME_CV_SPAN_VOLTS = 5.f;
 
+		// Slew-Curve-CV (analoges Muster zur Stage-Time-CV oben): Attenuverter
+		// skaliert die eingehende Poly-CV, der globale Bias-Knob wirkt dagegen
+		// UNABHAENGIG vom Verbindungsstatus - daher curveGlobalBias auch dann
+		// auslesen, wenn (theoretisch) kein Kabel am CURVE_CV_INPUT haengt.
+		// Fehlt der ganze Expander, bleiben beide Werte bei 0 (Default), die
+		// Stage-Curve-Berechnung unten faellt dann automatisch auf reines
+		// Trimpot-Verhalten zurueck (unveraendert wie bisher).
+		float cvAttenCurve = 0.f, curveGlobalBias = 0.f;
+		int curveCvChannels = 0;
+		Input* curveCvInput = nullptr;
+		if (cvExp) {
+			cvAttenCurve = cvExp->getParam(Marf248CvExpander::CURVE_CV_ATTEN_PARAM).getValue();
+			curveGlobalBias = cvExp->getParam(Marf248CvExpander::CURVE_GLOBAL_PARAM).getValue();
+			curveCvInput = &cvExp->getInput(Marf248CvExpander::CURVE_CV_INPUT);
+			curveCvChannels = curveCvInput->getChannels();
+		}
+		// Gleiche Konvention wie TIME_CV_SPAN_VOLTS: +-5V CV bei vollem
+		// Attenuverter-Ausschlag deckt die komplette Curve-Knob-Spanne (0..1)
+		// ab (Kinovice-Entscheidung, siehe Sessionverlauf).
+		const float CURVE_CV_SPAN_VOLTS = 5.f;
+
 		for (int i = 0; i < NUM_STAGES; i++) {
 			// Pickup: siehe loadPreset()/PickupState. Ausserhalb eines
 			// ausstehenden Pickups liefert resolve() einfach den rohen
@@ -1046,18 +1067,41 @@ struct Marf248 : Module {
 			//   links  (knob=0)   -> Power 1.0   (linear, wie bisher)
 			//   rechts (knob=1)   -> Power 15.6  (deutlich extremer als bisher)
 			float knob = pickupCurve[i].resolve(params[STAGE_CURVE_PARAM + i].getValue());
+
+			// Slew-Curve-CV + globaler Bias: beide addieren sich zusaetzlich
+			// zur per-Stage Curve-Trimpot-Position (knob), BEVOR daraus die
+			// Power berechnet wird. curveCvAdd wirkt nur pro Kanal, wenn
+			// tatsaechlich ein Poly-Kabel mit ausreichend Kanaelen anliegt;
+			// curveGlobalBias wirkt immer, auch ohne Kabel (siehe Scan oben).
+			// Das nachfolgende Clamp auf 0..1 stellt sicher, dass CV/Bias die
+			// Kurve nicht ueber die durch den Knob selbst erreichbaren
+			// Extreme (linear bei 0, staerkste Kruemmung bei 1) hinaus
+			// treiben koennen - die zulaessige Power-Spanne bleibt also
+			// unangetastet.
+			float curveCvAdd = 0.f;
+			if (cvExp && i < curveCvChannels) {
+				curveCvAdd = cvAttenCurve * (curveCvInput->getVoltage(i) / CURVE_CV_SPAN_VOLTS);
+			}
+			float effectiveKnob = rack::clamp(knob + curveCvAdd + curveGlobalBias, 0.f, 1.f);
+
 			// std::pow() ist teuer und wurde bisher bei JEDEM Sample fuer
 			// alle 16 Stages neu berechnet (16x pro Sample bei 48kHz =
 			// ~768000 Aufrufe/Sekunde), unabhaengig davon, ob sich der Knob
 			// seit dem letzten Sample ueberhaupt bewegt hat. Jetzt: nur bei
 			// tatsaechlicher Aenderung neu rechnen, sonst gecachten Wert
 			// wiederverwenden (siehe cachedCurvePower/lastCurveKnob oben).
-			if (knob != lastCurveKnob[i]) {
-				float bipolar = 2.f * knob - 1.f; // -1 links .. 0 Mitte .. +1 rechts
+			// Der Cache-Vergleich laeuft jetzt gegen effectiveKnob statt den
+			// rohen Trimpot-Wert, da sich sonst eine anliegende CV nicht
+			// mehr auswirken wuerde (Cache wuerde faelschlich "unveraendert"
+			// erkennen, obwohl sich effectiveKnob durch die CV laufend
+			// aendert) - bei aktiver CV wird dadurch effektiv jeden Sample
+			// neu gerechnet, was beabsichtigt und noetig ist.
+			if (effectiveKnob != lastCurveKnob[i]) {
+				float bipolar = 2.f * effectiveKnob - 1.f; // -1 links .. 0 Mitte .. +1 rechts
 				float factor = CURVE_FACTOR_CENTER
 					+ (CURVE_FACTOR_EXTREME - CURVE_FACTOR_CENTER) * (bipolar * bipolar);
-				cachedCurvePower[i] = std::pow(SLEW_CURVE_POWER, factor * knob);
-				lastCurveKnob[i] = knob;
+				cachedCurvePower[i] = std::pow(SLEW_CURVE_POWER, factor * effectiveKnob);
+				lastCurveKnob[i] = effectiveKnob;
 			}
 			stageCurvePower[i] = cachedCurvePower[i];
 		}
@@ -1193,6 +1237,10 @@ struct Marf248 : Module {
 			params[RUN_A_PARAM].getValue(),
 			inputs[START_A_INPUT].isConnected(), inputs[START_A_INPUT].getVoltage(),
 			inputs[STOP_A_INPUT].isConnected(), inputs[STOP_A_INPUT].getVoltage(),
+			// Start/Stop-Gate vom Trigger-Expander (RUN_GATE_A_INPUT):
+			// unverbunden, wenn kein Trigger-Expander andockt.
+			trigExp && trigExp->getInput(Marf248TriggerExpander::RUN_GATE_A_INPUT).isConnected(),
+			trigExp ? trigExp->getInput(Marf248TriggerExpander::RUN_GATE_A_INPUT).getVoltage() : 0.f,
 			&vA, &tA, &apA, &p1A, &p2A, &scA, &ecA, &rgA);
 		outputs[VOUT_A_OUTPUT].setVoltage(vA);
 		outputs[TOUT_A_OUTPUT].setVoltage(tA);
@@ -1208,6 +1256,10 @@ struct Marf248 : Module {
 			params[RUN_B_PARAM].getValue(),
 			inputs[START_B_INPUT].isConnected(), inputs[START_B_INPUT].getVoltage(),
 			inputs[STOP_B_INPUT].isConnected(), inputs[STOP_B_INPUT].getVoltage(),
+			// Start/Stop-Gate vom Trigger-Expander (RUN_GATE_B_INPUT):
+			// unverbunden, wenn kein Trigger-Expander andockt.
+			trigExp && trigExp->getInput(Marf248TriggerExpander::RUN_GATE_B_INPUT).isConnected(),
+			trigExp ? trigExp->getInput(Marf248TriggerExpander::RUN_GATE_B_INPUT).getVoltage() : 0.f,
 			&vB, &tB, &apB, &p1B, &p2B, &scB, &ecB, &rgB);
 		outputs[VOUT_B_OUTPUT].setVoltage(vB);
 		outputs[TOUT_B_OUTPUT].setVoltage(tB);
@@ -1232,8 +1284,13 @@ struct Marf248 : Module {
 			// Preset Load: direkter Zugriff, kein Arm-Mechanismus noetig (im
 			// Unterschied zum Panel-LOAD-Taster) - derselbe Leer-Slot-Schutz
 			// wie am Panel (siehe loadPreset()-Aufrufstelle weiter oben).
+			// Poly-Umbau: ein einzelner Input, Kanal p (0-11) = Preset p+1.
+			// getPolyVoltage(p) liefert 0V fuer nicht vorhandene/unbenutzte
+			// Kanaele (auch wenn der Jack komplett unpatched ist), loest
+			// also keinen Trigger aus - identisches Verhalten zu den
+			// vorherigen unpatchten Einzelbuchsen.
 			for (int p = 0; p < 12; p++) {
-				if (expPresetLoadTrigger[p].process(trigExp->getInput(Marf248TriggerExpander::PRESET_LOAD_INPUT + p).getVoltage())) {
+				if (expPresetLoadTrigger[p].process(trigExp->getInput(Marf248TriggerExpander::PRESET_LOAD_POLY_INPUT).getPolyVoltage(p))) {
 					if (presets[p].used) {
 						loadPreset(p);
 						presetFlash[p].trigger(0.2f);
@@ -1294,17 +1351,20 @@ struct Marf248 : Module {
 		}
 
 		// Dreifarbige Stage-Address-Statusanzeige (Manual "FUNCTION GENERATOR
-		// CONTROL - MODE"): Rot/Stop deckt Stop-Taster/-Puls (running==false),
-		// eine programmierte Stop-Stage (statusStoppedByStage, running bleibt
-		// intern true) und Continuous-Adressierung (addrContOn) ab. Gelb/Hold
-		// ist Sustain/Enable, das auf das Start-Gate wartet. Gruen/Run sonst.
-		bool stopA = !afgA.running || afgA.statusStoppedByStage || addrContOnA;
+		// CONTROL - MODE"): Rot/Stop deckt Stop-Taster/-Puls bzw. ein nicht
+		// aktives Start/Stop-Gate (effectiveRunning==false - siehe Afg::
+		// process(), ODER-Verknuepfung aus Taster-Zustand und Gate), eine
+		// programmierte Stop-Stage (statusStoppedByStage, running/
+		// effectiveRunning bleiben intern true) und Continuous-Adressierung
+		// (addrContOn) ab. Gelb/Hold ist Sustain/Enable, das auf das
+		// Start-Gate wartet. Gruen/Run sonst.
+		bool stopA = !afgA.effectiveRunning || afgA.statusStoppedByStage || addrContOnA;
 		bool holdA = !stopA && afgA.statusHeld;
 		lights[STOP_A_LIGHT].setBrightness(stopA ? 1.f : 0.f);
 		lights[HOLD_A_LIGHT].setBrightness(holdA ? 1.f : 0.f);
 		lights[RUN_A_LIGHT].setBrightness((!stopA && !holdA) ? 1.f : 0.f);
 
-		bool stopB = !afgB.running || afgB.statusStoppedByStage || addrContOnB;
+		bool stopB = !afgB.effectiveRunning || afgB.statusStoppedByStage || addrContOnB;
 		bool holdB = !stopB && afgB.statusHeld;
 		lights[STOP_B_LIGHT].setBrightness(stopB ? 1.f : 0.f);
 		lights[HOLD_B_LIGHT].setBrightness(holdB ? 1.f : 0.f);
