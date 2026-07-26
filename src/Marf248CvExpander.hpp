@@ -39,10 +39,31 @@ struct Marf248CvExpander : Module {
 		// verlaengert die obere Haelfte (bei positivem Attenuverter) - siehe
 		// Marf248.cpp, Stage-Time-CV-Scan.
 		TIME_CV_OFFSET_PARAM,
+		// Slew-Curve-CV (analog zur Stage-Time-CV oben, aber fuer die
+		// Kruemmung der Slew-Kurve statt der Stage-Zeit): Attenuverter
+		// skaliert/invertiert die eingehende Poly-CV, gleiche 5V-
+		// Referenzspanne wie bei Time CV (siehe Marf248.cpp,
+		// Slew-Curve-CV-Scan).
+		CURVE_CV_ATTEN_PARAM,
+		// Globaler Bias-Knob, wirkt IMMER auf alle 16 Stages, auch OHNE
+		// gepatchtes Kabel am CURVE_CV_INPUT - im Unterschied zum
+		// TIME_CV_OFFSET_PARAM oben (der nur die Nullpunktlage einer
+		// tatsaechlich angeschlossenen CV verschiebt und ohne Kabel
+		// wirkungslos bleibt). Kinovice-Entscheidung: echter unabhaengiger
+		// globaler Versatz statt eines reinen CV-Offsets.
+		CURVE_GLOBAL_PARAM,
 		PARAMS_LEN
 	};
 	enum InputId {
 		STAGE_TIME_CV_INPUT,
+		// Poly (16 = Stage 1-16): additive CV auf die Curve-Knob-Position
+		// jeder Stage, VOR der Power-Berechnung in Marf248::process()
+		// aufaddiert (siehe dortiger Kommentar). Wirkt zusaetzlich zur
+		// per Stage eingestellten Curve-Trimpot-Position, unabhaengig
+		// davon, ob MOD_SLEW_EXP/LOG gerade aktiv ist (nur dann aber
+		// hoerbar, da applySlewCurve() bei Linear/Stepped ohnehin nicht
+		// auf die Power zugreift).
+		CURVE_CV_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
@@ -67,7 +88,10 @@ struct Marf248CvExpander : Module {
 
 		configParam(TIME_CV_ATTEN_PARAM, -1.f, 1.f, 0.f, "Stage Time CV Attenuverter");
 		configParam(TIME_CV_OFFSET_PARAM, -10.f, 10.f, 0.f, "Stage Time CV Offset", "V");
+		configParam(CURVE_CV_ATTEN_PARAM, -1.f, 1.f, 0.f, "Slew Curve CV Attenuverter");
+		configParam(CURVE_GLOBAL_PARAM, -1.f, 1.f, 0.f, "Slew Curve globaler Bias");
 		configInput(STAGE_TIME_CV_INPUT, "Stage Time CV (poly, 16 = Stage 1-16)");
+		configInput(CURVE_CV_INPUT, "Slew Curve CV (poly, 16 = Stage 1-16)");
 		configOutput(GATE_A_OUTPUT, "Section A Gate (poly, 16 = Stage 1-16)");
 		configOutput(GATE_B_OUTPUT, "Section B Gate (poly, 16 = Stage 1-16)");
 	}
