@@ -12,3 +12,4 @@ build.log
 dep/
 src/*.zip
 perf.data*
+.obsidian/
