@@ -60,8 +60,9 @@ struct Marf248 : Module {
 		ENUMS(STAGE_NORMALIZE_PARAM, NUM_STAGES),
 		// Programmed Pulse Outputs 1/2 (Manual "Output Pulses"): je Stage
 		// unabhaengig togglebar, feuern beim Erreichen der Stage auf den
-		// modulweiten P1OUT/P2OUT der jeweiligen Section (siehe Afg::
-		// triggerStagePulses()). Skip ist eine reine Port-Erweiterung ohne
+		// modulweiten P1OUT/P2OUT der jeweiligen Section (kontinuierliche
+		// Flankenerkennung, siehe Afg::process()). Skip ist eine reine
+		// Port-Erweiterung ohne
 		// Manual-Entsprechung.
 		ENUMS(STAGE_PULSE1_PARAM, NUM_STAGES),
 		ENUMS(STAGE_PULSE2_PARAM, NUM_STAGES),
@@ -929,6 +930,136 @@ struct Marf248 : Module {
 			}
 		}
 
+		// Stage FIRST Poly-Gate vom Trigger-Expander: identisches Prinzip wie
+		// STAGE_SKIP_POLY_INPUT oben (siehe dortigen Kommentar fuer Details).
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_FIRST_POLY_INPUT).isConnected()) {
+			const float GATE_THRESHOLD = 2.f;
+			for (int i = 0; i < NUM_STAGES; i++) {
+				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_FIRST_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
+				if (gateHigh) {
+					stageModifier[i] |= MOD_FIRST;
+				}
+				else {
+					stageModifier[i] &= ~MOD_FIRST;
+				}
+				lights[STAGE_FIRST_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
+			}
+		}
+
+		// Stage LAST Poly-Gate vom Trigger-Expander: identisches Prinzip wie
+		// STAGE_SKIP_POLY_INPUT oben.
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_LAST_POLY_INPUT).isConnected()) {
+			const float GATE_THRESHOLD = 2.f;
+			for (int i = 0; i < NUM_STAGES; i++) {
+				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_LAST_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
+				if (gateHigh) {
+					stageModifier[i] |= MOD_LAST;
+				}
+				else {
+					stageModifier[i] &= ~MOD_LAST;
+				}
+				lights[STAGE_LAST_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
+			}
+		}
+
+		// Stage STOP Poly-Gate vom Trigger-Expander: identisches Prinzip wie
+		// STAGE_SKIP_POLY_INPUT oben.
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_STOP_POLY_INPUT).isConnected()) {
+			const float GATE_THRESHOLD = 2.f;
+			for (int i = 0; i < NUM_STAGES; i++) {
+				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_STOP_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
+				if (gateHigh) {
+					stageModifier[i] |= MOD_STOP;
+				}
+				else {
+					stageModifier[i] &= ~MOD_STOP;
+				}
+				lights[STAGE_STOP_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
+			}
+		}
+
+		// Stage SUSTAIN Poly-Gate vom Trigger-Expander: identisches Prinzip
+		// wie STAGE_SKIP_POLY_INPUT oben.
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_SUSTAIN_POLY_INPUT).isConnected()) {
+			const float GATE_THRESHOLD = 2.f;
+			for (int i = 0; i < NUM_STAGES; i++) {
+				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_SUSTAIN_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
+				if (gateHigh) {
+					stageModifier[i] |= MOD_SUSTAIN;
+				}
+				else {
+					stageModifier[i] &= ~MOD_SUSTAIN;
+				}
+				lights[STAGE_SUSTAIN_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
+			}
+		}
+
+		// Stage ENABLE Poly-Gate vom Trigger-Expander: identisches Prinzip
+		// wie STAGE_SKIP_POLY_INPUT oben.
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_ENABLE_POLY_INPUT).isConnected()) {
+			const float GATE_THRESHOLD = 2.f;
+			for (int i = 0; i < NUM_STAGES; i++) {
+				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_ENABLE_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
+				if (gateHigh) {
+					stageModifier[i] |= MOD_ENABLE;
+				}
+				else {
+					stageModifier[i] &= ~MOD_ENABLE;
+				}
+				lights[STAGE_ENABLE_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
+			}
+		}
+
+		// Stage PULSE1 Poly-Gate vom Trigger-Expander: identisches Prinzip
+		// wie STAGE_SKIP_POLY_INPUT oben.
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_PULSE1_POLY_INPUT).isConnected()) {
+			const float GATE_THRESHOLD = 2.f;
+			for (int i = 0; i < NUM_STAGES; i++) {
+				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_PULSE1_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
+				if (gateHigh) {
+					stageModifier[i] |= MOD_PULSE1;
+				}
+				else {
+					stageModifier[i] &= ~MOD_PULSE1;
+				}
+				lights[STAGE_PULSE1_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
+			}
+		}
+
+		// Stage PULSE2 Poly-Gate vom Trigger-Expander: identisches Prinzip
+		// wie STAGE_SKIP_POLY_INPUT oben.
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_PULSE2_POLY_INPUT).isConnected()) {
+			const float GATE_THRESHOLD = 2.f;
+			for (int i = 0; i < NUM_STAGES; i++) {
+				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_PULSE2_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
+				if (gateHigh) {
+					stageModifier[i] |= MOD_PULSE2;
+				}
+				else {
+					stageModifier[i] &= ~MOD_PULSE2;
+				}
+				lights[STAGE_PULSE2_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
+			}
+		}
+
+		// Stage SLOPE Poly-Gate vom Trigger-Expander: identisches Prinzip
+		// wie STAGE_SKIP_POLY_INPUT oben. MOD_SLOPED ist ein einfaches
+		// Ein/Aus-Bit (rampt vs. springt) - nicht zu verwechseln mit Shape
+		// (Lin/Exp/Log-Zyklus), das bewusst ohne CV-Override bleibt.
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_SLOPE_POLY_INPUT).isConnected()) {
+			const float GATE_THRESHOLD = 2.f;
+			for (int i = 0; i < NUM_STAGES; i++) {
+				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_SLOPE_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
+				if (gateHigh) {
+					stageModifier[i] |= MOD_SLOPED;
+				}
+				else {
+					stageModifier[i] &= ~MOD_SLOPED;
+				}
+				lights[STAGE_SLOPE_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
+			}
+		}
+
 		float stageVoltage[NUM_STAGES];
 		float stageTime[NUM_STAGES];
 		float resolvedVoltage[NUM_STAGES];
@@ -1346,7 +1477,7 @@ struct Marf248 : Module {
 			}
 
 			// Start-/End-of-Cycle je Section direkt in die Expander-Ausgaenge
-			// schreiben (siehe Afg::triggerStagePulses() fuer die Erzeugung).
+			// schreiben (siehe Afg::process() fuer die Erzeugung).
 			trigExp->getOutput(Marf248TriggerExpander::START_CYCLE_A_OUTPUT).setVoltage(scA);
 			trigExp->getOutput(Marf248TriggerExpander::END_CYCLE_A_OUTPUT).setVoltage(ecA);
 			trigExp->getOutput(Marf248TriggerExpander::START_CYCLE_B_OUTPUT).setVoltage(scB);
@@ -1841,7 +1972,7 @@ struct RangeKnob : RoundBlackKnob {
 // Ring komplett ausserhalb des Steckerkoerpers sichtbar bleibt, unabhaengig
 // von der Zeichenreihenfolge. Blinkt automatisch im Rhythmus des P1/P2-
 // Ausgabepulses, da dieser ohnehin nur kurz (1ms) ansteht (siehe
-// Afg::triggerStagePulses()) - keine zusaetzliche Blink-Logik noetig.
+// Afg::process()) - keine zusaetzliche Blink-Logik noetig.
 struct PulseRingLight : app::ModuleLightWidget {
 	PulseRingLight() {
 		box.size = mm2px(Vec(10.f, 10.f));

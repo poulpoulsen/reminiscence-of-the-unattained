@@ -42,7 +42,7 @@ enum StageModifierBits {
 	// unabhaengige Trigger-Flags, unabhaengig von den Voltage/Time-
 	// Modifiern. Loesen beim Erreichen der Stage einen kurzen Trigger auf
 	// P1OUT/P2OUT aus (analog zu APOUT, aber nur wenn das jeweilige Bit
-	// gesetzt ist) - siehe Afg::triggerStagePulses().
+	// gesetzt ist) - kontinuierliche Flankenerkennung, siehe Afg::process().
 	MOD_PULSE1 = 1 << 16,
 	MOD_PULSE2 = 1 << 17,
 	// Skip: reine Port-Erweiterung ohne Hardware-Vorbild. Eine als Skip
@@ -373,23 +373,34 @@ struct Afg {
 	dsp::PulseGenerator regateGen;
 	bool sustainEnableWasHeld = false;
 
-	// Loest P1/P2- sowie Start-/End-of-Cycle-Trigger aus, falls die
-	// aktuelle Stage entsprechend programmiert ist. Wird von advanceStage()
-	// und jumpToStage() nach dem Setzen von currentStage aufgerufen (gleiche
-	// Stelle wie allPulseGen).
-	void triggerStagePulses(const int stageModifier[NUM_STAGES]) {
-		if (stageModifier[currentStage] & MOD_PULSE1) {
-			p1Gen.trigger(1e-3f);
-		}
-		if (stageModifier[currentStage] & MOD_PULSE2) {
-			p2Gen.trigger(1e-3f);
-		}
-		if (stageModifier[currentStage] & MOD_FIRST) {
-			startCycleGen.trigger(1e-3f);
-		}
-		if (stageModifier[currentStage] & MOD_LAST) {
-			endCycleGen.trigger(1e-3f);
-		}
+	// Vorwerte fuer die kontinuierliche Flankenerkennung von P1/P2/First/Last
+	// unten in process() - siehe dortigen Kommentar fuer die vollstaendige
+	// Herleitung (Design-Diskussion: externes CV-Gate fuer PULSE1/2 via
+	// Trigger-Expander koennte den exakten Eintritts-Sample verpassen, wenn
+	// es "nur" beim Eintritt geprueft wird).
+	bool pulse1PrevActive = false;
+	bool pulse2PrevActive = false;
+	bool firstPrevActive = false;
+	bool lastPrevActive = false;
+
+	// Setzt die Flanken-Vorwerte fuer P1/P2/First/Last zurueck auf false -
+	// wird von advanceStage() und jumpToStage() nach dem Setzen von
+	// currentStage aufgerufen (gleiche Stelle wie allPulseGen), IMMER bei
+	// jedem (Wieder-)Eintritt, auch ohne Indexwechsel (Strobe-Wiederholung,
+	// Pendulum-Wendepunkt) - analog zu regateGen.trigger() oben, damit ein
+	// wiederholter manueller Sprung auf dieselbe Stage weiterhin jedesmal
+	// feuert (bisheriges Verhalten). Das eigentliche Feuern der
+	// Pulsgeneratoren passiert NICHT mehr hier, sondern kontinuierlich in
+	// process() - siehe dortigen Kommentar: ein bereits beim Eintritt
+	// gesetztes Bit zaehlt dank dieses Resets weiterhin als steigende
+	// Flanke, ein erst waehrend des Stage-Aufenthalts eintreffendes externes
+	// CV-Gate (Trigger-Expander STAGE_..._POLY_INPUT) wird zusaetzlich
+	// erfasst, statt verpasst zu werden.
+	void resetPulseEdgeState() {
+		pulse1PrevActive = false;
+		pulse2PrevActive = false;
+		firstPrevActive = false;
+		lastPrevActive = false;
 	}
 
 	// Status-Flags fuer die dreifarbige Stage-Address-LED (gruen/gelb/rot),
@@ -428,7 +439,7 @@ struct Afg {
 		if (currentStage == prevStage) {
 			regateGen.trigger(REGATE_GAP_SECONDS);
 		}
-		triggerStagePulses(stageModifier);
+		resetPulseEdgeState();
 	}
 
 	// Stage-Address-Feature: wird von Marf248::process() VOR dem eigentlichen
@@ -598,7 +609,7 @@ struct Afg {
 		if (sameStageReentry) {
 			regateGen.trigger(REGATE_GAP_SECONDS);
 		}
-		triggerStagePulses(stageModifier);
+		resetPulseEdgeState();
 	}
 
 	void process(float sampleTime,
@@ -685,6 +696,43 @@ struct Afg {
 				}
 			}
 		}
+
+		// P1/P2 sowie Start-/End-of-Cycle-Trigger (First/Last): kontinuierliche
+		// Flankenerkennung statt Momentaufnahme beim Stage-Eintritt. Vorher
+		// wertete triggerStagePulses() die Bits nur EINMAL exakt im
+		// Eintritts-Sample aus - ein extern per CV gesetztes Bit (Trigger-
+		// Expander STAGE_..._POLY_INPUT), das erst danach high wird, wurde
+		// dadurch verpasst und feuerte gar nicht mehr, bis zum naechsten
+		// Stage-Wechsel. resetPulseEdgeState() (aufgerufen von advanceStage()/
+		// jumpToStage(), IMMER bei jedem (Wieder-)Eintritt, auch ohne
+		// Indexwechsel) setzt die Vorwerte unten auf false zurueck, sodass:
+		// - ein beim Eintritt bereits gesetztes Bit weiterhin als steigende
+		//   Flanke zaehlt (bisheriges Verhalten unveraendert),
+		// - ein erst waehrend des Stage-Aufenthalts eintreffendes CV-Gate
+		//   zusaetzlich erkannt wird, sobald es high wird,
+		// - bei mehrfachem Gate-Wechsel waehrend EINES Stage-Aufenthalts
+		//   (z.B. externer Clock) JEDE steigende Flanke erneut feuert (freier
+		//   Clock-Betrieb statt "nur einmal pro Besuch" - Kinovice-Entscheidung).
+		bool pulse1Active = stageModifier[currentStage] & MOD_PULSE1;
+		bool pulse2Active = stageModifier[currentStage] & MOD_PULSE2;
+		bool firstActive  = stageModifier[currentStage] & MOD_FIRST;
+		bool lastActive   = stageModifier[currentStage] & MOD_LAST;
+		if (pulse1Active && !pulse1PrevActive) {
+			p1Gen.trigger(1e-3f);
+		}
+		if (pulse2Active && !pulse2PrevActive) {
+			p2Gen.trigger(1e-3f);
+		}
+		if (firstActive && !firstPrevActive) {
+			startCycleGen.trigger(1e-3f);
+		}
+		if (lastActive && !lastPrevActive) {
+			endCycleGen.trigger(1e-3f);
+		}
+		pulse1PrevActive = pulse1Active;
+		pulse2PrevActive = pulse2Active;
+		firstPrevActive = firstActive;
+		lastPrevActive = lastActive;
 
 		float t = stageTime[currentStage];
 		float phase = t > 0.f ? rack::clamp(elapsed / t, 0.f, 1.f) : 0.f;

@@ -69,12 +69,38 @@ struct Marf248TriggerExpander : Module {
 		// der zuletzt per Klick gesetzte Zustand erhalten - identisches
 		// Rueckfall-Verhalten wie bei RUN_GATE_A/B_INPUT.
 		STAGE_SKIP_POLY_INPUT,
+		// Stage FIRST/LAST/STOP/SUSTAIN/ENABLE/PULSE1/PULSE2 (je Poly, Kanal i
+		// = Stage i+1): identisches Pegel-Override-Prinzip wie
+		// STAGE_SKIP_POLY_INPUT oben - Kanal-Spannung >= GATE_THRESHOLD (2V)
+		// erzwingt das jeweilige Bit fuer die betreffende Stage, unterhalb
+		// loescht es das Bit. Nur wirksam, solange die Buchse gepatcht ist;
+		// dann hat das CV Vorrang und ueberschreibt einen manuellen Klick auf
+		// den jeweiligen STAGE_..._PARAM in Marf248::process() noch im
+		// selben Frame. Ohne Kabel bleibt exakt der zuletzt per Klick
+		// gesetzte Zustand erhalten. (SLOPE folgt weiter unten separat, siehe
+		// STAGE_SLOPE_POLY_INPUT - Shape/Lin-Exp-Log bleibt als einziger
+		// echter Mehrfach-Zyklus bewusst ohne CV-Override.)
+		STAGE_FIRST_POLY_INPUT,
+		STAGE_LAST_POLY_INPUT,
+		STAGE_STOP_POLY_INPUT,
+		STAGE_SUSTAIN_POLY_INPUT,
+		STAGE_ENABLE_POLY_INPUT,
+		STAGE_PULSE1_POLY_INPUT,
+		STAGE_PULSE2_POLY_INPUT,
+		// Stage SLOPE (Poly, Kanal i = Stage i+1): identisches Pegel-Override-
+		// Prinzip wie oben. MOD_SLOPED ist entgegen einer frueheren Annahme
+		// ein einfaches Ein/Aus-Bit (steuert nur, ob die Stage rampt oder
+		// springt) - NICHT zu verwechseln mit dem Shape-Button (Lin/Exp/Log-
+		// Zyklus, STAGE_SHAPE_PARAM), der bewusst weiterhin ohne CV-Override
+		// bleibt, da er tatsaechlich ein 3-Zustands-Zyklus ist.
+		STAGE_SLOPE_POLY_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
 		// Feuert, wenn die jeweilige Section (A/B) eine MOD_FIRST- bzw.
 		// MOD_LAST-markierte Stage erreicht - unabhaengig von Cycle/
-		// Pendulum-Richtung (siehe Afg::triggerStagePulses() in Marf248.hpp).
+		// Pendulum-Richtung (kontinuierliche Flankenerkennung, siehe
+		// Afg::process() in Marf248.hpp).
 		START_CYCLE_A_OUTPUT,
 		END_CYCLE_A_OUTPUT,
 		START_CYCLE_B_OUTPUT,
@@ -105,6 +131,14 @@ struct Marf248TriggerExpander : Module {
 		configInput(RUN_GATE_A_INPUT, "Section A Start/Stop gate (high = run, OR'd with panel button)");
 		configInput(RUN_GATE_B_INPUT, "Section B Start/Stop gate (high = run, OR'd with panel button)");
 		configInput(STAGE_SKIP_POLY_INPUT, "Stage SKIP gate (poly, ch. 1-16 = stage 1-16, high overrides panel button)");
+		configInput(STAGE_FIRST_POLY_INPUT, "Stage FIRST gate (poly, ch. 1-16 = stage 1-16, high overrides panel button)");
+		configInput(STAGE_LAST_POLY_INPUT, "Stage LAST gate (poly, ch. 1-16 = stage 1-16, high overrides panel button)");
+		configInput(STAGE_STOP_POLY_INPUT, "Stage STOP gate (poly, ch. 1-16 = stage 1-16, high overrides panel button)");
+		configInput(STAGE_SUSTAIN_POLY_INPUT, "Stage SUSTAIN gate (poly, ch. 1-16 = stage 1-16, high overrides panel button)");
+		configInput(STAGE_ENABLE_POLY_INPUT, "Stage ENABLE gate (poly, ch. 1-16 = stage 1-16, high overrides panel button)");
+		configInput(STAGE_PULSE1_POLY_INPUT, "Stage PULSE1 gate (poly, ch. 1-16 = stage 1-16, high overrides panel button)");
+		configInput(STAGE_PULSE2_POLY_INPUT, "Stage PULSE2 gate (poly, ch. 1-16 = stage 1-16, high overrides panel button)");
+		configInput(STAGE_SLOPE_POLY_INPUT, "Stage SLOPE gate (poly, ch. 1-16 = stage 1-16, high overrides panel button)");
 
 		configOutput(START_CYCLE_A_OUTPUT, "Section A Start of Cycle trigger");
 		configOutput(END_CYCLE_A_OUTPUT, "Section A End of Cycle trigger");

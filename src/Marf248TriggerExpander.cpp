@@ -21,7 +21,10 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 	Marf248TriggerExpanderWidget(Marf248TriggerExpander* module) {
 		setModule(module);
 
-		const float HP = 12.f;
+		// 12HP -> 18HP: die 7 neuen Stage-Modifier-Poly-Inputs (First/Last/
+		// Stop/Sustain/Enable/Pulse1/Pulse2, analog zu STAGE_SKIP_POLY_INPUT)
+		// brauchen eine 3. Spalte - siehe Marf248TriggerExpander.hpp.
+		const float HP = 18.f;
 		box.size = Vec(HP * RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
 
 		PanelBackground* panelBg = new PanelBackground;
@@ -39,6 +42,9 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 
 		float colA = 16.f;
 		float colB = 45.f;
+		// 3. Spalte im gleichen Abstand wie colA-colB (29mm), fuer die
+		// Stage-Modifier-Poly-Inputs unten.
+		float colC = 74.f;
 
 		// Link-Licht: zeigt an, ob gerade ein Marf248 andockt (siehe
 		// Marf248TriggerExpander::process()).
@@ -93,11 +99,29 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yRunGate)), module, Marf248TriggerExpander::RUN_GATE_A_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yRunGate)), module, Marf248TriggerExpander::RUN_GATE_B_INPUT));
 
-		// Reihe 9 (NEU): Stage SKIP Poly-Gate - mittig wie Preset Load, da
-		// nur eine einzelne Buchse fuer alle 16 Stages (Kanal i = Stage i+1,
-		// siehe Marf248TriggerExpander.hpp und Marf248::process()).
+		// Reihe 9: Stage-Adress-Modifier Poly-Gates (Skip/First/Last) - jetzt
+		// zu dritt in einer Reihe dank 3. Spalte, statt Skip allein mittig
+		// wie zuvor (siehe Marf248TriggerExpander.hpp und Marf248::process()).
 		float yStageSkip = yRunGate + stepY;
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec((colA + colB) / 2.f, yStageSkip)), module, Marf248TriggerExpander::STAGE_SKIP_POLY_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yStageSkip)), module, Marf248TriggerExpander::STAGE_SKIP_POLY_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yStageSkip)), module, Marf248TriggerExpander::STAGE_FIRST_POLY_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, yStageSkip)), module, Marf248TriggerExpander::STAGE_LAST_POLY_INPUT));
+
+		// Reihe 10 (NEU): Stage-Zustands-Modifier Poly-Gates (Stop/Sustain/
+		// Enable), gleiches Prinzip wie Reihe 9.
+		float yStageState = yStageSkip + stepY;
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yStageState)), module, Marf248TriggerExpander::STAGE_STOP_POLY_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yStageState)), module, Marf248TriggerExpander::STAGE_SUSTAIN_POLY_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, yStageState)), module, Marf248TriggerExpander::STAGE_ENABLE_POLY_INPUT));
+
+		// Reihe 11 (NEU): Stage-Pulse-Modifier Poly-Gates (Pulse1/Pulse2) plus
+		// SLOPE in der frei gebliebenen 3. Spalte (einfaches Ein/Aus-Bit,
+		// passt thematisch zwar eher zur Adress-/Zustands-Gruppe, aber hier
+		// war noch Platz frei - kein Grund fuer eine 4. Reihe).
+		float yStagePulse = yStageState + stepY;
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yStagePulse)), module, Marf248TriggerExpander::STAGE_PULSE1_POLY_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yStagePulse)), module, Marf248TriggerExpander::STAGE_PULSE2_POLY_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, yStagePulse)), module, Marf248TriggerExpander::STAGE_SLOPE_POLY_INPUT));
 	}
 };
 
