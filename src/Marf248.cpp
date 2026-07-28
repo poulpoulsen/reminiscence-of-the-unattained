@@ -24,6 +24,15 @@ struct StageVoltageQuantity : ParamQuantity {
 // nach der vollstaendigen Definition von Marf248 implementiert (siehe unten).
 struct StageTimeQuantity : ParamQuantity {
 	int stageIndex = 0;
+	// Dial-Wert 0-10 (Buchla-Cookbook-Konvention: die Zeit-Regler sind am
+	// Original mit einer 0-10-Skala bedruckt, Tabellenwerte in Patches wie
+	// dem String Patch beziehen sich direkt darauf). Intern bleibt der rohe
+	// Parameterwert weiterhin 0..1 (kein Breaking Change fuer bestehende
+	// Presets, die MOD_TIME_EXT-Kanalwahl oder resolvedTime[] in
+	// Marf248::process() - siehe dortige Kommentare) - nur Anzeige und
+	// Rechtsklick-Zahleneingabe werden auf 0-10 umgerechnet.
+	float getDisplayValue() override { return getValue() * 10.f; }
+	void setDisplayValue(float displayValue) override { setValue(displayValue / 10.f); }
 	std::string getDisplayValueString() override;
 };
 
@@ -1706,18 +1715,22 @@ std::string StageVoltageQuantity::getDisplayValueString() {
 // zeigen, was ohne Kontext bedeutungslos waere.
 std::string StageTimeQuantity::getDisplayValueString() {
 	Marf248* m = dynamic_cast<Marf248*>(module);
+	// Dial-Wert (0-10, Buchla-Konvention) fuehrend, exakte Sekundenzahl in
+	// Klammern dahinter - deckt beide Bedarfsfaelle in einem Tooltip ab
+	// (Cookbook-Tabellenwerte direkt ablesbar UND exakte Zeit sichtbar).
+	// Rechtsklick-Zahleneingabe (setDisplayValueString(), Basisklasse) liest
+	// per std::stof ohnehin nur die fuehrende Zahl und ignoriert den Rest -
+	// der Klammerzusatz stoert die Eingabe also nicht.
 	if (!m) {
-		return ParamQuantity::getDisplayValueString();
+		return string::f("%.1f", getDisplayValue());
 	}
 	int idx = getTimeRangeIndex(m->stageModifier[stageIndex]);
 	float seconds = TIME_RANGE_MIN[idx] + getValue() * (TIME_RANGE_MAX[idx] - TIME_RANGE_MIN[idx]);
 	// TR1/TR2 bewegen sich im Millisekunden- bis niedrigen Zehntelbereich und
 	// brauchen daher mehr Nachkommastellen als TR3/TR4, sonst wuerde z.B.
 	// ".00 s" fuer den gesamten TR1-Bereich angezeigt.
-	if (seconds < 1.f) {
-		return string::f("%.3f s", seconds);
-	}
-	return string::f("%.2f s", seconds);
+	std::string secStr = (seconds < 1.f) ? string::f("%.3f s", seconds) : string::f("%.2f s", seconds);
+	return string::f("%.1f (%s)", getDisplayValue(), secStr.c_str());
 }
 
 
