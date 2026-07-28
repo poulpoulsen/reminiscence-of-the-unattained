@@ -326,6 +326,16 @@ struct Afg {
 	// veraendert hat. Wird von Marf248::process() fuer RUN-Light/Status
 	// anstelle von running ausgelesen (siehe dort).
 	bool effectiveRunning = false;
+	// Merkt sich, ob applyStageAddress() diesen Frame im Continuous-Modus
+	// lief (siehe dortigen Kommentar). Wird in process() verwendet, um a)
+	// den Timer-Auto-Advance waehrend Continuous zu unterdruecken (sonst
+	// koennte ein extern gehaltenes Trigger-Expander RUN_GATE die Stage
+	// zusaetzlich zur Adressierung weiterschalten - Doppelsteuerung) und
+	// b) trotzdem eine Slope-Rampe zum adressierten Zielwert laufen zu
+	// lassen (siehe MARF-Handbuch: "slope time is equal to the programmed
+	// interval time" - gilt laut Dokumentation auch bei externer/Continuous-
+	// Adressierung, nicht nur im Timer-Betrieb).
+	bool continuousActive = false;
 	float elapsed = 0.f;
 
 	// Slew-Zustand: voltageOut ist der zuletzt ausgegebene Wert; voltageFrom
@@ -415,13 +425,6 @@ struct Afg {
 	bool statusHeld = false;
 	bool statusStoppedByStage = false;
 
-	// Wird von process() jeden Frame mit der aktuellen Stage-Zeit befuellt,
-	// damit applyStageAddress() (das VOR process() aufgerufen wird und daher
-	// noch die Stage-Zeit vom letzten Frame kennt) elapsed zuverlaessig auf
-	// "fertig" setzen kann, ohne stageTime[] als zusaetzlichen Parameter
-	// durchreichen zu muessen.
-	float stageTimeHint = 0.f;
-
 	// Sprung auf eine konkrete Stage, ausserhalb des normalen Zeitablaufs
 	// (Reset/Strobe/Continuous-Adressierung). Startpunkt der Rampe ist wie
 	// bei advanceStage() der zuletzt ausgegebene Wert, damit ein Slew nicht
@@ -457,23 +460,60 @@ struct Afg {
 	//          der normale Zeitablauf/Slew wieder wie gewohnt weiter.
 	void applyStageAddress(bool continuous, int addr, bool strobePressed, bool resetPressed,
 	                        const int stageModifier[NUM_STAGES]) {
+		// Fuer den Auto-Advance-Guard und die Glide-Berechnung in process()
+		// IMMER aktuell halten, unabhaengig davon, welcher Zweig unten
+		// tatsaechlich greift (auch wenn z.B. resetPressed vorrangig behandelt
+		// wird) - siehe Kommentar bei der Member-Deklaration oben.
+		continuousActive = continuous;
+
 		if (resetPressed) {
-			int first = findFirstBefore(stageModifier, NUM_STAGES - 1);
+			int first = findLowestFirst(stageModifier);
 			jumpToStage(first, stageModifier);
 			return;
 		}
 		if (continuous) {
 			if (addr != currentStage) {
+				// jumpToStage() setzt voltageFrom = voltageOut und elapsed = 0 -
+				// exakt der Ausgangspunkt fuer eine normale Rampe. Frueher wurde
+				// elapsed hier stattdessen sofort auf "fertig" gezwungen
+				// (elapsed = stageTimeHint/1e6f), wodurch Slope in Continuous
+				// wirkungslos war (Phase startete bereits bei 1.0) - siehe
+				// Session-Diskussion: das widerspricht sowohl dem MARF-Handbuch
+				// ("slope time is equal to the programmed interval time") als
+				// auch dem String-Patch aus dem Cookbook, der Continuous+Slope
+				// bewusst fuer Glide-Verhalten kombiniert. Der eigentliche
+				// Rampen-Fortschritt (elapsed += sampleTime) passiert jetzt
+				// kontinuierlich in process(), siehe dortigen Kommentar.
 				jumpToStage(addr, stageModifier);
 			}
-			// Keine Rampe im Continuous-Modus: sofort auf Zielwert springen.
-			elapsed = stageTimeHint > 0.f ? stageTimeHint : 1e6f;
+			// Start/Stop-Konzept ist im Continuous-Modus nicht anwendbar (siehe
+			// Session-Diskussion: die Stage wird direkt adressiert, nicht per
+			// Timer durchlaufen) - running bleibt daher bewusst unwirksam.
 			running = false;
 			return;
 		}
 		if (strobePressed) {
 			jumpToStage(addr, stageModifier);
 		}
+	}
+
+	// Fuer Reset gedacht (siehe applyStageAddress()): findet die MOD_FIRST-
+	// Stage mit dem NIEDRIGSTEN Index, unabhaengig von currentStage - anders
+	// als findFirstBefore() (das die naechstgelegene First-Stage in einer
+	// bestimmten Suchrichtung liefert, gedacht fuer den Auto-Advance-Wrap).
+	// Bei nur einer First-Stage liefern beide Funktionen dasselbe Ergebnis;
+	// bei mehreren First-Bits (z.B. mehrere First/Last-Segmente, siehe
+	// Projektnotizen) soll Reset aber IMMER zum allerersten Segment
+	// springen, nicht zum naechstgelegenen von Stage 16 aus gesehen -
+	// findFirstBefore(NUM_STAGES-1) wuerde stattdessen die hoechstindizierte
+	// First-Stage finden (Rueckwaertssuche ab Index 15). Fallback: Stage 0,
+	// falls gar keine Stage MOD_FIRST traegt.
+	int findLowestFirst(const int stageModifier[NUM_STAGES]) const {
+		for (int i = 0; i < NUM_STAGES; i++) {
+			if (stageModifier[i] & MOD_FIRST)
+				return i;
+		}
+		return 0;
 	}
 
 	int findFirstBefore(const int stageModifier[NUM_STAGES], int idx) const {
@@ -668,7 +708,6 @@ struct Afg {
 
 		statusHeld = heldBySustain || heldByEnable;
 		statusStoppedByStage = stageIsStop;
-		stageTimeHint = stageTime[currentStage];
 
 		// Sustain/Enable-Freigabe: kein advanceStage()/jumpToStage()-Aufruf
 		// (currentStage bleibt gleich), aber aus Sicht eines nachgeschalteten
@@ -679,7 +718,7 @@ struct Afg {
 		}
 		sustainEnableWasHeld = statusHeld;
 
-		if (effectiveRunning && !stageIsStop && !heldBySustain && !heldByEnable) {
+		if (effectiveRunning && !continuousActive && !stageIsStop && !heldBySustain && !heldByEnable) {
 			if (stageIsSkip) {
 				// Skip wirkt sofort, nicht erst nach Ablauf der Stage-Zeit -
 				// falls z.B. Reset/Strobe auf eine Skip-Stage gelandet ist,
@@ -694,6 +733,26 @@ struct Afg {
 				if (elapsed >= stageTime[currentStage]) {
 					advanceStage(stageModifier);
 				}
+			}
+		}
+
+		// Continuous-Modus: kein Auto-Advance (siehe !continuousActive-Guard
+		// oben - sonst koennte ein extern gehaltenes Trigger-Expander RUN_GATE
+		// die Stage zusaetzlich zur Adressierung weiterschalten), aber elapsed
+		// laeuft trotzdem hoch, damit eine Slope-Rampe zum adressierten
+		// Zielwert fortschreiten kann (siehe applyStageAddress()-Kommentar und
+		// MARF-Handbuch: "slope time is equal to the programmed interval
+		// time" - gilt auch bei externer/Continuous-Adressierung). Bewusst
+		// OHNE Ruecksicht auf stageIsStop/heldBySustain/heldByEnable: diese
+		// Timer-Pausenkonzepte sind im Continuous-Betrieb nicht anwendbar,
+		// analog dazu, dass Continuous auch Skip bewusst ignoriert (siehe
+		// MOD_SKIP-Kommentar oben). Bei elapsed >= stageTime bleibt die Rampe
+		// einfach am Zielwert stehen (rack::clamp in der Phase-Berechnung
+		// unten), kein Ueberschwingen.
+		if (continuousActive) {
+			float tContinuous = stageTime[currentStage];
+			if (tContinuous > 0.f) {
+				elapsed = rack::clamp(elapsed + sampleTime, 0.f, tContinuous);
 			}
 		}
 
