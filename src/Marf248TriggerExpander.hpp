@@ -94,6 +94,23 @@ struct Marf248TriggerExpander : Module {
 		// Zyklus, STAGE_SHAPE_PARAM), der bewusst weiterhin ohne CV-Override
 		// bleibt, da er tatsaechlich ein 3-Zustands-Zyklus ist.
 		STAGE_SLOPE_POLY_INPUT,
+		// Advance A/B (Clock-quantisiertes Advance, pro Section): reiner
+		// Trigger-Eingang (Flanke, keine Pegel-Logik wie RUN_GATE_A/B_INPUT).
+		// Sobald gepatcht, ersetzt er fuer die betreffende Section komplett
+		// den automatischen Zeitablauf UND das Start/Stop-Konzept - wirkt
+		// also unabhaengig von RUN_A/B_PARAM und RUN_GATE_A/B_INPUT, analog
+		// zu Continuous (siehe Afg::process() in Marf248.hpp, Zweig
+		// "advanceModeActive"). Die Stage-Zeit laeuft weiterhin (fuer Slope/
+		// TOUT), verharrt aber am Ende bei "fertig", bis der naechste
+		// Trigger eintrifft; kommt der Trigger VOR Ablauf der Stage-Zeit,
+		// wird sofort gewechselt (Trigger hat immer Vorrang vor der Zeit).
+		// STOP/SUSTAIN/ENABLE haben weiterhin Vorrang: ein Trigger waehrend
+		// einer Haltung wird ignoriert (keine Warteschlange, kein
+		// nachtraegliches Nachholen). Gegenseitig ausschliessend zu
+		// Continuous (bei aktivem Continuous bleibt dieser Zweig inaktiv,
+		// da Continuous die Stage ohnehin direkt adressiert).
+		ADVANCE_A_INPUT,
+		ADVANCE_B_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
@@ -139,6 +156,8 @@ struct Marf248TriggerExpander : Module {
 		configInput(STAGE_PULSE1_POLY_INPUT, "Stage PULSE1 gate (poly, ch. 1-16 = stage 1-16, high overrides panel button)");
 		configInput(STAGE_PULSE2_POLY_INPUT, "Stage PULSE2 gate (poly, ch. 1-16 = stage 1-16, high overrides panel button)");
 		configInput(STAGE_SLOPE_POLY_INPUT, "Stage SLOPE gate (poly, ch. 1-16 = stage 1-16, high overrides panel button)");
+		configInput(ADVANCE_A_INPUT, "Section A Advance trigger (clock-quantized, overrides Start/Stop while connected)");
+		configInput(ADVANCE_B_INPUT, "Section B Advance trigger (clock-quantized, overrides Start/Stop while connected)");
 
 		configOutput(START_CYCLE_A_OUTPUT, "Section A Start of Cycle trigger");
 		configOutput(END_CYCLE_A_OUTPUT, "Section A End of Cycle trigger");

@@ -336,6 +336,14 @@ struct Afg {
 	// interval time" - gilt laut Dokumentation auch bei externer/Continuous-
 	// Adressierung, nicht nur im Timer-Betrieb).
 	bool continuousActive = false;
+	// Clock-quantisiertes Advance: true, solange ADVANCE_A/B_INPUT gepatcht
+	// ist (siehe process()). Als Member statt lokaler Variable gehalten,
+	// damit Marf248::process() ihn nach dem process()-Aufruf fuer die
+	// dreifarbige RUN/STOP-Status-LED auslesen kann - sonst wuerde die
+	// Section faelschlich als "gestoppt" (rot) angezeigt, obwohl sie aktiv
+	// auf Trigger reagiert, da effectiveRunning selbst nichts von diesem
+	// Modus weiss (siehe Marf248.cpp, stopA/stopB-Berechnung).
+	bool advanceModeActive = false;
 	float elapsed = 0.f;
 
 	// Slew-Zustand: voltageOut ist der zuletzt ausgegebene Wert; voltageFrom
@@ -354,6 +362,12 @@ struct Afg {
 	// inklusive 0.1V/1V-Schmitt-Hysterese gegen Jitter am Umschaltpunkt
 	// (siehe Afg::process()).
 	dsp::SchmittTrigger runGateTrigger;
+	// Clock-quantisiertes Advance (Trigger-Expander ADVANCE_A/B_INPUT):
+	// echte Flanken-Erkennung (kein Pegel wie runGateTrigger), analog zu
+	// startTrigger/stopTrigger - .process() wird nur aufgerufen, wenn die
+	// Buchse gepatcht ist (siehe Afg::process()), damit ein unverbundener
+	// Eingang den internen Zustand nicht beeinflusst.
+	dsp::SchmittTrigger advanceTrigger;
 	dsp::PulseGenerator allPulseGen;
 	// Programmed Pulse Outputs P1/P2: eigene Pulsgeneratoren, unabhaengig von
 	// allPulseGen (das bei JEDER neuen Stage feuert). Diese hier feuern nur,
@@ -661,6 +675,7 @@ struct Afg {
 	             float runButtonValue, bool startConnected, float startVoltage,
 	             bool stopConnected, float stopVoltage,
 	             bool runGateConnected, float runGateVoltage,
+	             bool advanceConnected, float advanceVoltage,
 	             float* outVoltage, float* outTime, float* outAllPulse,
 	             float* outP1, float* outP2,
 	             float* outStartCycle, float* outEndCycle, float* outRegateGap) {
@@ -688,6 +703,17 @@ struct Afg {
 		bool runGateHigh = runGateConnected && runGateTrigger.isHigh();
 		effectiveRunning = running || runGateHigh;
 
+		// Clock-quantisiertes Advance (Trigger-Expander ADVANCE_A/B_INPUT):
+		// sobald gepatcht, uebernimmt advanceModeActive komplett die Kontrolle
+		// ueber den Stage-Wechsel dieser Section, UNABHAENGIG von running/
+		// effectiveRunning (Start/Stop-Taster und RUN_GATE werden bewusst
+		// ignoriert, solange das Kabel steckt - Kinovice-Entscheidung,
+		// analog zu continuousActive weiter unten). .process() wird nur bei
+		// gepatchter Buchse aufgerufen (wie startTrigger/stopTrigger), damit
+		// ein Kabelziehen den Flanken-Zustand nicht verfaelscht.
+		advanceModeActive = advanceConnected;
+		bool advanceTriggered = advanceConnected && advanceTrigger.process(advanceVoltage);
+
 		bool stageIsStop = stageModifier[currentStage] & MOD_STOP;
 		bool stageIsSustain = stageModifier[currentStage] & MOD_SUSTAIN;
 		bool stageIsEnable = stageModifier[currentStage] & MOD_ENABLE;
@@ -696,14 +722,47 @@ struct Afg {
 		// Gate-Schwelle: deckt sowohl den kurzen HIGH-Trigger (10V) als auch
 		// den HOLD-Zustand (5V) der Buchla-Pulskonvention ab.
 		const float GATE_THRESHOLD = 2.f;
+		// WICHTIG - haeufige Stolperfalle beim Patchen/Testen: startVoltage
+		// ist die rohe Spannung am START_A/B_INPUT, OHNE Ruecksicht auf
+		// startConnected. Ein unverbundener Eingang liefert in Rack 0V
+		// zurueck (getVoltage() auf einem leeren Port), was hier exakt wie
+		// ein dauerhaft LOW-Gate behandelt wird - NICHT wie "Gate-Konzept
+		// ausgeschaltet" oder "neutral". Das hat fuer Sustain und Enable
+		// GEGENSAETZLICHE, beide auf den ersten Blick ueberraschende
+		// Konsequenzen (von Kinovice beim Live-Test bestaetigt/nachgefragt):
+		//   - Sustain OHNE Kabel: haelt NIE (startGateHigh ist immer false)
+		//     -> die Stage laeuft scheinbar "wie eine normale Stage" durch,
+		//     das Sustain-Bit hat also ohne gepatchtes Gate gar keine
+		//     sichtbare Wirkung.
+		//   - Enable OHNE Kabel: haelt IMMER (startGateHigh ist immer
+		//     false, !startGateHigh also immer true) -> die Stage bleibt
+		//     STEHEN, fuer immer, auch mit beliebig vielen Advance-Triggern
+		//     oder abgelaufener Stage-Zeit - sieht wie ein haengengebliebe-
+		//     nes/kaputtes Modul aus, ist aber exakt die spezifizierte
+		//     "wartet auf Freigabe per Gate"-Semantik (Manual: Enable gibt
+		//     die Stage erst frei, wenn ein Gate high geht - ohne Gate gibt
+		//     es also nie eine Freigabe).
+		// Sind BEIDE Bits gleichzeitig auf derselben Stage gesetzt (Sustain
+		// UND Enable), gewinnt ohne Gate effektiv Enable (haelt), da beide
+		// Bedingungen unabhaengig ausgewertet und per OR in statusHeld
+		// zusammengefuehrt werden (siehe unten) - Sustain traegt in diesem
+		// Fall nichts zum Halten bei, verhindert das Halten aber auch nicht.
+		// Zum Testen/Verifizieren: ein Kabel (z.B. von einem manuellen
+		// Trigger-/Gate-Taster-Modul) an START_A/B patchen und dessen Gate
+		// hoch/runter schalten - erst dann zeigt sich das jeweils andere,
+		// "freigebende" Verhalten (Sustain haelt dann WAEHREND High, Enable
+		// haelt dann WAEHREND Low und gibt bei High frei).
 		bool startGateHigh = startVoltage >= GATE_THRESHOLD;
 
 		// Sustain: haelt die Stage, solange am Start-Eingang ein High-Pegel
 		// (Gate) anliegt; sobald das Gate auf Low geht, laeuft die Stage
-		// normal weiter (Release-Verhalten wie bei einer ADSR).
+		// normal weiter (Release-Verhalten wie bei einer ADSR). Siehe
+		// Kommentar bei GATE_THRESHOLD oben fuer das Verhalten ohne Kabel.
 		bool heldBySustain = stageIsSustain && startGateHigh;
 		// Enable: haelt die Stage, solange KEIN High-Pegel am Start-Eingang
 		// anliegt; erst ein Gate oberhalb der Schwelle gibt die Stage frei.
+		// Siehe Kommentar bei GATE_THRESHOLD oben - OHNE gepatchtes Kabel
+		// haelt dies die Stage auf UNBESTIMMTE ZEIT (kein Bug).
 		bool heldByEnable = stageIsEnable && !startGateHigh;
 
 		statusHeld = heldBySustain || heldByEnable;
@@ -718,7 +777,7 @@ struct Afg {
 		}
 		sustainEnableWasHeld = statusHeld;
 
-		if (effectiveRunning && !continuousActive && !stageIsStop && !heldBySustain && !heldByEnable) {
+		if (effectiveRunning && !continuousActive && !advanceModeActive && !stageIsStop && !heldBySustain && !heldByEnable) {
 			if (stageIsSkip) {
 				// Skip wirkt sofort, nicht erst nach Ablauf der Stage-Zeit -
 				// falls z.B. Reset/Strobe auf eine Skip-Stage gelandet ist,
@@ -731,6 +790,39 @@ struct Afg {
 			else {
 				elapsed += sampleTime;
 				if (elapsed >= stageTime[currentStage]) {
+					advanceStage(stageModifier);
+				}
+			}
+		}
+
+		// Clock-quantisiertes Advance: eigener Zweig statt Erweiterung des
+		// obigen Timer-Zweigs, da advanceModeActive bewusst UNABHAENGIG von
+		// effectiveRunning wirkt (siehe Kommentar bei advanceModeActive
+		// oben) - der Timer-Zweig oben bleibt dagegen an effectiveRunning
+		// gebunden. Mutual exclusion zu continuousActive wie beim Timer-
+		// Zweig: Continuous adressiert die Stage ohnehin direkt, ein
+		// Advance-Trigger waere dort bedeutungslos. STOP/SUSTAIN/ENABLE
+		// haben weiterhin Vorrang (siehe Trigger-Expander-Header-Kommentar):
+		// ein Trigger, der waehrend einer Haltung eintrifft, wird schlicht
+		// nicht ausgewertet (advanceTriggered bleibt fuer diesen Sample
+		// ungenutzt, keine Warteschlange/kein Nachholen nach Haltungsende).
+		if (advanceModeActive && !continuousActive && !stageIsStop && !heldBySustain && !heldByEnable) {
+			if (stageIsSkip) {
+				// Skip bleibt sofort wirksam, unabhaengig vom Advance-Modus -
+				// gleiche Begruendung wie im Timer-Zweig oben.
+				advanceStage(stageModifier);
+			}
+			else {
+				// elapsed laeuft weiter (gecappt auf stageTime, analog zum
+				// continuousActive-Zweig unten), damit Slope/TOUT so
+				// aussehen, als waere die Stage-Zeit reguere abgelaufen -
+				// die Stage verharrt am Zielwert/bei TOUT=0, bis der
+				// naechste Trigger kommt. Der eigentliche Stage-Wechsel
+				// haengt NICHT an diesem Wert, sondern ausschliesslich am
+				// Trigger: kommt er VOR Ablauf der Stage-Zeit, wird sofort
+				// gewechselt (Trigger hat immer Vorrang vor der Zeit).
+				elapsed = rack::clamp(elapsed + sampleTime, 0.f, stageTime[currentStage]);
+				if (advanceTriggered) {
 					advanceStage(stageModifier);
 				}
 			}

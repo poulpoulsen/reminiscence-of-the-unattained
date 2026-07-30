@@ -24,7 +24,14 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		// 12HP -> 18HP: die 7 neuen Stage-Modifier-Poly-Inputs (First/Last/
 		// Stop/Sustain/Enable/Pulse1/Pulse2, analog zu STAGE_SKIP_POLY_INPUT)
 		// brauchen eine 3. Spalte - siehe Marf248TriggerExpander.hpp.
-		const float HP = 18.f;
+		// 18HP -> 24HP: die 2 neuen ADVANCE_A/B_INPUT (Clock-quantisiertes
+		// Advance) brauchen eine 4. Spalte. Unten ist kein Platz mehr fuer
+		// eine komplett neue Reihe (nur noch 8,4mm Puffer zu den
+		// Befestigungsschrauben, siehe Reihen 9-11 weiter unten) - daher
+		// werden die beiden neuen Buchsen stattdessen in die bereits
+		// bestehende RUN_GATE-Reihe eingefuegt (dort war Spalte C/D bisher
+		// frei), statt eine neue Reihe zu erzwingen.
+		const float HP = 24.f;
 		box.size = Vec(HP * RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
 
 		PanelBackground* panelBg = new PanelBackground;
@@ -45,6 +52,12 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		// 3. Spalte im gleichen Abstand wie colA-colB (29mm), fuer die
 		// Stage-Modifier-Poly-Inputs unten.
 		float colC = 74.f;
+		// 4. Spalte, gleicher 29mm-Abstand, nur fuer die RUN_GATE-Reihe
+		// genutzt (ADVANCE_A/B_INPUT) - alle anderen Reihen bleiben bei
+		// maximal 3 Spalten, der Rest der neuen Panel-Breite bleibt bewusst
+		// leer (Reserve, analog zum bereits bestehenden ~18mm-Layout-Puffer
+		// zwischen Normalize/Trange-Reihe und Range-Knob auf dem Hauptpanel).
+		float colD = 103.f;
 
 		// Link-Licht: zeigt an, ob gerade ein Marf248 andockt (siehe
 		// Marf248TriggerExpander::process()).
@@ -98,6 +111,12 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		float yRunGate = ySext + stepY;
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yRunGate)), module, Marf248TriggerExpander::RUN_GATE_A_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yRunGate)), module, Marf248TriggerExpander::RUN_GATE_B_INPUT));
+		// Advance A/B (Clock-quantisiertes Advance) in derselben Reihe wie
+		// RUN_GATE: thematisch verwandt (beide betreffen die Lauf-Steuerung
+		// der jeweiligen Section) und Spalte C/D war hier bisher frei -
+		// braucht daher keine eigene neue Reihe (siehe HP-Kommentar oben).
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, yRunGate)), module, Marf248TriggerExpander::ADVANCE_A_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colD, yRunGate)), module, Marf248TriggerExpander::ADVANCE_B_INPUT));
 
 		// Reihe 9: Stage-Adress-Modifier Poly-Gates (Skip/First/Last) - jetzt
 		// zu dritt in einer Reihe dank 3. Spalte, statt Skip allein mittig

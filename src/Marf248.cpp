@@ -116,6 +116,15 @@ struct Marf248 : Module {
 		// bewusst unangetastet (klare Abgrenzung zu Global Clear, siehe
 		// process()).
 		RESET_VALUES_PARAM,
+		// Auto-Fill: reine Software-Erweiterung ohne Hardware-Vorbild (wie
+		// RESET_VALUES_PARAM), fuer den Phasor-Generator-Anwendungsfall.
+		// Setzt die 16 geteilten Voltage-Regler auf ein lineares 0-10V-Raster
+		// (i * 10/16 = 0.625V-Schritte, Stufe 1=0V .. Stufe 16=9.375V) und
+		// erzwingt Range=Full (siehe performAutoFill()). Da Voltage/Range
+		// modulweit zwischen Section A und B geteilt sind, gibt es bewusst
+		// nur einen einzigen, globalen Button (keine getrennten A/B-Varianten
+		// moeglich - siehe Projektnotizen).
+		AUTOFILL_PARAM,
 		// Time Multiplier (Manual "TIME MULTIPLIER"): Hauptknob 0.5x-4.0x je
 		// Section, plus Attenuverter fuer den zugehoerigen dedizierten CV-
 		// Eingang (siehe INPUTS_LEN unten). Wirkt multiplikativ auf die
@@ -236,6 +245,8 @@ struct Marf248 : Module {
 		// Gleiches Blitz-Feedback-Muster fuer Reset Values (siehe
 		// RESET_VALUES_PARAM).
 		RESET_VALUES_LIGHT,
+		// Gleiches Blitz-Feedback-Muster fuer Auto-Fill (siehe AUTOFILL_PARAM).
+		AUTOFILL_LIGHT,
 		// Output LEDs (Manual "Output LEDs (Two Red LEDs): Display the gate
 		// outputs"): zeigen den tatsaechlichen P1OUT/P2OUT-Trigger in
 		// Echtzeit, unabhaengig von den STAGE_PULSE1/2_LIGHT oben (die
@@ -298,6 +309,11 @@ struct Marf248 : Module {
 	// (siehe RESET_VALUES_PARAM).
 	dsp::SchmittTrigger resetValuesTrigger;
 	dsp::PulseGenerator resetValuesFlash;
+
+	// Auto-Fill: eigener Momentary-Taster + Blitz, unabhaengig von Clear/
+	// Reset Values (siehe AUTOFILL_PARAM).
+	dsp::SchmittTrigger autoFillTrigger;
+	dsp::PulseGenerator autoFillFlash;
 
 	// Preset-System (Manual "PRESETS AND QUANTIZATION SCALES", ohne Scale/
 	// Key/Autotune - siehe Projektnotizen). Ein Slot speichert die komplette
@@ -485,6 +501,7 @@ struct Marf248 : Module {
 
 		configButton(CLEAR_PARAM, "Global Clear (all stages)");
 		configButton(RESET_VALUES_PARAM, "Reset Voltage+Time to default (all stages)");
+		configButton(AUTOFILL_PARAM, "Auto-Fill linear 0-10V (all stages, sets Range to Full)");
 
 		configButton(LOAD_PARAM, "Preset Load (arm, then press 1-12)");
 		configButton(SAVE_PARAM, "Preset Save (arm, then press 1-12)");
@@ -649,6 +666,20 @@ struct Marf248 : Module {
 		resetValuesFlash.trigger(0.15f);
 	}
 
+	// Auto-Fill: setzt die 16 geteilten Voltage-Regler auf ein lineares
+	// 0-10V-Raster (10/16-Schritte = 0.625V) und erzwingt Range=Full je Stage.
+	// Zeit/Modifier-Bits bleiben unangetastet (analog zu performResetValues()).
+	void performAutoFill() {
+		for (int i = 0; i < NUM_STAGES; i++) {
+			params[STAGE_VOLTAGE_PARAM + i].setValue(i * 10.f / NUM_STAGES);
+			// 0.f = Range Full (siehe StageRangeQuantity / rangePos-Mapping).
+			params[STAGE_RANGE_PARAM + i].setValue(0.f);
+			pickupVoltage[i].pending = false;
+			pickupRange[i].pending = false;
+		}
+		autoFillFlash.trigger(0.15f);
+	}
+
 	void process(const ProcessArgs& args) override {
 		// Marf248TriggerExpander-Lookup: bewusst ganz an den Anfang von
 		// process() gezogen (frueher stand dieser Block erst nach der Stage-
@@ -698,6 +729,12 @@ struct Marf248 : Module {
 			performResetValues();
 		}
 		lights[RESET_VALUES_LIGHT].setBrightness(resetValuesFlash.process(args.sampleTime) ? 1.f : 0.f);
+
+		// Auto-Fill (siehe AUTOFILL_PARAM/performAutoFill()).
+		if (autoFillTrigger.process(params[AUTOFILL_PARAM].getValue())) {
+			performAutoFill();
+		}
+		lights[AUTOFILL_LIGHT].setBrightness(autoFillFlash.process(args.sampleTime) ? 1.f : 0.f);
 
 		// Preset-System: LOAD/SAVE "scharf schalten", danach entscheidet der
 		// naechste Druck auf einen der 12 Slot-Taster ueber Laden/Speichern.
@@ -1410,6 +1447,10 @@ struct Marf248 : Module {
 			// unverbunden, wenn kein Trigger-Expander andockt.
 			trigExp && trigExp->getInput(Marf248TriggerExpander::RUN_GATE_A_INPUT).isConnected(),
 			trigExp ? trigExp->getInput(Marf248TriggerExpander::RUN_GATE_A_INPUT).getVoltage() : 0.f,
+			// Advance A (Clock-quantisiertes Advance): unverbunden, wenn kein
+			// Trigger-Expander andockt - identisches Muster wie RUN_GATE_A oben.
+			trigExp && trigExp->getInput(Marf248TriggerExpander::ADVANCE_A_INPUT).isConnected(),
+			trigExp ? trigExp->getInput(Marf248TriggerExpander::ADVANCE_A_INPUT).getVoltage() : 0.f,
 			&vA, &tA, &apA, &p1A, &p2A, &scA, &ecA, &rgA);
 		outputs[VOUT_A_OUTPUT].setVoltage(vA);
 		outputs[TOUT_A_OUTPUT].setVoltage(tA);
@@ -1429,6 +1470,10 @@ struct Marf248 : Module {
 			// unverbunden, wenn kein Trigger-Expander andockt.
 			trigExp && trigExp->getInput(Marf248TriggerExpander::RUN_GATE_B_INPUT).isConnected(),
 			trigExp ? trigExp->getInput(Marf248TriggerExpander::RUN_GATE_B_INPUT).getVoltage() : 0.f,
+			// Advance B (Clock-quantisiertes Advance): unverbunden, wenn kein
+			// Trigger-Expander andockt - identisches Muster wie RUN_GATE_B oben.
+			trigExp && trigExp->getInput(Marf248TriggerExpander::ADVANCE_B_INPUT).isConnected(),
+			trigExp ? trigExp->getInput(Marf248TriggerExpander::ADVANCE_B_INPUT).getVoltage() : 0.f,
 			&vB, &tB, &apB, &p1B, &p2B, &scB, &ecB, &rgB);
 		outputs[VOUT_B_OUTPUT].setVoltage(vB);
 		outputs[TOUT_B_OUTPUT].setVoltage(tB);
@@ -1527,13 +1572,25 @@ struct Marf248 : Module {
 		// effectiveRunning bleiben intern true) und Continuous-Adressierung
 		// (addrContOn) ab. Gelb/Hold ist Sustain/Enable, das auf das
 		// Start-Gate wartet. Gruen/Run sonst.
-		bool stopA = !afgA.effectiveRunning || afgA.statusStoppedByStage || addrContOnA;
+		//
+		// advanceModeActive (Clock-quantisiertes Advance) haengt die Section
+		// bewusst vom Start/Stop-Taster ab (siehe Afg::process()) - ohne
+		// Sonderfall wuerde effectiveRunning==false hier faelschlich Rot
+		// zeigen, obwohl die Section aktiv auf externe Trigger wartet.
+		// Daher: !effectiveRunning zaehlt nur als "Stop", wenn advanceMode
+		// NICHT aktiv ist. Anders als Continuous (das ueber addrContOnA/B
+		// weiterhin hart auf Rot zwingt) bekommt Advance also Gruen/Run -
+		// naheliegende Wahl (siehe Session-Diskussion), da die Section im
+		// Advance-Modus weiterhin eine echte Sequenz durchlaeuft (nur extern
+		// statt intern getaktet), waehrend Continuous konzeptionell gar
+		// keine "laufende" Sequenz mehr ist, sondern eine direkte Adressierung.
+		bool stopA = (!afgA.effectiveRunning && !afgA.advanceModeActive) || afgA.statusStoppedByStage || addrContOnA;
 		bool holdA = !stopA && afgA.statusHeld;
 		lights[STOP_A_LIGHT].setBrightness(stopA ? 1.f : 0.f);
 		lights[HOLD_A_LIGHT].setBrightness(holdA ? 1.f : 0.f);
 		lights[RUN_A_LIGHT].setBrightness((!stopA && !holdA) ? 1.f : 0.f);
 
-		bool stopB = !afgB.effectiveRunning || afgB.statusStoppedByStage || addrContOnB;
+		bool stopB = (!afgB.effectiveRunning && !afgB.advanceModeActive) || afgB.statusStoppedByStage || addrContOnB;
 		bool holdB = !stopB && afgB.statusHeld;
 		lights[STOP_B_LIGHT].setBrightness(stopB ? 1.f : 0.f);
 		lights[HOLD_B_LIGHT].setBrightness(holdB ? 1.f : 0.f);
@@ -2362,6 +2419,11 @@ struct Marf248Widget : ModuleWidget {
 		// Lichtfarbe (Gelb statt Rot) zur klaren optischen Unterscheidung.
 		addParam(createParamCentered<LEDButton>(mm2px(Vec(colClear + 12.f, 8)), module, Marf248::RESET_VALUES_PARAM));
 		addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(colClear + 12.f, 8)), module, Marf248::RESET_VALUES_LIGHT));
+
+		// Auto-Fill: dritter Button in derselben Reihe, blaues Licht zur
+		// Unterscheidung von Clear (rot) und Reset Values (gelb).
+		addParam(createParamCentered<LEDButton>(mm2px(Vec(colClear + 24.f, 8)), module, Marf248::AUTOFILL_PARAM));
+		addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(colClear + 24.f, 8)), module, Marf248::AUTOFILL_LIGHT));
 
 		// --- Preset-Spalte ganz rechts (Manual "PRESETS AND QUANTIZATION
 		// SCALES"), spiegelbildlich zur External-CV-Spalte ganz links.
