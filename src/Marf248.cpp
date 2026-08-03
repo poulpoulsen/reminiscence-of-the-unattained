@@ -173,6 +173,21 @@ struct Marf248 : Module {
 		// jede Section soll unabhaengig extern modulierbar sein).
 		TIME_MULT_CV_A_INPUT,
 		TIME_MULT_CV_B_INPUT,
+		// Kanalwahl-CV fuer die externe Stage-Address-CV (siehe
+		// STAGE_ADDR_EXT_A/B_INPUT weiter oben, das jetzt bis zu 4 Kanaele
+		// A-D via Poly-Kabel tragen kann statt nur eines einzelnen mono
+		// Werts): 0-10V in 4 gleich grossen Zonen waehlt den aktiven Kanal,
+		// analog zur bestehenden Zonenlogik bei Volt/Time External (siehe
+		// MOD_VOLT_EXT-Kommentar). Unverbunden faellt auf Kanal A (Index 0)
+		// zurueck - bestehende Mono-Patches an STAGE_ADDR_EXT_A/B_INPUT
+		// bleiben dadurch unveraendert funktionsfaehig. Bewusst ans Ende des
+		// Enums angehaengt statt direkt neben STAGE_ADDR_EXT_A/B_INPUT
+		// einsortiert, um die Indizes der bereits existierenden
+		// TIME_MULT_CV_A/B_INPUT (und damit bestehende Patch-Kabel) nicht zu
+		// verschieben - gleiches Prinzip wie bei ADVANCE_A/B_INPUT im
+		// Trigger-Expander.
+		STAGE_ADDR_EXT_CHANNEL_A_INPUT,
+		STAGE_ADDR_EXT_CHANNEL_B_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
@@ -330,6 +345,33 @@ struct Marf248 : Module {
 		int modifier[NUM_STAGES] = {};
 	};
 	PresetSlot presets[12];
+
+	// Adress-Speicher (16 Slots je Section, unabhaengig vom Preset-System
+	// oben): reines Sprung-Lesezeichen fuer die Stage-Address-Funktion -
+	// speichert NUR den Stage-Index, keine Voltage/Time/Range/Curve/
+	// Modifier-Werte wie ein Preset. Gedacht fuer feste Sprungziele (z.B.
+	// die Startpositionen mehrerer First/Last-Segmente), per Trigger sofort
+	// anfahrbar, unabhaengig von den 4 externen Adress-Kanaelen (siehe
+	// STAGE_ADDR_EXT_A/B_INPUT) und vom Stage-Address-Knob. "used"
+	// verhindert einen ungewollten Sprung auf Stage 1 bei einem nie
+	// beschriebenen Slot (Index 0 waere sonst ein gueltiger, aber
+	// unbeabsichtigter Default-Wert - gleiches Prinzip wie PresetSlot::used).
+	struct AddrMemorySlot {
+		bool used = false;
+		int stage = 0;
+	};
+	AddrMemorySlot addrMemA[NUM_STAGES];
+	AddrMemorySlot addrMemB[NUM_STAGES];
+
+	// Trigger-Detektoren fuer die Poly-Store/Recall-Eingaenge am Trigger-
+	// Expander (ADDR_STORE_A/B_POLY_INPUT, ADDR_RECALL_A/B_POLY_INPUT),
+	// Kanal i = Slot i, analog zu expPresetLoadTrigger weiter unten. Store
+	// und Recall sowie A und B jeweils eigene Arrays, da alle vier
+	// unabhaengig und gleichzeitig gepatcht sein koennen.
+	dsp::SchmittTrigger expAddrStoreATrigger[NUM_STAGES];
+	dsp::SchmittTrigger expAddrStoreBTrigger[NUM_STAGES];
+	dsp::SchmittTrigger expAddrRecallATrigger[NUM_STAGES];
+	dsp::SchmittTrigger expAddrRecallBTrigger[NUM_STAGES];
 
 	// Pickup/Catch je Stage fuer alle vier kontinuierlichen Regler (Voltage,
 	// Time, Range, Curve) - siehe PickupState in Marf248.hpp. Wird beim
@@ -527,8 +569,10 @@ struct Marf248 : Module {
 		configInput(EXT_B_INPUT, "External CV B");
 		configInput(EXT_C_INPUT, "External CV C");
 		configInput(EXT_D_INPUT, "External CV D");
-		configInput(STAGE_ADDR_EXT_A_INPUT, "Section A Stage Address CV");
-		configInput(STAGE_ADDR_EXT_B_INPUT, "Section B Stage Address CV");
+		configInput(STAGE_ADDR_EXT_A_INPUT, "Section A Stage Address CV (poly, ch. 1-4 = channel A-D, mono cable = channel A)");
+		configInput(STAGE_ADDR_EXT_B_INPUT, "Section B Stage Address CV (poly, ch. 1-4 = channel A-D, mono cable = channel A)");
+		configInput(STAGE_ADDR_EXT_CHANNEL_A_INPUT, "Section A Stage Address channel select CV (0-10V = A-D, unpatched = A)");
+		configInput(STAGE_ADDR_EXT_CHANNEL_B_INPUT, "Section B Stage Address channel select CV (0-10V = A-D, unpatched = A)");
 		configInput(TIME_MULT_CV_A_INPUT, "Section A Time Multiplier CV");
 		configInput(TIME_MULT_CV_B_INPUT, "Section B Time Multiplier CV");
 
@@ -599,6 +643,14 @@ struct Marf248 : Module {
 
 		for (int p = 0; p < 12; p++) {
 			presets[p] = PresetSlot();
+		}
+
+		// Adress-Speicher: wie Presets nur bei "echtem" Initialize geleert,
+		// NICHT beim performGlobalClear()-Live-Taster (siehe dort - der
+		// laesst die Slots bewusst unangetastet).
+		for (int i = 0; i < NUM_STAGES; i++) {
+			addrMemA[i] = AddrMemorySlot();
+			addrMemB[i] = AddrMemorySlot();
 		}
 	}
 
@@ -1386,7 +1438,17 @@ struct Marf248 : Module {
 		lights[STAGE_ADDR_CONT_A_LIGHT].setBrightness(addrContOnA ? 1.f : 0.f);
 		int addrValueA;
 		if (addrExtA) {
-			float v = rack::clamp(inputs[STAGE_ADDR_EXT_A_INPUT].getVoltage(), 0.f, 10.f);
+			// Kanalwahl A-D per eigener CV (0-10V in 4 gleich grossen Zonen,
+			// analog zur Zonenlogik bei Volt/Time External) - unverbunden
+			// faellt auf Kanal A (Index 0) zurueck, damit bestehende Mono-
+			// Patches an STAGE_ADDR_EXT_A_INPUT unveraendert funktionieren
+			// (Kanal 0 = alter Verhalten, siehe InputId-Kommentar).
+			int addrChA = 0;
+			if (inputs[STAGE_ADDR_EXT_CHANNEL_A_INPUT].isConnected()) {
+				float chCv = rack::clamp(inputs[STAGE_ADDR_EXT_CHANNEL_A_INPUT].getVoltage(), 0.f, 10.f);
+				addrChA = (int) rack::clamp(chCv / 2.5f, 0.f, 3.f);
+			}
+			float v = rack::clamp(inputs[STAGE_ADDR_EXT_A_INPUT].getPolyVoltage(addrChA), 0.f, 10.f);
 			addrValueA = (int) rack::clamp(v / 10.f * NUM_STAGES, 0.f, (float) (NUM_STAGES - 1));
 		}
 		else {
@@ -1419,7 +1481,13 @@ struct Marf248 : Module {
 		lights[STAGE_ADDR_CONT_B_LIGHT].setBrightness(addrContOnB ? 1.f : 0.f);
 		int addrValueB;
 		if (addrExtB) {
-			float v = rack::clamp(inputs[STAGE_ADDR_EXT_B_INPUT].getVoltage(), 0.f, 10.f);
+			// Siehe Kommentar bei addrChA oben, analog fuer Section B.
+			int addrChB = 0;
+			if (inputs[STAGE_ADDR_EXT_CHANNEL_B_INPUT].isConnected()) {
+				float chCv = rack::clamp(inputs[STAGE_ADDR_EXT_CHANNEL_B_INPUT].getVoltage(), 0.f, 10.f);
+				addrChB = (int) rack::clamp(chCv / 2.5f, 0.f, 3.f);
+			}
+			float v = rack::clamp(inputs[STAGE_ADDR_EXT_B_INPUT].getPolyVoltage(addrChB), 0.f, 10.f);
 			addrValueB = (int) rack::clamp(v / 10.f * NUM_STAGES, 0.f, (float) (NUM_STAGES - 1));
 		}
 		else {
@@ -1508,6 +1576,39 @@ struct Marf248 : Module {
 					if (presets[p].used) {
 						loadPreset(p);
 						presetFlash[p].trigger(0.2f);
+					}
+				}
+			}
+
+			// Adress-Speicher Store/Recall (siehe AddrMemorySlot oben): reines
+			// Sprung-Lesezeichen, unabhaengig vom Preset-System. Store schreibt
+			// bei steigender Flanke SOFORT (kein Arm, gleiches Prinzip wie
+			// Preset-Load-Poly oben), Recall springt nur, wenn der Slot zuvor
+			// beschrieben wurde (used-Flag) - ein nie beschriebener Slot bleibt
+			// wirkungslos, analog zum Preset-Leer-Slot-Schutz. Passiert bewusst
+			// HIER, NACH afgA/afgB.process() weiter oben - wirkt also erst im
+			// naechsten Sample-Frame, hat dann aber Vorrang vor Continuous/
+			// Strobe/Int-Ext fuer diesen Frame (kein zusaetzlicher Guard
+			// noetig: bleibt Continuous aktiv, ueberschreibt es den Sprung im
+			// uebernaechsten Frame automatisch wieder - vorhersehbares
+			// Verhalten, kein Bug).
+			for (int i = 0; i < NUM_STAGES; i++) {
+				if (expAddrStoreATrigger[i].process(trigExp->getInput(Marf248TriggerExpander::ADDR_STORE_A_POLY_INPUT).getPolyVoltage(i))) {
+					addrMemA[i].stage = afgA.currentStage;
+					addrMemA[i].used = true;
+				}
+				if (expAddrStoreBTrigger[i].process(trigExp->getInput(Marf248TriggerExpander::ADDR_STORE_B_POLY_INPUT).getPolyVoltage(i))) {
+					addrMemB[i].stage = afgB.currentStage;
+					addrMemB[i].used = true;
+				}
+				if (expAddrRecallATrigger[i].process(trigExp->getInput(Marf248TriggerExpander::ADDR_RECALL_A_POLY_INPUT).getPolyVoltage(i))) {
+					if (addrMemA[i].used) {
+						afgA.jumpToStage(addrMemA[i].stage, stageModifier);
+					}
+				}
+				if (expAddrRecallBTrigger[i].process(trigExp->getInput(Marf248TriggerExpander::ADDR_RECALL_B_POLY_INPUT).getPolyVoltage(i))) {
+					if (addrMemB[i].used) {
+						afgB.jumpToStage(addrMemB[i].stage, stageModifier);
 					}
 				}
 			}
@@ -1649,6 +1750,25 @@ struct Marf248 : Module {
 		}
 		json_object_set_new(rootJ, "presets", presetsJ);
 
+		// Adress-Speicher: nur int+bool je Slot, damit leichtgewichtig genug
+		// um immer vollstaendig geschrieben zu werden (kein Sparse-Skip wie
+		// bei Presets noetig).
+		json_t* addrMemAJ = json_array();
+		json_t* addrMemBJ = json_array();
+		for (int i = 0; i < NUM_STAGES; i++) {
+			json_t* slotAJ = json_object();
+			json_object_set_new(slotAJ, "used", json_boolean(addrMemA[i].used));
+			json_object_set_new(slotAJ, "stage", json_integer(addrMemA[i].stage));
+			json_array_append_new(addrMemAJ, slotAJ);
+
+			json_t* slotBJ = json_object();
+			json_object_set_new(slotBJ, "used", json_boolean(addrMemB[i].used));
+			json_object_set_new(slotBJ, "stage", json_integer(addrMemB[i].stage));
+			json_array_append_new(addrMemBJ, slotBJ);
+		}
+		json_object_set_new(rootJ, "addrMemA", addrMemAJ);
+		json_object_set_new(rootJ, "addrMemB", addrMemBJ);
+
 		return rootJ;
 	}
 
@@ -1743,6 +1863,33 @@ struct Marf248 : Module {
 						if (v) presets[p].modifier[i] = json_integer_value(v);
 					}
 				}
+			}
+		}
+
+		json_t* addrMemAJ = json_object_get(rootJ, "addrMemA");
+		if (addrMemAJ) {
+			for (int i = 0; i < NUM_STAGES; i++) {
+				json_t* slotJ = json_array_get(addrMemAJ, i);
+				if (!slotJ) {
+					continue;
+				}
+				json_t* usedJ = json_object_get(slotJ, "used");
+				json_t* stageJ = json_object_get(slotJ, "stage");
+				addrMemA[i].used = usedJ ? json_boolean_value(usedJ) : false;
+				addrMemA[i].stage = stageJ ? (int) json_integer_value(stageJ) : 0;
+			}
+		}
+		json_t* addrMemBJ = json_object_get(rootJ, "addrMemB");
+		if (addrMemBJ) {
+			for (int i = 0; i < NUM_STAGES; i++) {
+				json_t* slotJ = json_array_get(addrMemBJ, i);
+				if (!slotJ) {
+					continue;
+				}
+				json_t* usedJ = json_object_get(slotJ, "used");
+				json_t* stageJ = json_object_get(slotJ, "stage");
+				addrMemB[i].used = usedJ ? json_boolean_value(usedJ) : false;
+				addrMemB[i].stage = stageJ ? (int) json_integer_value(stageJ) : 0;
 			}
 		}
 	}
@@ -2162,7 +2309,11 @@ struct Marf248Widget : ModuleWidget {
 		// Spalte und dem Stage-Array - spiegelbildlich fuer A/B.
 		const float jacksFrameWidthMM = 20.f;
 		const float jacksFrameTopMM = 12.f;
-		const float jacksFrameBottomMM = 110.f;
+		// 110 -> 115: 5mm mehr fuer die neue Stage-Address-Kanalwahl-CV-
+		// Buchse (STAGE_ADDR_EXT_CHANNEL_A/B_INPUT) direkt unter der
+		// bestehenden Stage-Address-CV-Buchse - gleiches 8mm-Rhythmus-Muster
+		// wie die uebrigen engen Buchsenpaare in dieser Spalte (siehe unten).
+		const float jacksFrameBottomMM = 115.f;
 		float jacksColsFrame[2] = {colAJacks, colBJacks};
 		for (int s = 0; s < 2; s++) {
 			StageFrame* jacksFrame = new StageFrame;
@@ -2201,6 +2352,7 @@ struct Marf248Widget : ModuleWidget {
 		int addrStrobeLights[2] = {Marf248::STAGE_ADDR_STROBE_A_LIGHT, Marf248::STAGE_ADDR_STROBE_B_LIGHT};
 		int addrResetLights[2] = {Marf248::STAGE_ADDR_RESET_A_LIGHT, Marf248::STAGE_ADDR_RESET_B_LIGHT};
 		int addrExtInputs[2] = {Marf248::STAGE_ADDR_EXT_A_INPUT, Marf248::STAGE_ADDR_EXT_B_INPUT};
+		int addrExtChannelInputs[2] = {Marf248::STAGE_ADDR_EXT_CHANNEL_A_INPUT, Marf248::STAGE_ADDR_EXT_CHANNEL_B_INPUT};
 		int timeMultParams[2] = {Marf248::TIME_MULT_A_PARAM, Marf248::TIME_MULT_B_PARAM};
 		int timeMultAttenParams[2] = {Marf248::TIME_MULT_ATTEN_A_PARAM, Marf248::TIME_MULT_ATTEN_B_PARAM};
 		int timeMultCvInputs[2] = {Marf248::TIME_MULT_CV_A_INPUT, Marf248::TIME_MULT_CV_B_INPUT};
@@ -2310,6 +2462,10 @@ struct Marf248Widget : ModuleWidget {
 			divApoutAddr->box.size = mm2px(Vec(18.f, 0.f));
 			addChild(divApoutAddr);
 			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(jack, 102)), module, addrExtInputs[s]));
+			// Kanalwahl-CV direkt darunter, kein Divider noetig (gehoert
+			// thematisch zur selben Buchse darueber, analog zum VOUT/TOUT-
+			// Paar weiter oben ohne Trenner).
+			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(jack, 110)), module, addrExtChannelInputs[s]));
 		}
 
 		// --- Stage-Array (Mitte) ---

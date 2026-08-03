@@ -67,13 +67,17 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, 20)), module, Marf248TriggerExpander::CLEAR_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, 20)), module, Marf248TriggerExpander::RESET_VALUES_INPUT));
 
-		// Reihen ab hier: 9.5mm-Raster (statt der vorherigen 8.8mm) - durch
-		// den Umbau der 12 Einzel-Preset-Buchsen auf einen einzelnen Poly-
-		// Input ist genug Platz frei, um wieder auf das grosszuegigere
-		// Original-Raster zurueckzugehen UND die neue Run-Gate-Reihe
-		// unterzubringen, ohne mit den unteren Befestigungsschrauben
-		// (~y=123.4mm) zu kollidieren.
-		const float stepY = 9.5f;
+		// Reihen ab hier: 8.8mm-Raster (zurueck von den zwischenzeitlichen
+		// 9.5mm) - fuer die neue 12. Reihe (Adress-Speicher Store/Recall,
+		// siehe unten) reicht der Puffer bei 9.5mm nicht mehr aus (Reihe 11
+		// laege bereits bei 115mm, eine 12. Reihe bei 124.5mm wuerde die
+		// unteren Befestigungsschrauben bei ~123.4mm touchieren). Mit 8.8mm
+		// liegt Reihe 11 bei 108mm und die neue Reihe 12 bei 116.8mm -
+		// 6.6mm Puffer zu den Schrauben, numerisch geprueft (kein Rack-SDK
+		// im Sandbox, visuell also unbestaetigt). Aendert nur Pixel-
+		// Positionen, keine Enum-Reihenfolge - bestehende Patch-Kabel sind
+		// davon nicht betroffen.
+		const float stepY = 8.8f;
 
 		// Reihe 2: Preset Load (Poly, Kanal 1-12 = Preset 1-12) - mittig
 		// zwischen den beiden Spalten, da nur noch eine Buchse.
@@ -141,6 +145,18 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yStagePulse)), module, Marf248TriggerExpander::STAGE_PULSE1_POLY_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yStagePulse)), module, Marf248TriggerExpander::STAGE_PULSE2_POLY_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, yStagePulse)), module, Marf248TriggerExpander::STAGE_SLOPE_POLY_INPUT));
+
+		// Reihe 12 (NEU): Adress-Speicher Store/Recall (siehe
+		// Marf248TriggerExpander.hpp und Marf248::process()) - Store A/B und
+		// Recall A/B nebeneinander in derselben Reihe, gleiches 4-Spalten-
+		// Prinzip wie Reihe 8 (RUN_GATE + ADVANCE). Durch das auf 8.8mm
+		// verdichtete Zeilenraster (siehe stepY oben) passt diese Reihe noch
+		// mit 6.6mm Puffer zu den unteren Befestigungsschrauben.
+		float yAddrMem = yStagePulse + stepY;
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yAddrMem)), module, Marf248TriggerExpander::ADDR_STORE_A_POLY_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yAddrMem)), module, Marf248TriggerExpander::ADDR_STORE_B_POLY_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, yAddrMem)), module, Marf248TriggerExpander::ADDR_RECALL_A_POLY_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colD, yAddrMem)), module, Marf248TriggerExpander::ADDR_RECALL_B_POLY_INPUT));
 	}
 };
 

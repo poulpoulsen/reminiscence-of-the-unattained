@@ -111,6 +111,24 @@ struct Marf248TriggerExpander : Module {
 		// da Continuous die Stage ohnehin direkt adressiert).
 		ADVANCE_A_INPUT,
 		ADVANCE_B_INPUT,
+		// Adress-Speicher Store/Recall (je Poly, Kanal i = Slot i): reines
+		// Sprung-Lesezeichen-System fuer die Stage-Address-Funktion, siehe
+		// Marf248::AddrMemorySlot und Marf248::process(). Store schreibt bei
+		// steigender Flanke sofort die aktuell adressierte Stage der
+		// jeweiligen Section in Slot i (kein Arm-Mechanismus, gleiches
+		// Prinzip wie PRESET_LOAD_POLY_INPUT oben). Recall springt bei
+		// steigender Flanke auf die in Slot i gespeicherte Stage, aber nur
+		// wenn der Slot zuvor beschrieben wurde - ein nie beschriebener Slot
+		// bleibt wirkungslos. Getrennt pro Section (A/B), da Stage Address
+		// modulweit ohnehin pro Section unabhaengig ist. Ans Ende des Enums
+		// angehaengt statt zwischen die bestehenden Stage-Modifier-Inputs
+		// einsortiert, um deren Indizes (und damit bestehende Patch-Kabel)
+		// nicht zu verschieben - gleiches Prinzip wie bei ADVANCE_A/B_INPUT
+		// oben.
+		ADDR_STORE_A_POLY_INPUT,
+		ADDR_STORE_B_POLY_INPUT,
+		ADDR_RECALL_A_POLY_INPUT,
+		ADDR_RECALL_B_POLY_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
@@ -158,6 +176,10 @@ struct Marf248TriggerExpander : Module {
 		configInput(STAGE_SLOPE_POLY_INPUT, "Stage SLOPE gate (poly, ch. 1-16 = stage 1-16, high overrides panel button)");
 		configInput(ADVANCE_A_INPUT, "Section A Advance trigger (clock-quantized, overrides Start/Stop while connected)");
 		configInput(ADVANCE_B_INPUT, "Section B Advance trigger (clock-quantized, overrides Start/Stop while connected)");
+		configInput(ADDR_STORE_A_POLY_INPUT, "Section A Address Memory Store (poly, ch. 1-16 = slot 1-16, captures current stage)");
+		configInput(ADDR_STORE_B_POLY_INPUT, "Section B Address Memory Store (poly, ch. 1-16 = slot 1-16, captures current stage)");
+		configInput(ADDR_RECALL_A_POLY_INPUT, "Section A Address Memory Recall (poly, ch. 1-16 = slot 1-16, jumps to stored stage)");
+		configInput(ADDR_RECALL_B_POLY_INPUT, "Section B Address Memory Recall (poly, ch. 1-16 = slot 1-16, jumps to stored stage)");
 
 		configOutput(START_CYCLE_A_OUTPUT, "Section A Start of Cycle trigger");
 		configOutput(END_CYCLE_A_OUTPUT, "Section A End of Cycle trigger");
