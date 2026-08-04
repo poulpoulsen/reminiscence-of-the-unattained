@@ -250,6 +250,28 @@ inline std::string voltageToNoteName(float v) {
 	return std::string(names[noteIndex]) + std::to_string(octave);
 }
 
+// BPM-Feature (Time Multiplier V/Oct-Tempo-Semantik, Breaking Change ggue.
+// der vorherigen linearen 0.5x-4.0x-Faktor-Semantik): TIME_MULT_A/B_PARAM
+// speichert jetzt eine V/Oct-Spannung statt eines direkten Multiplikators.
+// TEMPO_BASE_BPM ist das Tempo bei 0V (Buchla/Eurorack-Konvention: 1V = eine
+// Oktave = Tempo-Verdopplung, analog zum 1V/Oct-Pitch-Standard). ACHTUNG
+// Kinovice: bestehende Patches interpretieren den gespeicherten Rohwert
+// dadurch komplett anders (alte 2.0 bedeutete 2.0x Zeitfaktor, jetzt 2 Volt
+// -> 480 BPM statt vorher 240% Zeit) - Time-Multiplier-Knob in alten
+// Patches neu einstellen.
+static const float TEMPO_BASE_BPM = 120.f;
+
+// Reine Sicherheitsklammer fuer die effektive Gesamtspannung (Knob +
+// Attenuverter*CV), NICHT musikalisch gemeint, sondern Schutz vor absurden
+// BPM-Werten/Rechenueberlauf bei Kabel-Fehlanschluss oder hoher CV-
+// Amplitude (siehe Marf248::process()). Bei +-8V ergibt das ca.
+// 0.47-30720 BPM - weit ausserhalb sinnvoller Nutzung, aber endlich.
+static const float TEMPO_VOLT_SAFETY_CLAMP = 8.f;
+
+inline float tempoVoltsToBpm(float volts) {
+	return TEMPO_BASE_BPM * std::pow(2.f, volts);
+}
+
 // Pickup/Catch-Zustand fuer einen einzelnen kontinuierlichen Stage-Regler
 // (Preset-Recall, siehe Manual "the sliders are only active once they have
 // moved past the stored value"). Haelt den beim Preset-Load gespeicherten

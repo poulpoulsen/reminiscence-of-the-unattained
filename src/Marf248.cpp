@@ -36,6 +36,39 @@ struct StageTimeQuantity : ParamQuantity {
 	std::string getDisplayValueString() override;
 };
 
+// Zeigt den TIME_MULT_A/B_PARAM-Rohwert (jetzt eine V/Oct-Spannung, siehe
+// Marf248.hpp) als BPM-Zahl an, fuehrend, mit der Rohspannung in Klammern
+// dahinter - analog zum StageTimeQuantity-Muster oben (Dial-Wert fuehrend,
+// aufgeloester Wert in Klammern). Braucht keinen Modul-Zugriff, da die
+// Umrechnung (tempoVoltsToBpm) rein aus dem Parameterwert selbst folgt,
+// unabhaengig von CV/Attenuverter (die Anzeige des tatsaechlich inkl. CV
+// wirksamen Tempos passiert separat im Live-BPM-Panel-Text, siehe
+// Marf248Widget).
+struct TempoQuantity : ParamQuantity {
+	// BUGFIX: vorher war nur getDisplayValueString() (Tooltip-Text)
+	// ueberschrieben, nicht aber getDisplayValue()/setDisplayValue() - die
+	// Rechtsklick-Zahleneingabe von Rack haengt aber an LETZTEREN, nicht am
+	// Tooltip-String. Ohne diesen Override griff die Eingabe direkt auf den
+	// rohen Volt-Wert (-5..5) zu, obwohl der Tooltip BPM anzeigte - eine
+	// eingegebene "120" landete dadurch als 120 Volt, sofort auf den
+	// Anschlag (5V) geklemmt (Kinovice-Bugreport: "dreht wirr, Knopf geht
+	// auf Vollausschlag"). getDisplayValue()/setDisplayValue() sind jetzt
+	// die BPM-Zahl selbst (log2-Ruecktransformation in setDisplayValue()),
+	// analog zum StageTimeQuantity-Dial-Muster oben.
+	float getDisplayValue() override {
+		return tempoVoltsToBpm(getValue());
+	}
+	void setDisplayValue(float displayValue) override {
+		// Sicherheitsklammer gegen 0/negative Eingaben (log2 waere sonst
+		// -inf/NaN) - 0.01 BPM ist ohnehin weit ausserhalb sinnvoller Werte.
+		float bpm = std::max(displayValue, 0.01f);
+		setValue(std::log2(bpm / TEMPO_BASE_BPM));
+	}
+	std::string getDisplayValueString() override {
+		return string::f("%.1f BPM (%.2f V)", getDisplayValue(), getValue());
+	}
+};
+
 struct StageRangeQuantity : ParamQuantity {
 	std::string getDisplayValueString() override {
 		static const char* labels[7] = {"Full", "Half", "Lim +0", "Lim +2", "Lim +4", "Lim +6", "Lim +8"};
@@ -149,6 +182,14 @@ struct Marf248 : Module {
 		// Chromatic), siehe process()-Logik.
 		SCALE_PARAM,
 		KEY_PARAM,
+		// BEATS_FACTOR (BPM-Feature): Trimpot pro Section, legt fest, wie
+		// viele Beats ein voller Zyklus ueber alle NICHT geskippten Stages
+		// darstellen soll - daraus wird der tatsaechliche Time-Multiplier
+		// zurueckgerechnet (siehe process()). Ans Ende des Enums angehaengt
+		// (wie ueblich bei nachtraeglich hinzugefuegten Params), damit
+		// bestehende Preset-/Patch-Indizes unveraendert bleiben.
+		BEATS_FACTOR_A_PARAM,
+		BEATS_FACTOR_B_PARAM,
 		PARAMS_LEN
 	};
 	enum InputId {
@@ -188,6 +229,13 @@ struct Marf248 : Module {
 		// Trigger-Expander.
 		STAGE_ADDR_EXT_CHANNEL_A_INPUT,
 		STAGE_ADDR_EXT_CHANNEL_B_INPUT,
+		// BEATS_FACTOR CV-Eingang je Section (BPM-Feature), addiert sich
+		// direkt (linear, keine V/Oct-Semantik) auf den BEATS_FACTOR_A/B_
+		// PARAM-Trimpot-Wert - siehe Kommentar bei BEATS_FACTOR_A/B_PARAM
+		// und process(). Ans Ende des Enums angehaengt, gleiches Prinzip
+		// wie bei STAGE_ADDR_EXT_CHANNEL_A/B_INPUT oben.
+		BEATS_FACTOR_CV_A_INPUT,
+		BEATS_FACTOR_CV_B_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
@@ -462,6 +510,17 @@ struct Marf248 : Module {
 	// (14 SchmittTrigger + 14 Light-Updates x 16 Stages).
 	dsp::ClockDivider stageButtonDivider;
 
+	// BPM-Feature: Live-Anzeigewerte fuers Panel (NVG-Text), analog zur
+	// bestehenden Time-Sekunden-Anzeige am Time-Slider. Die eigentliche
+	// BPM-Berechnung/Multiplier-Rueckrechnung laeuft jeden Sample (siehe
+	// process(), Time-Multiplier-Block) - hierher wird nur der aktuelle
+	// Wert dekimiert (per stageButtonDivider-Rhythmus, Kinovice-
+	// Entscheidung) uebernommen, damit der Widget-Draw-Aufruf lediglich
+	// einen bereits fertigen Float lesen muss statt jeden Frame selbst
+	// neu zu rechnen.
+	float displayBpmA = TEMPO_BASE_BPM;
+	float displayBpmB = TEMPO_BASE_BPM;
+
 	Afg afgA;
 	Afg afgB;
 
@@ -556,10 +615,20 @@ struct Marf248 : Module {
 		// Time Multiplier: Hauptknob 0.5x-4.0x (Default 1.0x, siehe Manual
 		// "scaled from half-time to four times longer"), Attenuverter
 		// bipolar -1..+1 fuer den zugehoerigen CV-Eingang.
-		configParam(TIME_MULT_A_PARAM, 0.5f, 4.f, 1.f, "Section A Time Multiplier", "x");
-		configParam(TIME_MULT_ATTEN_A_PARAM, -1.f, 1.f, 0.f, "Section A Time Multiplier CV Attenuverter");
-		configParam(TIME_MULT_B_PARAM, 0.5f, 4.f, 1.f, "Section B Time Multiplier", "x");
-		configParam(TIME_MULT_ATTEN_B_PARAM, -1.f, 1.f, 0.f, "Section B Time Multiplier CV Attenuverter");
+		// V/Oct-Tempo-Semantik (BPM-Feature, Breaking Change - siehe
+		// TEMPO_BASE_BPM-Kommentar in Marf248.hpp): 0V = 120 BPM,
+		// exponentiell, +-5V Knob-Spannweite (Kinovice-Entscheidung).
+		configParam<TempoQuantity>(TIME_MULT_A_PARAM, -5.f, 5.f, 0.f, "Section A Tempo");
+		configParam(TIME_MULT_ATTEN_A_PARAM, -1.f, 1.f, 0.f, "Section A Tempo CV Attenuverter");
+		configParam<TempoQuantity>(TIME_MULT_B_PARAM, -5.f, 5.f, 0.f, "Section B Tempo");
+		configParam(TIME_MULT_ATTEN_B_PARAM, -1.f, 1.f, 0.f, "Section B Tempo CV Attenuverter");
+		// BEATS_FACTOR (BPM-Feature): freier Wertebereich statt Raster-
+		// Snap (Kinovice-Entscheidung), Default 4 (16-Stage-Zyklus = 1
+		// Takt zu 4 Beats bei linearer Stage-Verteilung, gaengigster
+		// Anwendungsfall). Siehe process() fuer die Rueckrechnung auf den
+		// tatsaechlichen Time-Multiplier.
+		configParam(BEATS_FACTOR_A_PARAM, 0.1f, 64.f, 4.f, "Section A Beats per Cycle");
+		configParam(BEATS_FACTOR_B_PARAM, 0.1f, 64.f, 4.f, "Section B Beats per Cycle");
 
 		configInput(START_A_INPUT, "Section A Start trigger");
 		configInput(STOP_A_INPUT, "Section A Stop trigger");
@@ -573,8 +642,10 @@ struct Marf248 : Module {
 		configInput(STAGE_ADDR_EXT_B_INPUT, "Section B Stage Address CV (poly, ch. 1-4 = channel A-D, mono cable = channel A)");
 		configInput(STAGE_ADDR_EXT_CHANNEL_A_INPUT, "Section A Stage Address channel select CV (0-10V = A-D, unpatched = A)");
 		configInput(STAGE_ADDR_EXT_CHANNEL_B_INPUT, "Section B Stage Address channel select CV (0-10V = A-D, unpatched = A)");
-		configInput(TIME_MULT_CV_A_INPUT, "Section A Time Multiplier CV");
-		configInput(TIME_MULT_CV_B_INPUT, "Section B Time Multiplier CV");
+		configInput(TIME_MULT_CV_A_INPUT, "Section A Tempo CV (V/Oct)");
+		configInput(TIME_MULT_CV_B_INPUT, "Section B Tempo CV (V/Oct)");
+		configInput(BEATS_FACTOR_CV_A_INPUT, "Section A Beats per Cycle CV");
+		configInput(BEATS_FACTOR_CV_B_INPUT, "Section B Beats per Cycle CV");
 
 		configOutput(VOUT_A_OUTPUT, "Section A Voltage");
 		configOutput(TOUT_A_OUTPUT, "Section A Time (interval ramp)");
@@ -900,7 +971,12 @@ struct Marf248 : Module {
 		// Dezimiert per stageButtonDivider (siehe Deklaration oben) - Taster-
 		// Erkennung und LED-Helligkeit muessen nicht mit voller Sample-Rate
 		// laufen, das war laut perf-Profiling der dominante CPU-Kostenblock.
-		if (stageButtonDivider.process()) {
+		// Ergebnis einmal einfangen statt stageButtonDivider.process() ein
+		// zweites Mal weiter unten aufzurufen (wuerde den Zaehler doppelt
+		// voranschreiten lassen) - wird auch fuer die dekimierte BPM-
+		// Anzeige-Aktualisierung im Time-Multiplier-Block wiederverwendet.
+		bool stageButtonsDecimated = stageButtonDivider.process();
+		if (stageButtonsDecimated) {
 		for (int i = 0; i < NUM_STAGES; i++) {
 			if (stageFirstTrigger[i].process(params[STAGE_FIRST_PARAM + i].getValue())) {
 				stageModifier[i] ^= MOD_FIRST;
@@ -1379,37 +1455,87 @@ struct Marf248 : Module {
 			stageCurvePower[i] = cachedCurvePower[i];
 		}
 
-		// Time Multiplier (Manual "TIME MULTIPLIER"): skaliert die Stage-Zeiten
-		// je Section unabhaengig, nachdem Time Source External/Internal bereits
-		// aufgeloest wurde (resolvedTime[] oben) - die Skalierung wirkt also
-		// gleichermassen auf interne wie externe Zeitquellen. Da der Multiplier
-		// pro Section gilt, aber die Stage-Zeiten selbst modulweit geteilt
-		// sind, entstehen hier zwei eigene Arrays statt einem gemeinsamen.
-		//
-		// CV-Skalierung (offene, spaeter justierbare Annahme analog zu
-		// GATE_THRESHOLD/Curve-Mapping): ein voller Attenuverter-Ausschlag
-		// (+-1) bei einer CV von +-5V deckt die komplette Multiplier-Spanne
-		// (0.5x-4.0x, Spanne 3.5) ab. TIME_MULT_CV_SPAN_VOLTS ist die
-		// angenommene CV-Referenzamplitude, TIME_MULT_RANGE_SPAN die
-		// Multiplier-Spanne.
-		const float TIME_MULT_MIN = 0.5f;
-		const float TIME_MULT_MAX = 4.f;
-		const float TIME_MULT_RANGE_SPAN = TIME_MULT_MAX - TIME_MULT_MIN;
-		const float TIME_MULT_CV_SPAN_VOLTS = 5.f;
+		// Time Multiplier / BPM-Feature (Manual-Grundlage "TIME MULTIPLIER",
+		// jetzt erweitert um V/Oct-Tempo-Steuerung + BEATS_FACTOR-
+		// Rueckrechnung, Breaking Change - siehe TEMPO_BASE_BPM-Kommentar
+		// in Marf248.hpp): TIME_MULT_A/B_PARAM ist keine direkte Zeitfaktor-
+		// Eingabe mehr, sondern eine V/Oct-Tempo-Spannung (0V = 120 BPM,
+		// exponentiell). BEATS_FACTOR_A/B_PARAM legt fest, wie viele Beats
+		// ein voller Zyklus ueber alle NICHT geskippten Stages darstellen
+		// soll; daraus wird die gewuenschte Zykluszeit berechnet und
+		// gegen die tatsaechliche (unskalierte) Summe der Stage-Zeiten
+		// zurueckgerechnet -> effektiver Multiplier. Pendulum-Modus geht
+		// bewusst NICHT automatisch mit doppelter Zykluslaenge ein
+		// (Kinovice-Entscheidung, Option B): BEATS_FACTOR bezieht sich
+		// immer nur auf einen Durchlauf (Hinweg); bei aktivem Pendulum
+		// dauert ein voller Hin-und-Rueck-Umlauf entsprechend automatisch
+		// 2x BEATS_FACTOR Beats.
+
+		// Basiszykluszeit: Summe der (noch unmultiplizierten) Stage-Zeiten
+		// aller NICHT geskippten Stages - modulweit einmal berechnet, da
+		// resolvedTime[] und stageModifier[] (inkl. MOD_SKIP) zwischen
+		// Section A/B geteilt sind, nur der Multiplier selbst ist pro
+		// Section unterschiedlich.
+		float baseCycleTime = 0.f;
+		for (int i = 0; i < NUM_STAGES; i++) {
+			if (!(stageModifier[i] & MOD_SKIP)) {
+				baseCycleTime += resolvedTime[i];
+			}
+		}
+
+		// Sicherheitsklammern fuer den zurueckgerechneten Multiplier: rein
+		// numerischer Schutz (z.B. gegen Explosion bei extrem hoher BPM +
+		// hohem BEATS_FACTOR, oder gegen 0 bei baseCycleTime == 0, falls
+		// alle Stages geskippt sind), keine musikalische Grenze - bei
+		// Bedarf spaeter justierbar.
+		const float MULT_SAFETY_MIN = 1e-4f;
+		const float MULT_SAFETY_MAX = 1e4f;
 
 		float cvA = inputs[TIME_MULT_CV_A_INPUT].getVoltage();
-		float multiplierA = params[TIME_MULT_A_PARAM].getValue()
-			+ params[TIME_MULT_ATTEN_A_PARAM].getValue() * (cvA / TIME_MULT_CV_SPAN_VOLTS) * TIME_MULT_RANGE_SPAN;
-		multiplierA = rack::clamp(multiplierA, TIME_MULT_MIN, TIME_MULT_MAX);
+		float totalVoltsA = params[TIME_MULT_A_PARAM].getValue()
+			+ params[TIME_MULT_ATTEN_A_PARAM].getValue() * cvA;
+		totalVoltsA = rack::clamp(totalVoltsA, -TEMPO_VOLT_SAFETY_CLAMP, TEMPO_VOLT_SAFETY_CLAMP);
+		float bpmA = tempoVoltsToBpm(totalVoltsA);
+
+		float beatsCvA = inputs[BEATS_FACTOR_CV_A_INPUT].getVoltage();
+		// CV-Skalierung analog zum bisherigen Time-Multiplier-Muster (offene,
+		// spaeter justierbare Annahme): +-5V CV deckt die volle Parameter-
+		// spanne (0.1-64 Beats, Spanne ~64) ab, additiv auf den Trimpot-Wert.
+		float beatsFactorA = params[BEATS_FACTOR_A_PARAM].getValue() + (beatsCvA / 5.f) * 64.f;
+		beatsFactorA = rack::clamp(beatsFactorA, 0.1f, 64.f);
+
+		float desiredCycleTimeA = (60.f / bpmA) * beatsFactorA;
+		float multiplierA = (baseCycleTime > 0.f) ? (desiredCycleTimeA / baseCycleTime) : 1.f;
+		multiplierA = rack::clamp(multiplierA, MULT_SAFETY_MIN, MULT_SAFETY_MAX);
 
 		float cvB = inputs[TIME_MULT_CV_B_INPUT].getVoltage();
-		float multiplierB = params[TIME_MULT_B_PARAM].getValue()
-			+ params[TIME_MULT_ATTEN_B_PARAM].getValue() * (cvB / TIME_MULT_CV_SPAN_VOLTS) * TIME_MULT_RANGE_SPAN;
-		multiplierB = rack::clamp(multiplierB, TIME_MULT_MIN, TIME_MULT_MAX);
+		float totalVoltsB = params[TIME_MULT_B_PARAM].getValue()
+			+ params[TIME_MULT_ATTEN_B_PARAM].getValue() * cvB;
+		totalVoltsB = rack::clamp(totalVoltsB, -TEMPO_VOLT_SAFETY_CLAMP, TEMPO_VOLT_SAFETY_CLAMP);
+		float bpmB = tempoVoltsToBpm(totalVoltsB);
+
+		float beatsCvB = inputs[BEATS_FACTOR_CV_B_INPUT].getVoltage();
+		float beatsFactorB = params[BEATS_FACTOR_B_PARAM].getValue() + (beatsCvB / 5.f) * 64.f;
+		beatsFactorB = rack::clamp(beatsFactorB, 0.1f, 64.f);
+
+		float desiredCycleTimeB = (60.f / bpmB) * beatsFactorB;
+		float multiplierB = (baseCycleTime > 0.f) ? (desiredCycleTimeB / baseCycleTime) : 1.f;
+		multiplierB = rack::clamp(multiplierB, MULT_SAFETY_MIN, MULT_SAFETY_MAX);
 
 		for (int i = 0; i < NUM_STAGES; i++) {
 			resolvedTimeA[i] = resolvedTime[i] * multiplierA;
 			resolvedTimeB[i] = resolvedTime[i] * multiplierB;
+		}
+
+		// Live-BPM-Anzeige: nur dekimiert (stageButtonDivider-Rhythmus,
+		// wiederverwendet ueber die oben eingefangene stageButtonsDecimated-
+		// Flag, Kinovice-Entscheidung) in die Display-Member uebernehmen -
+		// die obige Berechnung selbst bleibt bewusst audio-rate, da sie
+		// direkt resolvedTimeA/B und damit die tatsaechliche Stage-
+		// Zeitablauf-Berechnung speist.
+		if (stageButtonsDecimated) {
+			displayBpmA = bpmA;
+			displayBpmB = bpmB;
 		}
 
 		// Laufrichtung pro Section: zwei unabhaengige Toggle-Buttons statt
@@ -2013,6 +2139,55 @@ struct HDivider : TransparentWidget {
 // Technik wie StageFrame/PanelBackground weiter oben in dieser Datei, kein
 // SVG-Asset noetig. Die tatsaechliche Groesse (9x9mm statt LEDButton-Default)
 // wird im Widget-Konstruktor gesetzt, siehe dortiger Kommentar.
+// Live-BPM-Anzeige (BPM-Feature): reiner Text-Readout ohne eigene
+// Interaktion (kein ParamWidget) - liest displayBpmA/B direkt vom Modul,
+// die dort dekimiert (stageButtonDivider-Rhythmus) aktualisiert werden,
+// siehe Marf248::process(). Erstes staendig sichtbares Live-NVG-Textfeld
+// auf dem Hauptpanel (bisher nur Tooltips wie bei StageTimeQuantity/
+// TempoQuantity) - siehe Projektnotizen zum anstehenden Panel-Labeling.
+// Gleiche Zeichentechnik wie TrangeButton (Outline-Trick: Text 4x leicht
+// versetzt in Dunkel, dann obenauf in Amber), aber deutlich kleinere
+// Schrift, da hier eine mehrstellige Zahl statt einer einzelnen Ziffer
+// dargestellt wird. module bleibt nullptr im Rack-Browser-Vorschaubild
+// (kein Modul instanziiert) - draw() faengt das ab und zeigt dann einfach
+// TEMPO_BASE_BPM als Platzhalter.
+struct TempoBpmDisplay : TransparentWidget {
+	Marf248* module = nullptr;
+	int section = 0; // 0 = Section A, 1 = Section B
+
+	void draw(const DrawArgs& args) override {
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0.5f, 0.5f, box.size.x - 1.f, box.size.y - 1.f, 1.5f);
+		nvgFillColor(args.vg, nvgRGB(40, 40, 44));
+		nvgFill(args.vg);
+		nvgStrokeColor(args.vg, nvgRGBA(90, 90, 100, 200));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+
+		std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+		if (!font || !font->handle) {
+			return;
+		}
+		float bpm = module ? (section == 0 ? module->displayBpmA : module->displayBpmB) : TEMPO_BASE_BPM;
+		std::string text = string::f("%.1f", bpm);
+
+		float cx = box.size.x / 2.f;
+		float cy = box.size.y / 2.f;
+		nvgFontFaceId(args.vg, font->handle);
+		nvgFontSize(args.vg, 15.f);
+		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+
+		nvgFillColor(args.vg, nvgRGB(20, 20, 20));
+		nvgText(args.vg, cx - 0.8f, cy, text.c_str(), NULL);
+		nvgText(args.vg, cx + 0.8f, cy, text.c_str(), NULL);
+		nvgText(args.vg, cx, cy - 0.8f, text.c_str(), NULL);
+		nvgText(args.vg, cx, cy + 0.8f, text.c_str(), NULL);
+
+		nvgFillColor(args.vg, nvgRGB(235, 170, 60));
+		nvgText(args.vg, cx, cy, text.c_str(), NULL);
+	}
+};
+
 struct TrangeButton : LEDButton {
 	void draw(const DrawArgs& args) override {
 		nvgBeginPath(args.vg);
@@ -2243,7 +2418,9 @@ struct Marf248Widget : ModuleWidget {
 		// Modul insgesamt etwas breiter (120 statt 110 HP), damit die 16
 		// Stage-Spalten mehr Luft bekommen - die Knoepfe/Buttons wirkten bei
 		// 22mm Rahmenbreite zu dicht gedraengt.
-		const float HP = 120.f;
+		// 120 -> 126: 6HP mehr fuer die neue VOUT/TOUT-Ausgangsspalte pro
+		// Section (siehe gapJacksToOutputs/gapOutputsToStage weiter unten).
+		const float HP = 126.f;
 		box.size = Vec(HP * RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
 
 		// Panel-Hintergrund + klare Aussenkante (sonst bleibt das Modul
@@ -2275,7 +2452,20 @@ struct Marf248Widget : ModuleWidget {
 		// bemessen (nur so viel Rand, dass sich die jeweiligen Rahmen NICHT
 		// beruehren), damit das Modul insgesamt schmaler bleibt.
 		const float gapControlsToJacks = 19.f;
-		const float gapJacksToStage = 26.f;
+		// Vorher eine einzige Luecke (gapJacksToStage, 26mm) direkt zwischen
+		// Jacks-Spalte und Stage-Array. Jetzt durch zwei Luecken ersetzt, da
+		// dazwischen die neue schmale VOUT/TOUT-Ausgangsspalte eingefuegt
+		// wird (Kinovice-Wunsch: mehr Platz in der Jacks-Spalte fuer die
+		// vergroesserte BPM-Anzeige). Werte so gewaehlt, dass Jacks-Rahmen
+		// (20mm breit), neue Outputs-Rahmen (12mm) und Stage-Rahmen (25mm)
+		// auch mit Toleranz nicht ueberlappen.
+		const float gapJacksToOutputs = 18.f;
+		const float gapOutputsToStage = 22.f;
+
+		// Rahmenbreite der neuen VOUT/TOUT-Ausgangsspalte: nur zwei PJ301M-
+		// Buchsen (Voltage/Time Ramp Out), daher schmaler als die grosse
+		// Jacks-Spalte (20mm) genuegt.
+		const float outputsFrameWidthMM = 12.f;
 
 		// Rahmenbreite der neuen Controls-Spalten-Umrandung (siehe unten,
 		// "Controls-Rahmen"): die Controls-Spalte enthaelt nur einspaltig
@@ -2296,8 +2486,13 @@ struct Marf248Widget : ModuleWidget {
 		const float colToControlsGap = 19.f;
 		float colAControls = colExt + colToControlsGap;
 		float colAJacks = colAControls + gapControlsToJacks;
-		float xStart = colAJacks + gapJacksToStage;
-		float colBJacks = xStart + (NUM_STAGES - 1) * xStep + gapJacksToStage;
+		// Neue VOUT/TOUT-Ausgangsspalte zwischen Jacks-Spalte und Stage-
+		// Array, spiegelbildlich fuer Section A/B (colAOutputs liegt links
+		// vom Stage-Array, colBOutputs rechts davon).
+		float colAOutputs = colAJacks + gapJacksToOutputs;
+		float xStart = colAOutputs + gapOutputsToStage;
+		float colBOutputs = xStart + (NUM_STAGES - 1) * xStep + gapOutputsToStage;
+		float colBJacks = colBOutputs + gapJacksToOutputs;
 		float colBControls = colBJacks + gapControlsToJacks;
 
 		// External-CV-Spalte ganz links (modulweit geteilte Eingaenge A-D,
@@ -2324,11 +2519,13 @@ struct Marf248Widget : ModuleWidget {
 		// Spalte und dem Stage-Array - spiegelbildlich fuer A/B.
 		const float jacksFrameWidthMM = 20.f;
 		const float jacksFrameTopMM = 12.f;
-		// 110 -> 115: 5mm mehr fuer die neue Stage-Address-Kanalwahl-CV-
-		// Buchse (STAGE_ADDR_EXT_CHANNEL_A/B_INPUT) direkt unter der
-		// bestehenden Stage-Address-CV-Buchse - gleiches 8mm-Rhythmus-Muster
-		// wie die uebrigen engen Buchsenpaare in dieser Spalte (siehe unten).
-		const float jacksFrameBottomMM = 115.f;
+		// 127 -> 118: VOUT/TOUT sind in die neue Ausgangsspalte umgezogen
+		// (Kinovice-Wunsch), dadurch wieder deutlich mehr Luft in der
+		// Jacks-Spalte - genutzt fuer die vergroesserte BPM-Anzeige, siehe
+		// deren Platzierung weiter unten.
+		// 123 -> 121: 123 war laut Kinovice-Feedback unten leicht zu lang,
+		// 118 davor zu kurz - 121 als Mittelweg.
+		const float jacksFrameBottomMM = 121.f;
 		float jacksColsFrame[2] = {colAJacks, colBJacks};
 		for (int s = 0; s < 2; s++) {
 			StageFrame* jacksFrame = new StageFrame;
@@ -2337,11 +2534,26 @@ struct Marf248Widget : ModuleWidget {
 			addChild(jacksFrame);
 		}
 
+		// Neue VOUT/TOUT-Ausgangsspalte (Kinovice-Wunsch): eigener, kleiner
+		// Rahmen zwischen Jacks-Spalte und Stage-Array, spiegelbildlich fuer
+		// A/B. Bewusst kurz gehalten (nur 2 Buchsen), kein Grund, ihn auf
+		// die Hoehe der anderen Spalten aufzublasen.
+		const float outputsFrameTopMM = 12.f;
+		const float outputsFrameBottomMM = 44.f;
+		float outputsColsFrame[2] = {colAOutputs, colBOutputs};
+		for (int s = 0; s < 2; s++) {
+			StageFrame* outputsFrame = new StageFrame;
+			outputsFrame->box.pos = mm2px(Vec(outputsColsFrame[s] - outputsFrameWidthMM / 2.f, outputsFrameTopMM));
+			outputsFrame->box.size = mm2px(Vec(outputsFrameWidthMM, outputsFrameBottomMM - outputsFrameTopMM));
+			addChild(outputsFrame);
+		}
+
 		// --- Section A und B: identischer Aufbau (spiegelbildlich an derselben
 		// y-Position), da die External-Inputs jetzt in einer eigenen Spalte
 		// sitzen und beide FG-Spalten dadurch gleich viel Inhalt haben.
 		float controlsCols[2] = {colAControls, colBControls};
 		float jacksCols[2] = {colAJacks, colBJacks};
+		float outputsCols[2] = {colAOutputs, colBOutputs};
 		int runParams[2] = {Marf248::RUN_A_PARAM, Marf248::RUN_B_PARAM};
 		int runLights[2] = {Marf248::RUN_A_LIGHT, Marf248::RUN_B_LIGHT};
 		int modeParams[2] = {Marf248::MODE_A_PARAM, Marf248::MODE_B_PARAM};
@@ -2371,10 +2583,13 @@ struct Marf248Widget : ModuleWidget {
 		int timeMultParams[2] = {Marf248::TIME_MULT_A_PARAM, Marf248::TIME_MULT_B_PARAM};
 		int timeMultAttenParams[2] = {Marf248::TIME_MULT_ATTEN_A_PARAM, Marf248::TIME_MULT_ATTEN_B_PARAM};
 		int timeMultCvInputs[2] = {Marf248::TIME_MULT_CV_A_INPUT, Marf248::TIME_MULT_CV_B_INPUT};
+		int beatsFactorParams[2] = {Marf248::BEATS_FACTOR_A_PARAM, Marf248::BEATS_FACTOR_B_PARAM};
+		int beatsFactorCvInputs[2] = {Marf248::BEATS_FACTOR_CV_A_INPUT, Marf248::BEATS_FACTOR_CV_B_INPUT};
 
 		for (int s = 0; s < 2; s++) {
 			float ctrl = controlsCols[s];
 			float jack = jacksCols[s];
+			float outCol = outputsCols[s];
 
 			// Controls-Rahmen: dekorative Umrandung der Controls-Spalte
 			// (Time Multiplier Knob/Attenuverter/Run/Mode/Pendulum/Stage-
@@ -2388,7 +2603,11 @@ struct Marf248Widget : ModuleWidget {
 			// (RoundBlackKnob ist ca. 9-10mm im Durchmesser). Die Spalte
 			// waechst dafuer entsprechend weiter nach unten.
 			const float controlsFrameTopMM = 12.f;
-			const float controlsFrameBottomMM = 116.f;
+			// BPM-Feature: um 4mm auf 120mm erweitert (deckt sich jetzt mit
+			// frameBottomMM des Stage-Arrays), da die neue BEATS_FACTOR-
+			// Trimpot-Reihe eingefuegt wurde - siehe Kommentar unten bei
+			// deren Platzierung.
+			const float controlsFrameBottomMM = 120.f;
 			StageFrame* controlsFrame = new StageFrame;
 			controlsFrame->box.pos = mm2px(Vec(ctrl - controlsFrameWidthMM / 2.f, controlsFrameTopMM));
 			controlsFrame->box.size = mm2px(Vec(controlsFrameWidthMM, controlsFrameBottomMM - controlsFrameTopMM));
@@ -2401,16 +2620,27 @@ struct Marf248Widget : ModuleWidget {
 			addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(ctrl, 20)), module, timeMultParams[s]));
 			addParam(createParamCentered<Trimpot>(mm2px(Vec(ctrl, 30)), module, timeMultAttenParams[s]));
 
+			// BEATS_FACTOR-Trimpot (BPM-Feature, siehe process()): direkt
+			// unter dem Tempo-Attenuverter, da beide Regler thematisch zur
+			// selben Tempo-Steuerung gehoeren. Alle Elemente darunter
+			// (Run/Mode/Pendulum/Stage-Address) sind dadurch um 4mm nach
+			// unten gerutscht ggue. der vorherigen Session (die Original-
+			// Abstaende wurden dabei absichtlich NICHT komprimiert, nur an
+			// vier Stellen um je 1mm gestrafft) - siehe controlsFrameBottomMM
+			// oben. ACHTUNG Kinovice: wie ueblich kurz in Rack gegenchecken,
+			// bei so vielen verschobenen Elementen in einer Session besonders.
+			addParam(createParamCentered<Trimpot>(mm2px(Vec(ctrl, 38)), module, beatsFactorParams[s]));
+
 			HDivider* divTimeMultRun = new HDivider;
-			divTimeMultRun->box.pos = mm2px(Vec(ctrl - 4.f, 35.f));
+			divTimeMultRun->box.pos = mm2px(Vec(ctrl - 4.f, 44.f));
 			divTimeMultRun->box.size = mm2px(Vec(8.f, 0.f));
 			addChild(divTimeMultRun);
 
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 41)), module, runParams[s]));
-			addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(ctrl, 41)), module, runLights[s]));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 50)), module, runParams[s]));
+			addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(ctrl, 50)), module, runLights[s]));
 
 			HDivider* divRunMode = new HDivider;
-			divRunMode->box.pos = mm2px(Vec(ctrl - 4.f, 49.f));
+			divRunMode->box.pos = mm2px(Vec(ctrl - 4.f, 58.f));
 			divRunMode->box.size = mm2px(Vec(8.f, 0.f));
 			addChild(divRunMode);
 
@@ -2418,33 +2648,35 @@ struct Marf248Widget : ModuleWidget {
 			// statt nebeneinander. Mode kehrt die Basisrichtung um (LED an =
 			// Reverse), Pendulum schaltet zusaetzlich das Bouncing dazu
 			// (LED an = aktiv).
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 55)), module, modeParams[s]));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 55)), module, modeLights[s]));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 64)), module, pendulumParams[s]));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 64)), module, pendulumLights[s]));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 64)), module, modeParams[s]));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 64)), module, modeLights[s]));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 72)), module, pendulumParams[s]));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 72)), module, pendulumLights[s]));
 
 			HDivider* divModeAddr = new HDivider;
-			divModeAddr->box.pos = mm2px(Vec(ctrl - 4.f, 69.f));
+			divModeAddr->box.pos = mm2px(Vec(ctrl - 4.f, 77.f));
 			divModeAddr->box.size = mm2px(Vec(8.f, 0.f));
 			addChild(divModeAddr);
 
-			addParam(createParamCentered<Trimpot>(mm2px(Vec(ctrl, 75)), module, addrKnobParams[s]));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 84)), module, addrModeParams[s]));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 84)), module, addrModeLights[s]));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 93)), module, addrContParams[s]));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 93)), module, addrContLights[s]));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 102)), module, addrStrobeParams[s]));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 102)), module, addrStrobeLights[s]));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 111)), module, addrResetParams[s]));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 111)), module, addrResetLights[s]));
+			addParam(createParamCentered<Trimpot>(mm2px(Vec(ctrl, 83)), module, addrKnobParams[s]));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 91)), module, addrModeParams[s]));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 91)), module, addrModeLights[s]));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 99)), module, addrContParams[s]));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 99)), module, addrContLights[s]));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 107)), module, addrStrobeParams[s]));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 107)), module, addrStrobeLights[s]));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 115)), module, addrResetParams[s]));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 115)), module, addrResetLights[s]));
 
 			// --- Jacks-Spalte, von oben nach unten: Start/Stop-Trigger (eng,
-			// 8mm), Time-Multiplier-CV-Eingang, Voltage/Time-Out (eng, 8mm),
-			// Pulse 1/2-Out, All-Pulses-Out (jetzt ebenfalls eng an Pulse 2,
-			// 8mm statt vorher 13mm), Stage-Address-CV-In. Inhalt beginnt
-			// erst bei 20mm (statt 16mm) - bei einer Oberkante von 12mm
-			// (jetzt einheitlich mit den anderen Spalten) ragte die Start-
-			// Buchse bei 16mm sonst leicht ueber den Rahmenrand hinaus.
+			// 8mm), Time-Multiplier-CV-Eingang, Live-BPM-Anzeige,
+			// BEATS_FACTOR-CV, Pulse 1/2-Out, All-Pulses-Out, Stage-
+			// Address-CV-In. Voltage/Time-Out sind in die neue Ausgangsspalte
+			// umgezogen (Kinovice-Wunsch) - dadurch wieder mehr Luft fuer die
+			// vergroesserte BPM-Anzeige. Inhalt beginnt erst bei 20mm (statt
+			// 16mm) - bei einer Oberkante von 12mm (jetzt einheitlich mit
+			// den anderen Spalten) ragte die Start-Buchse bei 16mm sonst
+			// leicht ueber den Rahmenrand hinaus.
 			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(jack, 20)), module, startInputs[s]));
 			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(jack, 28)), module, stopInputs[s]));
 
@@ -2454,33 +2686,55 @@ struct Marf248Widget : ModuleWidget {
 			addChild(divStartTimeMult);
 			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(jack, 41)), module, timeMultCvInputs[s]));
 
-			HDivider* divTimeMultOut = new HDivider;
-			divTimeMultOut->box.pos = mm2px(Vec(jack - 9.f, 46.f));
-			divTimeMultOut->box.size = mm2px(Vec(18.f, 0.f));
-			addChild(divTimeMultOut);
-			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(jack, 52)), module, voutOutputs[s]));
-			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(jack, 60)), module, toutOutputs[s]));
+			// Live-BPM-Anzeige (BPM-Feature): direkt unter der Tempo-CV-
+			// Buchse, da sie das tatsaechlich wirksame Tempo dieser Buchse
+			// (Knob + CV) anzeigt - reiner Text-Readout, kein Bauteil, daher
+			// ohne eigenen ParamWidget-Resize-Tanz einfach per box.pos/size
+			// direkt platziert (siehe TempoBpmDisplay-Kommentar). Deutlich
+			// vergroessert ggue. der ersten Fassung (16x5mm -> 22x9mm,
+			// Schrift 8.5 -> 14px) - gleiche Amber-Farbe wie TrangeButton
+			// (Time Range), damit beide Live-Anzeigen im Panel einheitlich
+			// wirken (Kinovice-Wunsch). Passt jetzt bequem hierher, seit
+			// VOUT/TOUT in die eigene Spalte umgezogen sind.
+			TempoBpmDisplay* bpmDisplay = new TempoBpmDisplay;
+			bpmDisplay->box.size = mm2px(Vec(22.f, 9.f));
+			bpmDisplay->box.pos = mm2px(Vec(jack, 51)).minus(bpmDisplay->box.size.div(2));
+			bpmDisplay->module = dynamic_cast<Marf248*>(module);
+			bpmDisplay->section = s;
+			addChild(bpmDisplay);
+
+			// BEATS_FACTOR-CV-Eingang (BPM-Feature, siehe process()): direkt
+			// unter der BPM-Anzeige, thematisch zusammengehoerig (Beats pro
+			// Zyklus beeinflusst die angezeigte BPM-Zahl mit).
+			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(jack, 63)), module, beatsFactorCvInputs[s]));
 
 			HDivider* divOutPulse = new HDivider;
-			divOutPulse->box.pos = mm2px(Vec(jack - 9.f, 65.f));
+			divOutPulse->box.pos = mm2px(Vec(jack - 9.f, 68.f));
 			divOutPulse->box.size = mm2px(Vec(18.f, 0.f));
 			addChild(divOutPulse);
-			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(jack, 73)), module, p1Outputs[s]));
-			addChild(createLightCentered<PulseRingLight>(mm2px(Vec(jack, 73)), module, p1ActiveLights[s]));
-			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(jack, 81)), module, p2Outputs[s]));
-			addChild(createLightCentered<PulseRingLight>(mm2px(Vec(jack, 81)), module, p2ActiveLights[s]));
+			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(jack, 76)), module, p1Outputs[s]));
+			addChild(createLightCentered<PulseRingLight>(mm2px(Vec(jack, 76)), module, p1ActiveLights[s]));
+			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(jack, 84)), module, p2Outputs[s]));
+			addChild(createLightCentered<PulseRingLight>(mm2px(Vec(jack, 84)), module, p2ActiveLights[s]));
 
-			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(jack, 89)), module, apoutOutputs[s]));
+			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(jack, 92)), module, apoutOutputs[s]));
 
 			HDivider* divApoutAddr = new HDivider;
-			divApoutAddr->box.pos = mm2px(Vec(jack - 9.f, 94.f));
+			divApoutAddr->box.pos = mm2px(Vec(jack - 9.f, 97.f));
 			divApoutAddr->box.size = mm2px(Vec(18.f, 0.f));
 			addChild(divApoutAddr);
-			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(jack, 102)), module, addrExtInputs[s]));
+			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(jack, 105)), module, addrExtInputs[s]));
 			// Kanalwahl-CV direkt darunter, kein Divider noetig (gehoert
-			// thematisch zur selben Buchse darueber, analog zum VOUT/TOUT-
-			// Paar weiter oben ohne Trenner).
-			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(jack, 110)), module, addrExtChannelInputs[s]));
+			// thematisch zur selben Buchse darueber, analog zum bisherigen
+			// VOUT/TOUT-Paar ohne Trenner).
+			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(jack, 113)), module, addrExtChannelInputs[s]));
+
+			// Neue Ausgangsspalte (Kinovice-Wunsch): Voltage/Time-Ramp-Out,
+			// jetzt eigenstaendig zwischen Jacks-Spalte und Stage-Array statt
+			// in der Jacks-Spalte selbst - schafft dort Platz fuer die
+			// vergroesserte BPM-Anzeige (siehe oben).
+			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(outCol, 24)), module, voutOutputs[s]));
+			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(outCol, 36)), module, toutOutputs[s]));
 		}
 
 		// --- Stage-Array (Mitte) ---
