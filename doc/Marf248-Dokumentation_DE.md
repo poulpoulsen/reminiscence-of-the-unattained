@@ -13,7 +13,8 @@ Dokumentation, maxl0rd), Suzanne Ciani Cookbook, V2.66 Firmware-Changelog.
 Stand: alle in dieser Dokumentation beschriebenen Features wurden von
 Kinovice live im laufenden Rack getestet und bestätigt (u.a. Adress-Speicher
 Store/Recall, 4-Kanal-A–D-Kanalwahl inkl. Zonengrenzen und Fallback-
-Verhalten, Backward-Kompatibilität bestehender Mono-Patches).
+Verhalten, Backward-Kompatibilität bestehender Mono-Patches, V/Oct-
+Tempo-Steuerung inkl. Rechtsklick-Zahleneingabe).
 
 ---
 
@@ -42,6 +43,7 @@ Verhalten, Backward-Kompatibilität bestehender Mono-Patches).
    - [Adress-Speicher (Address Memory)](#sec4-9) · [[#4.9 Adress-Speicher (Address Memory)|Obsidian]]
    - [Clock-quantisiertes Advance](#sec4-10) · [[#4.10 Clock-quantisiertes Advance|Obsidian]]
    - [Scale/Key-Quantisierung](#sec4-11) · [[#4.11 Scale/Key-Quantisierung|Obsidian]]
+   - [Tempo/BPM-Steuerung (V/Oct, BEATS_FACTOR)](#sec4-12) · [[#4.12 Tempo/BPM-Steuerung (V/Oct, BEATS_FACTOR)|Obsidian]]
 5. [Marf248 – Funktionsreferenz (C++)](#sec5) · [[#5. Marf248 – Funktionsreferenz (C++)|Obsidian]]
 6. [Marf248TriggerExpander](#sec6) · [[#6. Marf248TriggerExpander|Obsidian]]
 7. [Marf248CvExpander](#sec7) · [[#7. Marf248CvExpander|Obsidian]]
@@ -141,22 +143,28 @@ voneinander getrennt und dürfen nicht verwechselt werden.
 ### 3.1 Panel-Layout
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
-Das Panel ist 120HP breit und in mehrere senkrechte Spalten gegliedert
+Das Panel ist 126HP breit (vorher 120HP – 6HP mehr für die neue
+Ausgangsspalte, siehe unten) und in mehrere senkrechte Spalten gegliedert
 (von links nach rechts):
 
 ```
-[External CV A–D] [Section-A-Controls] [Section-A-Jacks] [Stage-Array (16×)] [Section-B-Jacks] [Section-B-Controls] [Preset-Spalte]
+[External CV A–D] [Section-A-Controls] [Section-A-Jacks] [Section-A-Ausgänge] [Stage-Array (16×)] [Section-B-Ausgänge] [Section-B-Jacks] [Section-B-Controls] [Preset-Spalte]
 ```
 
 - **External-CV-Spalte** (ganz links): die vier modulweit geteilten
   externen CV-Eingänge (Buchsen A–D), die von `MOD_VOLT_EXT`/`MOD_TIME_EXT`
   je Stage referenziert werden können.
-- **Section-A/B-Controls-Spalte**: Time-Multiplier-Knob/Attenuverter,
-  Run-Taster, Mode/Pendulum-Taster, Stage-Address-Bedienelemente.
-- **Section-A/B-Jacks-Spalte** (12–115mm, um 5mm auf 115mm erweitert für
-  die neue Kanalwahl-CV-Buchse): alle Buchsen der jeweiligen Section
-  (Start/Stop, Time-Multiplier-CV, VOUT/TOUT, P1OUT/P2OUT, APOUT,
-  Stage-Address-CV, Stage-Address-Kanalwahl-CV).
+- **Section-A/B-Controls-Spalte**: Tempo-Knob/Attenuverter,
+  BEATS_FACTOR-Trimmer, Run-Taster, Mode/Pendulum-Taster,
+  Stage-Address-Bedienelemente.
+- **Section-A/B-Jacks-Spalte** (12–121mm): Start/Stop, Tempo-CV, Live-BPM-
+  Anzeige, BEATS_FACTOR-CV, P1OUT/P2OUT, APOUT, Stage-Address-CV,
+  Stage-Address-Kanalwahl-CV.
+- **Section-A/B-Ausgangsspalte** (neu, 12mm breit, 12–44mm): nur VOUT
+  (Voltage-Ausgang) und TOUT (Zeit-/Interval-Ausgang) – eigene, schmale
+  Spalte zwischen Jacks-Spalte und Stage-Array, spiegelbildlich für A/B.
+  Wurde aus der Jacks-Spalte ausgelagert, um dort Platz für die
+  vergrößerte BPM-Anzeige zu schaffen.
 - **Stage-Array** (Mitte, 16 gleich aufgebaute Spalten): die eigentliche
   Programmierung jeder der 16 Stages.
 - **Preset-Spalte** (ganz rechts): Load/Save, Scale/Key, 12 Preset-Slots.
@@ -195,10 +203,17 @@ Jede der 16 Stage-Spalten enthält von oben nach unten:
 Identischer, spiegelbildlicher Aufbau für Section A und B:
 
 **Controls-Spalte** (von oben nach unten):
-- **Time Multiplier** (`TIME_MULT_A/B_PARAM`, 0,5×–4,0×) + **Attenuverter**
+- **Tempo** (`TIME_MULT_A/B_PARAM`, −5…+5V) + **Attenuverter**
   (`TIME_MULT_ATTEN_A/B_PARAM`, −1..+1) für den zugehörigen CV-Eingang.
-  Skaliert alle Stage-Zeiten dieser Section multiplikativ, **nachdem**
-  External/Internal-Zeitauflösung bereits erfolgt ist.
+  **Breaking Change ggü. der ursprünglichen 0,5×–4,0×-Faktor-Semantik**:
+  der Regler speichert jetzt eine V/Oct-Tempo-Spannung (0V = 120 BPM,
+  exponentiell) statt eines direkten Zeitfaktors. Tooltip und
+  Rechtsklick-Zahleneingabe arbeiten in BPM (`TempoQuantity`). Siehe
+  [4.12](#sec4-12) für die vollständige Herleitung.
+- **BEATS_FACTOR** (`BEATS_FACTOR_A/B_PARAM`, Trimmer, 0,1–64, Default 4)
+  + zugehöriger CV-Eingang: legt fest, wie viele Beats ein voller Zyklus
+  über alle nicht geskippten Stages darstellen soll; daraus wird der
+  tatsächlich wirksame Zeitfaktor zurückgerechnet. Siehe [4.12](#sec4-12).
 - **Run** (`RUN_A/B_PARAM`, LED-Taster): togglet Start/Stop der Section
   (grüne LED = läuft). ODER-verknüpft mit einem externen Start/Stop-Gate
   vom Trigger-Expander. **Wird ignoriert, solange Advance gepatcht ist –
@@ -228,12 +243,17 @@ Identischer, spiegelbildlicher Aufbau für Section A und B:
   [4.2](#sec4-2).
 
 **Jacks-Spalte** (von oben nach unten): Start-Trigger, Stop-Trigger,
-Time-Multiplier-CV-Eingang, VOUT (Voltage-Ausgang), TOUT (Zeit-/Interval-
-Ausgang, 0–10V absteigende Rampe), P1OUT/P2OUT (programmierte Impulse,
-mit rotem Ring-Licht `PulseRingLight` um die Buchse, das mit dem Puls
-mitblinkt), APOUT (All-Pulses, feuert bei **jedem** Stage-Wechsel),
-Stage-Address-CV-Eingang, **Stage-Address-Kanalwahl-CV-Eingang** (neu,
-siehe [4.3](#sec4-3)).
+Tempo-CV-Eingang, **Live-BPM-Anzeige** (reiner Text-Readout, kein Bauteil,
+zeigt das tatsächlich wirksame Tempo inkl. CV – siehe [4.12](#sec4-12)),
+BEATS_FACTOR-CV-Eingang, P1OUT/P2OUT (programmierte Impulse, mit rotem
+Ring-Licht `PulseRingLight` um die Buchse, das mit dem Puls mitblinkt),
+APOUT (All-Pulses, feuert bei **jedem** Stage-Wechsel), Stage-Address-CV-
+Eingang, Stage-Address-Kanalwahl-CV-Eingang.
+
+**Ausgangsspalte** (neu, eigene schmale Spalte zwischen Jacks-Spalte und
+Stage-Array): VOUT (Voltage-Ausgang), TOUT (Zeit-/Interval-Ausgang, 0–10V
+absteigende Rampe). Vorher Teil der Jacks-Spalte, jetzt ausgelagert, um
+dort Platz für die größere BPM-Anzeige zu schaffen.
 
 **Status-LED "Run/Hold/Stop"** (dreifarbig, an derselben Panel-Position):
 - **Grün** (`RUN_x_LIGHT`): Section läuft normal (oder Advance-Modus
@@ -291,7 +311,8 @@ siehe [4.3](#sec4-3)).
 | Externe Spannungsquellen | `EXT_A/B/C/D_INPUT` | modulweit geteilt |
 | Stage-Address-CV | `STAGE_ADDR_EXT_A/B_INPUT` (poly, bis zu 4 Kanäle A–D) | pro Section |
 | Stage-Address-Kanalwahl-CV | `STAGE_ADDR_EXT_CHANNEL_A/B_INPUT` (neu) | pro Section |
-| Time-Multiplier-CV | `TIME_MULT_CV_A/B_INPUT` | pro Section |
+| Time-Multiplier-CV | `TIME_MULT_CV_A/B_INPUT` (Tempo, V/Oct) | pro Section |
+| BEATS_FACTOR-CV | `BEATS_FACTOR_CV_A/B_INPUT` (neu) | pro Section |
 | Section-Ausgänge | `VOUT_A/B`, `TOUT_A/B`, `APOUT_A/B`, `P1OUT_A/B`, `P2OUT_A/B` | pro Section |
 
 ---
@@ -507,10 +528,12 @@ Sekundenzeit kennt):
    aufgelösten Zeit addiert, skaliert relativ zur Spanne des jeweils
    gewählten Time Range (siehe [Abschnitt 7](#sec7)).
 5. Clamp auf `[0,001s, 30s]`.
-6. **Time Multiplier** (pro Section, 0,5×–4,0×, moduliert per CV +
-   Attenuverter): skaliert die bereits aufgelöste Zeit **zusätzlich**,
-   getrennt für Section A (`resolvedTimeA`) und B (`resolvedTimeB`), da
-   diese Werte nicht modulweit geteilt sind.
+6. **Tempo/Time Multiplier** (pro Section, V/Oct-BPM-Steuerung +
+   BEATS_FACTOR-Rückrechnung, moduliert per CV + Attenuverter): skaliert die
+   bereits aufgelöste Zeit **zusätzlich**, getrennt für Section A
+   (`resolvedTimeA`) und B (`resolvedTimeB`), da diese Werte nicht
+   modulweit geteilt sind. **Breaking Change** ggü. der ursprünglichen
+   0,5×–4,0×-Faktor-Semantik – volle Herleitung in [4.12](#sec4-12).
 
 <a id="sec4-6"></a>
 ### 4.6 Sustain / Enable / Stop
@@ -690,6 +713,84 @@ beide Sections: `currentKey` (0=C…11=B) und `currentScale` (0=Major,
 Bedienung: Scale/Key-Taster "scharf schalten" (Arm), danach wählt der
 nächste Druck auf einen der 12 Preset-Taster den Wert (siehe [3.4](#sec3-4)).
 
+<a id="sec4-12"></a>
+### 4.12 Tempo/BPM-Steuerung (V/Oct, BEATS_FACTOR)
+*[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
+
+**Breaking Change**: `TIME_MULT_A/B_PARAM` speicherte ursprünglich einen
+direkten Zeitfaktor (0,5×–4,0×). Jetzt speichert derselbe Parameter-Slot
+eine **V/Oct-Tempo-Spannung** (−5…+5V) – bestehende Patches/Presets
+interpretieren den gespeicherten Rohwert dadurch komplett anders (alte 2,0
+bedeutete 2,0× Zeitfaktor, jetzt 2 Volt → 480 BPM). Tempo-Knob in alten
+Patches muss neu eingestellt werden.
+
+**Grundformel** (`tempoVoltsToBpm()`, Marf248.hpp):
+
+```
+BPM = 120 × 2^Volt
+```
+
+0V = 120 BPM (`TEMPO_BASE_BPM`), exponentiell nach 1V/Oct-Konvention (1V =
+eine Oktave = Tempo-Verdopplung). CV wird **direkt additiv** in Volt zum
+Knob-Wert addiert (kein "volle Spanne bei X Volt"-Konzept wie beim alten
+Time Multiplier), der Attenuverter skaliert nur die CV-Amplitude:
+
+```
+totalVolts = Knob + Attenuverter × CV
+```
+
+`totalVolts` wird auf ±8V geklemmt (`TEMPO_VOLT_SAFETY_CLAMP`) – reine
+numerische Absicherung gegen absurde BPM-Werte bei Kabel-Fehlanschluss,
+keine musikalische Grenze.
+
+**BEATS_FACTOR-Rückrechnung**: `BEATS_FACTOR_A/B_PARAM` (+ CV, additiv,
+±5V deckt die volle Parameterspanne 0,1–64 ab) legt fest, wie viele Beats
+ein voller Zyklus über alle **nicht geskippten** Stages darstellen soll.
+Daraus wird der tatsächlich auf `resolvedTime[]` wirkende Multiplier
+zurückgerechnet:
+
+```
+baseCycleTime = Σ resolvedTime[i]  (nur Stages ohne MOD_SKIP)
+desiredCycleTime = (60 / BPM) × BEATS_FACTOR
+multiplier = desiredCycleTime / baseCycleTime
+```
+
+`multiplier` wird zusätzlich auf `[1e-4, 1e4]` geklemmt (reiner
+Rechenschutz, z.B. gegen Division durch 0 falls alle Stages geskippt sind).
+
+**Pendulum-Verhalten (Option B, bewusste Entscheidung)**: BEATS_FACTOR
+bezieht sich **immer nur auf einen Durchlauf** (Hinweg über alle nicht
+geskippten Stages), unabhängig davon, ob Pendulum aktiv ist. Bei aktivem
+Pendulum dauert ein voller Hin-und-Rück-Umlauf dadurch automatisch
+2×BEATS_FACTOR Beats – es gibt **keine** automatische Verdopplung/
+Halbierung im Code. Wer einen festen Umlaufwert will, stellt BEATS_FACTOR
+entsprechend selbst halbiert ein.
+
+**Live-BPM-Anzeige** (`TempoBpmDisplay`, Jacks-Spalte): reiner NVG-Text-
+Readout ohne eigene Interaktion, zeigt das tatsächlich wirksame Tempo
+(inkl. CV) pro Section. Aktualisiert dekimiert im `stageButtonDivider`-
+Rhythmus (nicht audio-rate) – die eigentliche Multiplier-Berechnung selbst
+läuft weiterhin jeden Sample, da sie direkt `resolvedTimeA/B` speist. Same
+Amber-Farbe/Outline-Technik wie `TrangeButton` (Time Range), für optische
+Konsistenz.
+
+**Rechtsklick-Zahleneingabe** (`TempoQuantity`): `getDisplayValue()`/
+`setDisplayValue()` sind auf BPM (nicht Volt) gemappt, mit log2-
+Rücktransformation (`Volt = log2(BPM / 120)`) – Eingabe und Tooltip-Anzeige
+sind dasselbe Feld. **Wichtiger, während der Entwicklung gefundener Bug**:
+eine frühere Fassung überschrieb nur `getDisplayValueString()` (Tooltip-
+Text), nicht aber `getDisplayValue()`/`setDisplayValue()` – dadurch griff
+die Rechtsklick-Eingabe auf den rohen Volt-Wert zu, während der Tooltip BPM
+zeigte. Eine eingegebene "120" landete dadurch als 120 Volt, sofort auf den
+Anschlag (5V) geklemmt. Gefixt durch expliziten Override beider Methoden.
+
+**Praxis-Richtwert**: BEATS_FACTOR=4 (Default) bedeutet 1 Stage = 1
+Sechzehntelnote – bei echten 120 BPM ergibt das 2s Zykluszeit über alle 16
+Stages, für den eher gemächlichen MARF-Funktionsgenerator-Charakter oft zu
+hektisch. BEATS_FACTOR=8 (1 Stage = 1 Achtelnote, 4s/Zyklus bei 120 BPM)
+oder 16 (1 Stage = 1 Viertelnote/Beat, 8s/Zyklus) passen erfahrungsgemäß
+besser zu klassischen Cookbook-Patches.
+
 ---
 
 <a id="sec5"></a>
@@ -708,6 +809,7 @@ nächste Druck auf einen der 12 Preset-Taster den Wert (siehe [3.4](#sec3-4)).
 | `voltageToNoteName(v)` | Wandelt 1V/Okt-Spannung in Notennamen (Eurorack-Konvention, 0V=C4) um. |
 | `getTimeRangeIndex(mod)` | Löst die exklusiven `MOD_TRANGE_*`-Bits zu einem Index 0–3 auf (TR3 = Default). |
 | `getRangeOffsetIndex(mod)` / `setRangeOffsetIndex(mod, idx)` | Lesen/Schreiben des 3-Bit-Oktav-Offset-Felds im Limited-Range-Modus. |
+| `tempoVoltsToBpm(volts)` | **Neu**: rechnet eine V/Oct-Tempo-Spannung nach `BPM = 120 × 2^Volt` in eine BPM-Zahl um, siehe [4.12](#sec4-12). |
 | `PickupState::arm(target, currentRaw)` | Aktiviert Pickup für einen neuen Zielwert (Preset-Load). |
 | `PickupState::resolve(currentRaw)` | Liefert pro Frame den effektiv zu nutzenden Wert (Ziel oder physischer Reglerwert), erkennt Überkreuzung. |
 | `Afg::jumpToStage(stage, mod)` | Sofortiger Sprung auf eine konkrete Stage (Reset/Strobe/Continuous/Adress-Speicher-Recall), Rampen-Start bleibt der zuletzt ausgegebene Wert. |
@@ -726,19 +828,21 @@ nächste Druck auf einen der 12 Preset-Taster den Wert (siehe [3.4](#sec3-4)).
 | `StageTimeQuantity::getDisplayValue()` / `setDisplayValue()` | **Neu**: rechnet den internen 0–1-Rohwert für Anzeige/Rechtsklick-Eingabe auf die Buchla-Cookbook-Dial-Konvention (0–10) um – der interne Parameterwert bleibt unverändert 0–1 (kein Breaking Change für bestehende Presets). |
 | `StageTimeQuantity::getDisplayValueString()` | Tooltip-Text des Time-Reglers: zeigt den 0–10-Dial-Wert führend, dahinter die exakt gegen den aktuellen Time Range aufgelöste Sekundenzahl in Klammern (z.B. `4.0 (0.132 s)`). |
 | `StageRangeQuantity::getDisplayValueString()` | Tooltip-Text des Range-Reglers als Klartext ("Full", "Half", "Lim +0"…"+8"). |
+| `TempoQuantity::getDisplayValue()` / `setDisplayValue()` | **Neu**: mappt den rohen Volt-Parameterwert auf BPM (`getDisplayValue`) bzw. rechnet eine eingegebene BPM-Zahl per log2 zurück in Volt (`setDisplayValue`) – Tooltip und Rechtsklick-Eingabe nutzen dasselbe Feld, siehe [4.12](#sec4-12). |
+| `TempoBpmDisplay::draw()` | **Neu**: selbstzeichnendes Live-Text-Widget (kein ParamWidget), zeigt `displayBpmA/B` in Amber, gleiche Outline-Technik wie `TrangeButton`. |
 | `Marf248::onReset(e)` | Reagiert auf VCV-Rack „Initialize": setzt zusätzlich zu den Standard-Params auch Modifier-Bits, beide Afg-Instanzen, Mode/Pendulum, Stage Address, Presets, **Adress-Speicher** und Scale/Key vollständig zurück (Felder, die nicht als Rack-Params gespeichert sind). |
 | `Marf248::savePreset(slot)` / `loadPreset(slot)` | Siehe [4.8](#sec4-8). |
 | `Marf248::performGlobalClear()` | Setzt Modifier-Bits, Range und Curve aller Stages zurück, verwirft ausstehende Pickups, löst Blitzlicht aus. Wiederverwendet vom Panel-Taster und vom Trigger-Expander-Eingang. Lässt den Adress-Speicher unangetastet. |
 | `Marf248::performResetValues()` | Setzt nur Voltage/Time aller Stages auf Default zurück. Wiederverwendet vom Panel-Taster und vom Trigger-Expander-Eingang. |
 | `Marf248::performAutoFill()` | **Neu**: setzt die 16 geteilten Voltage-Regler auf ein lineares 0–10V-Raster und erzwingt `Range = Full` je Stage, siehe [3.4](#sec3-4). |
-| `Marf248::process(args)` | Zentrale Verarbeitungsfunktion, pro Sample aufgerufen. Ablauf (siehe auch Abschnitte 3–4): Trigger-Expander-Lookup (ganz am Anfang, für SEXT) → Global Clear/Reset Values/Auto-Fill → Preset-/Scale-/Key-Arm-Logik → Stage-Modifier-Klick-Buttons (dezimiert per `stageButtonDivider`) → Stage-Modifier-Poly-CV-Overrides vom Trigger-Expander (jeden Sample, ungedrosselt) → Auflösung von Voltage/Time/Curve pro Stage (Range, External-Quellen, Time Range, additive CV, Curve-Power-Cache) → Time-Multiplier-Anwendung → Stage-Address-Verarbeitung je Section (inkl. Kanalwahl-CV) → `afgA.process()`/`afgB.process()`-Aufrufe (inkl. Run-Gate und Advance) → Ausgabe schreiben → Trigger-Expander-Aktionen (Clear/Reset/Preset/**Adress-Speicher Store/Recall**/Scale/Key/Start-End-of-Cycle) → CV-Expander-Gate-Ausgabe → dreifarbige Status-LEDs. |
-| `Marf248::dataToJson()` / `dataFromJson(rootJ)` | Persistiert Modifier-Bits, Mode/Pendulum/Stage-Address-Zustände, Scale/Key, alle 12 Preset-Slots sowie **den Adress-Speicher** (siehe [Abschnitt 9](#sec9)). |
+| `Marf248::process(args)` | Zentrale Verarbeitungsfunktion, pro Sample aufgerufen. Ablauf (siehe auch Abschnitte 3–4): Trigger-Expander-Lookup (ganz am Anfang, für SEXT) → Global Clear/Reset Values/Auto-Fill → Preset-/Scale-/Key-Arm-Logik → Stage-Modifier-Klick-Buttons (dezimiert per `stageButtonDivider`) → Stage-Modifier-Poly-CV-Overrides vom Trigger-Expander (jeden Sample, ungedrosselt) → Auflösung von Voltage/Time/Curve pro Stage (Range, External-Quellen, Time Range, additive CV, Curve-Power-Cache) → **Tempo-/BEATS_FACTOR-Auflösung und Multiplier-Rückrechnung je Section (siehe [4.12](#sec4-12))** → Stage-Address-Verarbeitung je Section (inkl. Kanalwahl-CV) → `afgA.process()`/`afgB.process()`-Aufrufe (inkl. Run-Gate und Advance) → Ausgabe schreiben → dekimierte Übernahme der Live-BPM-Anzeigewerte → Trigger-Expander-Aktionen (Clear/Reset/Preset/Adress-Speicher Store/Recall/Scale/Key/Start-End-of-Cycle) → CV-Expander-Gate-Ausgabe → dreifarbige Status-LEDs. |
+| `Marf248::dataToJson()` / `dataFromJson(rootJ)` | Persistiert Modifier-Bits, Mode/Pendulum/Stage-Address-Zustände, Scale/Key, alle 12 Preset-Slots sowie den Adress-Speicher (siehe [Abschnitt 9](#sec9)). |
 | `TrangeButton::draw()` | Selbstzeichnender Time-Range-Taster (kein SVG-Asset): dunkler abgerundeter Hintergrund + Ziffer 1–4 in Amber mit dunklem Outline. |
 | `TrangeButton::appendContextMenu()` | Rechtsklick-Checkliste zur direkten TR1–4-Auswahl (manipuliert `stageModifier` direkt statt über den Momentary-Button-Rohwert). |
 | `RangeKnob::draw()` | Zeichnet zusätzlich zum Standard-`RoundBlackKnob` einen farbigen Zeiger (deckt den Original-SVG-Zeiger ab) sowie ein Textkürzel des aktuellen Zustands in der Knopfmitte. |
 | `RangeKnob::appendContextMenu()` | Rechtsklick-Checkliste zur direkten Range-Auswahl (Standard-Texteingabe war laut Praxistest bei diesem snap-Regler unzuverlässig). |
 | `PulseRingLight` | Eigenes Licht-Widget: zeichnet einen dünnen Ring um die P1/P2-Ausgangsbuchse statt eines separaten Punkts. |
-| `Marf248Widget::Marf248Widget(module)` | Baut das komplette 120HP-Panel auf: Rahmen, Spalten-Geometrie, alle Regler/Taster/Buchsen/Lichter für External-CV, beide Sections (inkl. neuer Kanalwahl-CV-Buchse) und die 16 Stage-Spalten sowie die Preset-Spalte (siehe [3.1](#sec3-1)). |
+| `Marf248Widget::Marf248Widget(module)` | Baut das komplette 126HP-Panel auf: Rahmen, Spalten-Geometrie (inkl. neuer VOUT/TOUT-Ausgangsspalte pro Section), alle Regler/Taster/Buchsen/Lichter für External-CV, beide Sections und die 16 Stage-Spalten sowie die Preset-Spalte (siehe [3.1](#sec3-1)). |
 
 ---
 
@@ -1084,3 +1188,14 @@ betroffen.
   Mechanismen adressieren die Stage auf konzeptionell unterschiedliche Art
   (Trigger-basiert vs. direkt-adressierend), eine Kombination wäre
   semantisch widersprüchlich.
+- **Tempo-Knob ist V/Oct statt linearer Faktor** (Breaking Change, siehe
+  [4.12](#sec4-12)) – folgt der Eurorack-Standardkonvention statt einer
+  eigenen Skala, macht das Modul kompatibel zu externen V/Oct-Pitch-/
+  Tempo-Quellen.
+- **BEATS_FACTOR bezieht sich bei Pendulum bewusst nicht automatisch auf
+  den vollen Hin-und-Rück-Umlauf** (Option B, siehe [4.12](#sec4-12)) – ein
+  Parameter behält eine feste, vorhersehbare Bedeutung statt eines
+  versteckten Pendulum-Sonderfalls im Code.
+- **Multiplier-Sicherheitsklammern (`[1e-4, 1e4]`) sind reiner
+  Rechenschutz, keine musikalische Grenze** – analog zur bestehenden
+  CV-Expander-Zeit-Klammer (`[0,001s, 30s]`).
