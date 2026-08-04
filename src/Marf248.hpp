@@ -310,6 +310,18 @@ struct Afg {
 	// Siehe advanceStage() fuer die Herleitung, warum beide Enden je einmal
 	// wiederholt werden muessen (Periode 2xM statt 2x(M-1), damit Pendulum
 	// mit einer normal vorwaerts laufenden Section synchron bleibt).
+	//
+	// Session-Historie (August 2026): der Halt wurde zwischenzeitlich
+	// versuchsweise entfernt (echte Spiegelung ohne Wiederholung), um einen
+	// vermeintlichen "Versatz von einem Step" beim Treffen mit einer
+	// Forward-Section zu beheben. Ergebnis war schlechter: ohne Halt betraegt
+	// die Pendulum-Periode 2x(M-1) - bei M=16 also 30 statt 32 Ticks - und
+	// das ist KEIN sauberes Vielfaches der Forward-Periode M (16) mehr.
+	// Forward und Pendulum liefen dadurch komplett auseinander (kleinstes
+	// gemeinsames Vielfaches von 16 und 30 ist 240 Ticks - praktisch nie).
+	// Mit Halt (2xM = 32, sauberes Vielfaches von 16) treffen sich beide
+	// Enden dagegen zuverlaessig alle 2 Forward-Umlaeufe. Daher zurueckgebaut
+	// auf den urspruenglichen Stand mit Halt.
 	int pendulumDir = 1;
 	bool pendulumHeld = false;
 	bool pendulumWasOn = false;

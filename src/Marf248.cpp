@@ -701,6 +701,21 @@ struct Marf248 : Module {
 			pickupRange[i].pending = false;
 			pickupCurve[i].pending = false;
 		}
+		// Bugfix (Session August 2026): Werkszustand First/Last sofort wieder
+		// setzen, analog zu onReset()/Konstruktor. Ohne dies blieb
+		// stageModifier[] komplett leer (0 = kein First/Last-Bit irgendwo),
+		// was Pendulum dauerhaft kaputt machte: Forward/Reverse haben einen
+		// Array-Grenzen-Fallback (next >= NUM_STAGES) und wrappen trotzdem
+		// korrekt, Pendulum aber haengt ausschliesslich an wasFirst/wasLast
+		// (siehe Afg::advanceStage() in Marf248.hpp) und blieb ohne jeden
+		// Turnaround-Punkt einfach an Stage 16 (rack::clamp-Obergrenze)
+		// haengen - betrifft beide Sections gleichzeitig, da stageModifier
+		// modulweit geteilt ist (nicht pro Section A/B). Als Nebeneffekt
+		// waren davor auch die Start-/End-of-Cycle-Ausgaenge am Trigger-
+		// Expander nach Global Clear stumm, da sie auf denselben Bits
+		// basieren.
+		stageModifier[0] |= MOD_FIRST;
+		stageModifier[NUM_STAGES - 1] |= MOD_LAST;
 		clearFlash.trigger(0.15f);
 	}
 
