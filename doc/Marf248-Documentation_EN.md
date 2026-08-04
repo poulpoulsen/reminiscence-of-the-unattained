@@ -357,6 +357,23 @@ Skip. Sequence:
      bounce toward Last, Reverse → bounce toward First); toggling
      `reverseMode` while Pendulum is already running has no effect until
      the next off/on cycle (avoids an abrupt jump mid-bounce).
+
+   **Sync behavior with a concurrently running Forward section**
+   (live-verified, August 2026 session): with identical stage times on
+   both sections, an exactly periodic two-state pattern emerges over every
+   2 Forward cycles (= 1 complete Pendulum round trip, 2×M ticks): during
+   the 1st cycle both run **in lockstep** (Pendulum rising just like
+   Forward), during the 2nd cycle both run **mirrored** (Pendulum falling
+   while Forward rises again) – both states count as "in sync" in terms of
+   voltage trajectory. A turning-point hold removed on a trial basis
+   (period 2×(M−1) instead of 2×M) was reverted: without the hold, the
+   Pendulum period is **no longer** a clean multiple of the Forward period
+   M (least common multiple of M=16 and 2×(M−1)=30 would be 240 ticks) –
+   the two sections drifted completely apart instead of staying in sync.
+   A single outlier initially observed (3 of 4 passes in sync, one not)
+   could not be traced to a code defect and disappeared after a joint
+   restart/reset of both sections – pointing to a start-time offset
+   between A and B rather than a Pendulum logic issue.
 2. **Skip stages**: a loop (capped at `NUM_STAGES` attempts as a
    safety net) repeats the same stepping logic as long as the found
    stage has `MOD_SKIP` set. Skip only applies during automatic
@@ -986,6 +1003,34 @@ deliberately different from the wrap logic of automatic playback
 point. Anyone wanting to switch between segments must do so actively via
 external stage-address CV combined with Strobe or Continuous – a simple
 Reset press always returns to the very first segment.
+
+### 10.10 Global Clear permanently erased the First/Last bits (fixed, August 2026)
+
+**A bug, not a design point** – unlike the other entries in this section.
+`performGlobalClear()` set `stageModifier[i] = 0` for all 16 stages
+without afterwards restoring the factory-default bits (stage 1 =
+`MOD_FIRST`, stage 16 = `MOD_LAST`) the way `onReset()`/the constructor
+do. Since `stageModifier[]` is shared module-wide (a single array, not
+split per section A/B), pressing Global Clear affected **both** sections
+at once.
+
+**Symptoms this caused:**
+- Pendulum got stuck at stage 16 with no turning point at all
+  (`rack::clamp` upper bound in `advanceStage()`) – the turnaround relies
+  exclusively on `wasFirst`/`wasLast`, unlike Forward/Reverse, which also
+  have an array-bound fallback (`next >= NUM_STAGES`) and therefore kept
+  wrapping correctly despite the missing bits. This masked the bug for a
+  long time: Forward/Reverse felt normal after Global Clear, only
+  Pendulum visibly broke.
+- The Start/End-of-Cycle outputs on the Trigger Expander also went silent
+  after Global Clear (same bit dependency, see [4.7](#sec4-7)).
+
+**Fix:** `performGlobalClear()` now re-sets `stageModifier[0] |=
+MOD_FIRST` and `stageModifier[NUM_STAGES-1] |= MOD_LAST` after clearing –
+mirroring `onReset()`. A VCV "Initialize" (right-click → Initialize)
+already repaired the state before the fix, since `onReset()` correctly
+re-set the bits – only the Global Clear panel/CV trigger itself was
+affected.
 
 ---
 

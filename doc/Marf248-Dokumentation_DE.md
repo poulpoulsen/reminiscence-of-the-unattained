@@ -358,6 +358,25 @@ markiert ist. Ablauf:
      Umschalten von `reverseMode` während Pendulum bereits läuft wirkt
      sich erst beim nächsten Aus/An-Zyklus aus (kein abrupter Sprung
      mitten im Bounce).
+
+   **Sync-Verhalten mit einer parallel laufenden Forward-Section**
+   (Live-verifiziert, Session August 2026): Bei identischer Stage-Zeit auf
+   beiden Sections ergibt sich ein exakt periodisches Zwei-Zustands-Muster
+   über je 2 Forward-Umläufe (= 1 vollständige Pendulum-Hin-und-Rückfahrt,
+   2×M Ticks): im 1. Umlauf laufen beide **deckungsgleich** (Pendulum
+   steigt wie Forward), im 2. Umlauf laufen beide **spiegelbildlich**
+   (Pendulum fällt, während Forward erneut steigt) – beide Zustände zählen
+   als „synchron" im Sinne von Spannungsverlauf. Ein testweise entfernter
+   Wendepunkt-Halt (Periode 2×(M−1) statt 2×M) wurde wieder verworfen: ohne
+   den Halt ist die Pendulum-Periode **kein** sauberes Vielfaches der
+   Forward-Periode M mehr (kleinstes gemeinsames Vielfaches bei M=16 und
+   2×(M−1)=30 wäre 240 Ticks) – beide Sections liefen dadurch komplett
+   auseinander statt synchron zu bleiben. Ein anfänglich beobachteter
+   Einzelausreißer (3 von 4 Durchgängen synchron, einer nicht) ließ sich
+   nicht auf einen Code-Fehler zurückführen, sondern verschwand nach einem
+   gemeinsamen Neustart/Reset beider Sections – deutet auf einen
+   Startzeitpunkt-Versatz zwischen A und B hin, nicht auf ein
+   Pendulum-Logikproblem.
 2. **Skip überspringen**: Eine Schleife (max. `NUM_STAGES` Versuche als
    Sicherheitsnetz) wiederholt dieselbe Schrittlogik, solange die
    gefundene Stage `MOD_SKIP` gesetzt hat. Skip wirkt nur beim
@@ -995,6 +1014,34 @@ Ablaufs (`findFirstBefore()`), die stattdessen lokal zum nächstgelegenen
 First-Punkt wrappt. Wer zwischen Segmenten wechseln will, muss das aktiv
 über externe Stage-Address-CV kombiniert mit Strobe oder Continuous tun –
 ein einfacher Reset-Druck bringt immer zum allerersten Segment zurück.
+
+### 10.10 Global Clear löschte First/Last-Bits dauerhaft (behoben, August 2026)
+
+**Bug, nicht Design** – im Gegensatz zu den übrigen Punkten in diesem
+Abschnitt. `performGlobalClear()` setzte `stageModifier[i] = 0` für alle
+16 Stages, ohne anschließend wie `onReset()`/der Konstruktor die
+Werkszustand-Bits (Stage 1 = `MOD_FIRST`, Stage 16 = `MOD_LAST`) wieder zu
+setzen. Da `stageModifier[]` modulweit geteilt ist (ein Array, nicht pro
+Section A/B getrennt), waren nach einem Druck auf Global Clear **beide**
+Sections betroffen.
+
+**Symptome, die das ausgelöst hat:**
+- Pendulum blieb ohne jeden Wendepunkt an Stage 16 hängen
+  (`rack::clamp`-Obergrenze in `advanceStage()`) – der Turnaround hängt
+  ausschließlich an `wasFirst`/`wasLast`, anders als Forward/Reverse, die
+  zusätzlich einen Array-Grenzen-Fallback (`next >= NUM_STAGES`) haben und
+  dadurch trotz fehlender Bits weiter korrekt wrappten. Das hat den Bug
+  lange maskiert: Forward/Reverse fühlten sich nach Global Clear normal
+  an, nur Pendulum zeigte sichtbar kaputtes Verhalten.
+- Start-/End-of-Cycle-Ausgänge am Trigger-Expander blieben nach Global
+  Clear ebenfalls stumm (gleiche Bit-Abhängigkeit, siehe [4.7](#sec4-7)).
+
+**Fix:** `performGlobalClear()` setzt `stageModifier[0] |= MOD_FIRST` und
+`stageModifier[NUM_STAGES-1] |= MOD_LAST` nach dem Löschen wieder – analog
+zu `onReset()`. Ein VCV-„Initialize" (Rechtsklick → Initialize) hat den
+Zustand schon vor dem Fix repariert, da `onReset()` die Bits korrekt neu
+gesetzt hat – nur der Panel-/CV-Taster für Global Clear selbst war
+betroffen.
 
 ---
 
