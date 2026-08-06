@@ -137,14 +137,15 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yStageState)), module, Marf248TriggerExpander::STAGE_SUSTAIN_POLY_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, yStageState)), module, Marf248TriggerExpander::STAGE_ENABLE_POLY_INPUT));
 
-		// Reihe 11 (NEU): Stage-Pulse-Modifier Poly-Gates (Pulse1/Pulse2) plus
-		// SLOPE in der frei gebliebenen 3. Spalte (einfaches Ein/Aus-Bit,
-		// passt thematisch zwar eher zur Adress-/Zustands-Gruppe, aber hier
-		// war noch Platz frei - kein Grund fuer eine 4. Reihe).
+		// Reihe 11: Stage-Pulse-Modifier Poly-Gates (Pulse1/Pulse2) plus
+		// SLOPE in der 3. Spalte. Spalte D war hier bisher frei (nur in
+		// Reihe 8 und 12 genutzt) - nimmt jetzt MUTE auf, ohne dass eine
+		// neue Reihe noetig wird (siehe Marf248TriggerExpander.hpp).
 		float yStagePulse = yStageState + stepY;
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yStagePulse)), module, Marf248TriggerExpander::STAGE_PULSE1_POLY_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yStagePulse)), module, Marf248TriggerExpander::STAGE_PULSE2_POLY_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, yStagePulse)), module, Marf248TriggerExpander::STAGE_SLOPE_POLY_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colD, yStagePulse)), module, Marf248TriggerExpander::STAGE_MUTE_POLY_INPUT));
 
 		// Reihe 12 (NEU): Adress-Speicher Store/Recall (siehe
 		// Marf248TriggerExpander.hpp und Marf248::process()) - Store A/B und

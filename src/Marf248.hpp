@@ -74,6 +74,25 @@ enum StageModifierBits {
 	MOD_TRANGE_1 = 1 << 20,  // .002 - .03s (schnellster Bereich)
 	MOD_TRANGE_2 = 1 << 21,  // .02  - .3s
 	MOD_TRANGE_4 = 1 << 22,  // 2    - 30s (langsamster Bereich)
+	// Mute: unterdrueckt die Trigger-Erzeugung von P1OUT/P2OUT UND APOUT
+	// (All Pulses) fuer diese Stage komplett (siehe Afg::process(),
+	// pulse1Active/pulse2Active, sowie allPulseGen.trigger() in
+	// jumpToStage()/advanceStage()), OHNE die MOD_PULSE1/MOD_PULSE2-Bits
+	// selbst zu veraendern - die Programmierung bleibt also erhalten und
+	// greift wieder normal, sobald Mute aufgehoben wird. APOUT ist
+	// bewusst mit einbezogen (Kinovice-Entscheidung), da es sonst
+	// umstaendlich waere, P1 UND P2 einzeln deaktivieren zu muessen, nur
+	// um eine Stage wirklich komplett stumm zu bekommen - APOUT feuert
+	// sonst unabhaengig von MOD_PULSE1/2 bei jeder Stage
+	// (allPulseGen = reiner Stage-Wechsel-Marker). CV/Slew/Voltage-
+	// Ausgabe der Stage bleibt davon vollstaendig unbeeinflusst (reine
+	// Pulse-Unterdrueckung, kein Eingriff in applyRange()/
+	// applySlewCurve()). Vorerst nur per Pegel-Override vom Trigger-
+	// Expander gesetzt (STAGE_MUTE_POLY_INPUT, siehe
+	// Marf248TriggerExpander.hpp) - ein Panel-Button/Light auf dem
+	// Hauptmodul folgt erst mit dem separat geplanten Panel-Relayout
+	// (Kinovice-Entscheidung, eigene Session).
+	MOD_MUTE = 1 << 23,
 };
 
 // Sekunden-Spannen der 4 Time-Range-Bereiche, indiziert 0..3 (TR1..TR4).
@@ -482,8 +501,13 @@ struct Afg {
 		voltageFrom = voltageOut;
 		currentStage = rack::clamp(stage, 0, NUM_STAGES - 1);
 		elapsed = 0.f;
-		allPulseGen.trigger(1e-3f);
-		// Retrigger-Luecke nur bei Wiedereintritt OHNE Indexwechsel (z.B.
+		// MOD_MUTE unterdrueckt jetzt auch APOUT (Kinovice-Entscheidung:
+		// sonst muesste man P1 UND P2 einzeln deaktivieren, um eine Stage
+		// wirklich komplett stumm zu bekommen) - allPulseGen feuert sonst
+		// bei JEDER Stage, unabhaengig von MOD_PULSE1/2.
+		if (!(stageModifier[currentStage] & MOD_MUTE)) {
+			allPulseGen.trigger(1e-3f);
+		}
 		// Strobe erneut auf dieselbe Adresse) - bei einem echten Sprung auf
 		// eine andere Stage ist die Gate-Adressierung ohnehin schon high auf
 		// dem neuen Index, keine Luecke noetig (siehe Spec-Praezisierung).
@@ -688,8 +712,11 @@ struct Afg {
 		bool sameStageReentry = (next == currentStage);
 		currentStage = next;
 		elapsed = 0.f;
-		allPulseGen.trigger(1e-3f);
-		// Retrigger-Luecke nur bei Wiedereintritt OHNE Indexwechsel (Pendulum-
+		// MOD_MUTE unterdrueckt jetzt auch APOUT, siehe identischer Kommentar
+		// in jumpToStage() oben.
+		if (!(stageModifier[currentStage] & MOD_MUTE)) {
+			allPulseGen.trigger(1e-3f);
+		}
 		// Wendepunkt-Wiederholung, next==currentStage von oben) - bei einem
 		// normalen Schritt auf eine andere Stage braucht es keine Luecke,
 		// die Gate-Adressierung wechselt dort ohnehin den Kanal (siehe
@@ -898,8 +925,13 @@ struct Afg {
 		// - bei mehrfachem Gate-Wechsel waehrend EINES Stage-Aufenthalts
 		//   (z.B. externer Clock) JEDE steigende Flanke erneut feuert (freier
 		//   Clock-Betrieb statt "nur einmal pro Besuch" - Kinovice-Entscheidung).
-		bool pulse1Active = stageModifier[currentStage] & MOD_PULSE1;
-		bool pulse2Active = stageModifier[currentStage] & MOD_PULSE2;
+		// MOD_MUTE unterdrueckt nur die Flankenerkennung von P1/P2 (das
+		// Bit selbst bleibt in stageModifier[] unangetastet) - First/Last
+		// bleiben von Mute bewusst unberuehrt, da sie Zyklus-Marker sind,
+		// keine "Output Pulses" im Sinne des Manuals.
+		bool muteActive = stageModifier[currentStage] & MOD_MUTE;
+		bool pulse1Active = !muteActive && (stageModifier[currentStage] & MOD_PULSE1);
+		bool pulse2Active = !muteActive && (stageModifier[currentStage] & MOD_PULSE2);
 		bool firstActive  = stageModifier[currentStage] & MOD_FIRST;
 		bool lastActive   = stageModifier[currentStage] & MOD_LAST;
 		if (pulse1Active && !pulse1PrevActive) {

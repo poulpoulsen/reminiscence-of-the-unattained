@@ -129,6 +129,21 @@ struct Marf248TriggerExpander : Module {
 		ADDR_STORE_B_POLY_INPUT,
 		ADDR_RECALL_A_POLY_INPUT,
 		ADDR_RECALL_B_POLY_INPUT,
+		// Stage MUTE (Poly, Kanal i = Stage i+1): identisches Pegel-Override-
+		// Prinzip wie STAGE_PULSE1/2_POLY_INPUT oben, aber setzt MOD_MUTE
+		// statt MOD_PULSE1/2 - unterdrueckt die P1/P2-Trigger-Erzeugung der
+		// betreffenden Stage komplett (Voltage/Slew bleibt unbeeinflusst,
+		// siehe Marf248.hpp), OHNE die Pulse1/2-Programmierung selbst zu
+		// veraendern. Kanal-Spannung >= GATE_THRESHOLD (2V) = gemutet,
+		// darunter = normal. Nur wirksam, solange die Buchse gepatcht ist
+		// (isConnected()); ohne Kabel bleibt der zuletzt gesetzte Zustand
+		// erhalten (gleiches Rueckfall-Verhalten wie alle anderen Stage-
+		// Modifier-Poly-Inputs). Bewusst ans Enum-Ende angehaengt statt
+		// zwischen die Pulse1/2/Slope-Gruppe einsortiert, um deren Indizes
+		// nicht zu verschieben. Ein Panel-Button/Light auf dem Hauptmodul
+		// folgt erst mit dem separat geplanten Panel-Relayout - dieser
+		// Eingang ist bis dahin die einzige Bedienmoeglichkeit fuer Mute.
+		STAGE_MUTE_POLY_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
@@ -180,6 +195,7 @@ struct Marf248TriggerExpander : Module {
 		configInput(ADDR_STORE_B_POLY_INPUT, "Section B Address Memory Store (poly, ch. 1-16 = slot 1-16, captures current stage)");
 		configInput(ADDR_RECALL_A_POLY_INPUT, "Section A Address Memory Recall (poly, ch. 1-16 = slot 1-16, jumps to stored stage)");
 		configInput(ADDR_RECALL_B_POLY_INPUT, "Section B Address Memory Recall (poly, ch. 1-16 = slot 1-16, jumps to stored stage)");
+		configInput(STAGE_MUTE_POLY_INPUT, "Stage MUTE gate (poly, ch. 1-16 = stage 1-16, high suppresses Pulse1/2 output without changing their programming)");
 
 		configOutput(START_CYCLE_A_OUTPUT, "Section A Start of Cycle trigger");
 		configOutput(END_CYCLE_A_OUTPUT, "Section A End of Cycle trigger");

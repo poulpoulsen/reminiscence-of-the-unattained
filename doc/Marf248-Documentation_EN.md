@@ -13,8 +13,9 @@ documentation, maxl0rd), Suzanne Ciani Cookbook, V2.66 firmware changelog.
 Status: every feature described in this documentation has been live-tested
 and confirmed by Kinovice in a running Rack instance (including Address
 Memory Store/Recall, 4-channel A–D selection with zone boundaries and
-fallback behavior, backward compatibility of existing mono patches, and
-V/Oct tempo control including right-click numeric entry).
+fallback behavior, backward compatibility of existing mono patches, V/Oct
+tempo control including right-click numeric entry, and Stage Mute
+including APOUT suppression).
 
 ---
 
@@ -61,11 +62,14 @@ V/Oct tempo control including right-click numeric entry).
 The project consists of three VCV Rack modules that together form a
 plugin:
 
-| Module | File(s) | Purpose |
-|---|---|---|
-| **Marf248** | `Marf248.hpp`, `Marf248.cpp` | Main module: two independent AFG sections (A/B) that share 16 common stages. Contains all of the DSP core logic. |
-| **Marf248TriggerExpander** | `Marf248TriggerExpander.hpp/.cpp` | Optional 24HP expander: additional trigger/gate inputs and outputs (Clear, Presets, Scale/Key, Start/End of Cycle, Run gates, Advance, Address Memory, stage-modifier CV, SEXT). |
-| **Marf248CvExpander** | `Marf248CvExpander.hpp/.cpp` | Optional 12HP expander: polyphonic CV modulation of stage time and slew curve, plus polyphonic per-stage gate outputs. |
+**Marf248** *(`Marf248.hpp`, `Marf248.cpp`)*<br>
+Main module: two independent AFG sections (A/B) that share 16 common stages. Contains all of the DSP core logic.
+
+**Marf248TriggerExpander** *(`Marf248TriggerExpander.hpp/.cpp`)*<br>
+Optional 24HP expander: additional trigger/gate inputs and outputs (Clear, Presets, Scale/Key, Start/End of Cycle, Run gates, Advance, Address Memory, stage-modifier CV, SEXT).
+
+**Marf248CvExpander** *(`Marf248CvExpander.hpp/.cpp`)*<br>
+Optional 12HP expander: polyphonic CV modulation of stage time and slew curve, plus polyphonic per-stage gate outputs.
 
 **Core principle of the expander mechanism:** Neither expander has any
 DSP logic of its own. They are purely "jack carriers." The main module's
@@ -122,6 +126,7 @@ All three modules are registered in `plugin.cpp`/`plugin.hpp`
 | `MOD_SKIP` | Stage is skipped entirely during automatic playback | **no** (pure software extension) |
 | `MOD_SLEW_NORMALIZE` | Stretches the visibly-moving curve to fill the full stage time | **no** |
 | `MOD_TRANGE_1/2/4` | Time Range TR1/TR2/TR4 (no bit = TR3, default) | yes (TR1–4) |
+| `MOD_MUTE` | Suppresses P1OUT/P2OUT **and** APOUT for this stage, without changing `MOD_PULSE1`/`MOD_PULSE2`; voltage/slew unaffected | **no** |
 
 In addition, a 3-bit field (`RANGE_OFFSET_MASK`) encodes the octave offset
 in Limited-range mode (5 steps: +0/+2/+4/+6/+8 V).
@@ -178,20 +183,41 @@ horizontal divider lines (`HDivider`).
 
 Each of the 16 stage columns contains, from top to bottom:
 
-| Element | Type | Function |
-|---|---|---|
-| **Voltage** (`STAGE_VOLTAGE_PARAM`) | Knob, 0–10V | Programmed output voltage of the stage. In External mode (`MOD_VOLT_EXT`), the knob position instead selects the channel A–D (4 zones of 2.5V each). The tooltip shows volts, note name (when Quantize is active), or channel name (when External is active) – see `StageVoltageQuantity`. |
-| **Time** (`STAGE_TIME_PARAM`) | Knob, normalized 0–1 | Programmed stage time as a position **within** the selected Time Range bracket (TR1–4). The tooltip shows the Buchla Cookbook dial value (0–10, leading) with the exactly resolved number of seconds in parentheses afterward, e.g. `4.0 (0.132 s)` – see `StageTimeQuantity`. Right-click number entry still accepts the 0–10 dial value. In External mode (`MOD_TIME_EXT`), the position selects the channel A–D. |
-| Two stage LEDs (`STAGE_LIGHT_A/B`) | Light | Indicate whether Section A or B is currently addressing this stage (green/red, side by side). |
-| **Pulse 1 / Pulse 2 / Skip** | LED buttons (toggle) | Row 1: `MOD_PULSE1`/`MOD_PULSE2` fire a short trigger on the section's P1OUT/P2OUT when the stage is reached. `MOD_SKIP` (pure software extension) skips the stage entirely during automatic playback – no time, no triggers, no voltage output from it. Only affects automatic playback, not manual addressing (Reset/Strobe/Continuous). |
-| **Stop / Sustain / Enable** | LED buttons (toggle) | Row 2: `MOD_STOP` = programmed stop stage (pauses playback until the section is restarted). `MOD_SUSTAIN` = holds the stage while a high level (gate) is present at the start input (ADSR-like release behavior). `MOD_ENABLE` = holds the stage while **no** high level is present (release only via a gate). Both hold states pause the dwell-time counter `elapsed`. **Watch out for the pitfall with no cable patched into START_A/B – see [Section 10](#sec10).** |
-| **First / Last / Slope** | LED buttons (toggle) | Row 3: `MOD_FIRST`/`MOD_LAST` mark cycle start/end (wrap points for Forward/Reverse/Pendulum, and fire Start/End-of-Cycle triggers on the trigger expander; multiple First/Last pairs are possible, see [4.2](#sec4-2)). `MOD_SLOPED` switches between stepped (default) and ramped (slew) voltage change. |
-| **Quantize / Volt-Ext / Time-Ext** | LED buttons (toggle) | Row 4: `MOD_QUANT_OCT` quantizes the target voltage to the global Scale/Key grid. `MOD_VOLT_EXT`/`MOD_TIME_EXT` switch the stage's voltage/time source to external (channel selection via the respective knob). |
-| **Shape** (`STAGE_SHAPE_PARAM`) + two lights | LED button (3-state cycle) | Cycles Linear → Exponential → Logarithmic (only effective when Slope is active). Two separate LEDs (`STAGE_SHAPE_EXP_LIGHT`/`STAGE_SHAPE_LOG_LIGHT`) instead of a combined indicator; no bit set = linear. |
-| **Curve** (`STAGE_CURVE_PARAM`) | Trimmer, 0–1 | Curve strength of the exponential/logarithmic ramp. Center (0.5) = reference curvature (`SLEW_CURVE_POWER = 2.5`), left more linear, right more pronounced (up to exponent ≈15.6). Can additionally be modulated by the Slew Curve CV on the CV expander. |
-| **Normalize** (`STAGE_NORMALIZE_PARAM`) | LED button (toggle) | `MOD_SLEW_NORMALIZE` (pure software extension): at extreme curve settings, stretches the visibly-moving part of the curve to fill the entire stage time instead of squeezing it into a tiny time fraction. |
-| **Time Range** (`STAGE_TRANGE_PARAM`, `TrangeButton`) | Large, self-drawing button (4-state cycle) | Selects TR1 (0.002–0.03s) through TR4 (2–30s); shows the current digit 1–4 directly on the button. TR3 (0.2–3s) is the default (no bit set). Right-click opens a context menu for direct selection. |
-| **Range** (`STAGE_RANGE_PARAM`, `RangeKnob`) | Large knob with text display (7 detent positions) | Full (0–10V unchanged) → Half (compressed to 0–5V) → Limited +0/+2/+4/+6/+8V (2V span, equivalent to 2 octaves at 1V/oct, shifted by the chosen offset). Shows an abbreviation ("F"/"H"/"L0"…"L8") directly on the knob plus a colored pointer. Right-click opens a checklist context menu (more reliable than text entry for this snap-enabled control). |
+**Voltage** (`STAGE_VOLTAGE_PARAM`) *(Knob, 0–10V)*<br>
+Programmed output voltage of the stage. In External mode (`MOD_VOLT_EXT`), the knob position instead selects the channel A–D (4 zones of 2.5V each). The tooltip shows volts, note name (when Quantize is active), or channel name (when External is active) – see `StageVoltageQuantity`.
+
+**Time** (`STAGE_TIME_PARAM`) *(Knob, normalized 0–1)*<br>
+Programmed stage time as a position **within** the selected Time Range bracket (TR1–4). The tooltip shows the Buchla Cookbook dial value (0–10, leading) with the exactly resolved number of seconds in parentheses afterward, e.g. `4.0 (0.132 s)` – see `StageTimeQuantity`. Right-click number entry still accepts the 0–10 dial value. In External mode (`MOD_TIME_EXT`), the position selects the channel A–D.
+
+**Two stage LEDs (`STAGE_LIGHT_A/B`)** *(Light)*<br>
+Indicate whether Section A or B is currently addressing this stage (green/red, side by side).
+
+**Pulse 1 / Pulse 2 / Skip** *(LED buttons (toggle))*<br>
+Row 1: `MOD_PULSE1`/`MOD_PULSE2` fire a short trigger on the section's P1OUT/P2OUT when the stage is reached. `MOD_SKIP` (pure software extension) skips the stage entirely during automatic playback – no time, no triggers, no voltage output from it. Only affects automatic playback, not manual addressing (Reset/Strobe/Continuous).
+
+**Stop / Sustain / Enable** *(LED buttons (toggle))*<br>
+Row 2: `MOD_STOP` = programmed stop stage (pauses playback until the section is restarted). `MOD_SUSTAIN` = holds the stage while a high level (gate) is present at the start input (ADSR-like release behavior). `MOD_ENABLE` = holds the stage while **no** high level is present (release only via a gate). Both hold states pause the dwell-time counter `elapsed`. **Watch out for the pitfall with no cable patched into START_A/B – see [Section 10](#sec10).**
+
+**First / Last / Slope** *(LED buttons (toggle))*<br>
+Row 3: `MOD_FIRST`/`MOD_LAST` mark cycle start/end (wrap points for Forward/Reverse/Pendulum, and fire Start/End-of-Cycle triggers on the trigger expander; multiple First/Last pairs are possible, see [4.2](#sec4-2)). `MOD_SLOPED` switches between stepped (default) and ramped (slew) voltage change.
+
+**Quantize / Volt-Ext / Time-Ext** *(LED buttons (toggle))*<br>
+Row 4: `MOD_QUANT_OCT` quantizes the target voltage to the global Scale/Key grid. `MOD_VOLT_EXT`/`MOD_TIME_EXT` switch the stage's voltage/time source to external (channel selection via the respective knob).
+
+**Shape** (`STAGE_SHAPE_PARAM`) + two lights *(LED button (3-state cycle))*<br>
+Cycles Linear → Exponential → Logarithmic (only effective when Slope is active). Two separate LEDs (`STAGE_SHAPE_EXP_LIGHT`/`STAGE_SHAPE_LOG_LIGHT`) instead of a combined indicator; no bit set = linear.
+
+**Curve** (`STAGE_CURVE_PARAM`) *(Trimmer, 0–1)*<br>
+Curve strength of the exponential/logarithmic ramp. Center (0.5) = reference curvature (`SLEW_CURVE_POWER = 2.5`), left more linear, right more pronounced (up to exponent ≈15.6). Can additionally be modulated by the Slew Curve CV on the CV expander.
+
+**Normalize** (`STAGE_NORMALIZE_PARAM`) *(LED button (toggle))*<br>
+`MOD_SLEW_NORMALIZE` (pure software extension): at extreme curve settings, stretches the visibly-moving part of the curve to fill the entire stage time instead of squeezing it into a tiny time fraction.
+
+**Time Range** (`STAGE_TRANGE_PARAM`, `TrangeButton`) *(Large, self-drawing button (4-state cycle))*<br>
+Selects TR1 (0.002–0.03s) through TR4 (2–30s); shows the current digit 1–4 directly on the button. TR3 (0.2–3s) is the default (no bit set). Right-click opens a context menu for direct selection.
+
+**Range** (`STAGE_RANGE_PARAM`, `RangeKnob`) *(Large knob with text display (7 detent positions))*<br>
+Full (0–10V unchanged) → Half (compressed to 0–5V) → Limited +0/+2/+4/+6/+8V (2V span, equivalent to 2 octaves at 1V/oct, shifted by the chosen offset). Shows an abbreviation ("F"/"H"/"L0"…"L8") directly on the knob plus a colored pointer. Right-click opens a checklist context menu (more reliable than text entry for this snap-enabled control).
 
 <a id="sec3-3"></a>
 ### 3.3 Per-Section Controls (A/B)
@@ -590,6 +616,22 @@ evaluated – no queuing, no catch-up after the hold ends.
   analogous mechanism for `MOD_FIRST`/`MOD_LAST`, independent of run
   direction. Even on a Pendulum turning-point repeat (the stage is
   deliberately visited twice), each landing fires its own pulse.
+- **`MOD_MUTE`**: suppresses `p1Gen`/`p2Gen` **and** `allPulseGen` (i.e.
+  P1OUT, P2OUT, and APOUT) for the stage entirely, without changing
+  `MOD_PULSE1`/`MOD_PULSE2` themselves – the programming is preserved and
+  takes effect again immediately once Mute is lifted. Implemented as a
+  guard right before the `allPulseGen.trigger(1e-3f)` calls in
+  `jumpToStage()`/`advanceStage()`, and in the `pulse1Active`/
+  `pulse2Active` computation in `Afg::process()`. APOUT is deliberately
+  included (not just P1/P2), since otherwise both pulse bits would need
+  to be disabled individually to actually silence a stage completely.
+  The stage's voltage/slew output is **completely unaffected** – a pure
+  intervention in trigger generation, no interaction with
+  `applyRange()`/`applySlewCurve()`. `MOD_MUTE` is, like all other
+  modifier bits, **module-wide per stage**, not per section A/B.
+  Currently only settable via `STAGE_MUTE_POLY_INPUT` on the trigger
+  expander (see [6](#sec6)) – no panel button/light on the main module
+  yet; that arrives with the separately planned panel relayout session.
 
 <a id="sec4-8"></a>
 ### 4.8 Preset System (Pickup/Catch)
@@ -792,50 +834,118 @@ Cookbook patches better in practice.
 
 ### `Marf248.hpp`
 
-| Function | Description |
-|---|---|
-| `applySlewCurve(t, mod, power)` | Applies the selected slew curve shape (exp/log/linear) to the normalized phase `t`, including optional normalization. |
-| `slewExpNormalized(t, power)` | Helper for `MOD_SLEW_NORMALIZE`: compresses/stretches the time axis so the curve reaches the threshold exactly at `t=1`. |
-| `quantizeToSemitone(v)` | Snaps a voltage to the nearest 1V/oct semitone grid. |
-| `quantizeToScale(v, key, scaleMode)` | Quantizes to a Major/Minor/Chromatic scale + key. |
-| `applyRange(raw, mod)` | Applies Full/Half/Limited range scaling including octave offset. |
-| `voltageToNoteName(v)` | Converts a 1V/oct voltage into a note name (Eurorack convention, 0V=C4). |
-| `getTimeRangeIndex(mod)` | Resolves the exclusive `MOD_TRANGE_*` bits to an index 0–3 (TR3 = default). |
-| `getRangeOffsetIndex(mod)` / `setRangeOffsetIndex(mod, idx)` | Reads/writes the 3-bit octave-offset field in Limited range mode. |
-| `tempoVoltsToBpm(volts)` | **New**: converts a V/Oct tempo voltage to a BPM number via `BPM = 120 × 2^Volts`, see [4.12](#sec4-12). |
-| `PickupState::arm(target, currentRaw)` | Arms pickup for a new target value (preset load). |
-| `PickupState::resolve(currentRaw)` | Returns the effective value to use per frame (target or physical knob value), detects crossing. |
-| `Afg::jumpToStage(stage, mod)` | Immediate jump to a specific stage (Reset/Strobe/Continuous/Address Memory recall), ramp start remains the last output value. |
-| `Afg::applyStageAddress(continuous, addr, strobe, reset, mod)` | Processes Reset/Continuous/Strobe addressing, see [4.3](#sec4-3). |
-| `Afg::findLowestFirst(mod)` | **New**: finds the `MOD_FIRST` stage with the lowest index (independent of `currentStage`) – used by Reset, so that with multiple First/Last segments, the very first segment is always reached. |
-| `Afg::findFirstBefore(mod, idx)` / `Afg::findLastAfter(mod, idx)` | Ring search for the nearest `MOD_FIRST`/`MOD_LAST` stage for automatic wrap-around during Forward/Reverse playback. |
-| `Afg::advanceStage(mod)` | Core logic for the next stage step (Forward/Reverse/Pendulum, skip handling), see [4.2](#sec4-2). |
-| `Afg::resetPulseEdgeState()` | Resets the P1/P2/First/Last edge-detection previous values (on every stage (re-)entry). |
-| `Afg::process(...)` | Main per-sample processing of a section: start/stop, Run Gate, Advance, Sustain/Enable/Stop logic, automatic playback, voltage/time output, all pulse outputs. Takes the already-resolved stage arrays (voltage, time, modifier, curve power) plus Key/Scale and Start/Stop/Run-Gate/Advance inputs. |
+**`applySlewCurve(t, mod, power)`**<br>
+Applies the selected slew curve shape (exp/log/linear) to the normalized phase `t`, including optional normalization.
+
+**`slewExpNormalized(t, power)`**<br>
+Helper for `MOD_SLEW_NORMALIZE`: compresses/stretches the time axis so the curve reaches the threshold exactly at `t=1`.
+
+**`quantizeToSemitone(v)`**<br>
+Snaps a voltage to the nearest 1V/oct semitone grid.
+
+**`quantizeToScale(v, key, scaleMode)`**<br>
+Quantizes to a Major/Minor/Chromatic scale + key.
+
+**`applyRange(raw, mod)`**<br>
+Applies Full/Half/Limited range scaling including octave offset.
+
+**`voltageToNoteName(v)`**<br>
+Converts a 1V/oct voltage into a note name (Eurorack convention, 0V=C4).
+
+**`getTimeRangeIndex(mod)`**<br>
+Resolves the exclusive `MOD_TRANGE_*` bits to an index 0–3 (TR3 = default).
+
+**`getRangeOffsetIndex(mod)` / `setRangeOffsetIndex(mod, idx)`**<br>
+Reads/writes the 3-bit octave-offset field in Limited range mode.
+
+**`tempoVoltsToBpm(volts)`**<br>
+**New**: converts a V/Oct tempo voltage to a BPM number via `BPM = 120 × 2^Volts`, see [4.12](#sec4-12).
+
+**`PickupState::arm(target, currentRaw)`**<br>
+Arms pickup for a new target value (preset load).
+
+**`PickupState::resolve(currentRaw)`**<br>
+Returns the effective value to use per frame (target or physical knob value), detects crossing.
+
+**`Afg::jumpToStage(stage, mod)`**<br>
+Immediate jump to a specific stage (Reset/Strobe/Continuous/Address Memory recall), ramp start remains the last output value.
+
+**`Afg::applyStageAddress(continuous, addr, strobe, reset, mod)`**<br>
+Processes Reset/Continuous/Strobe addressing, see [4.3](#sec4-3).
+
+**`Afg::findLowestFirst(mod)`**<br>
+**New**: finds the `MOD_FIRST` stage with the lowest index (independent of `currentStage`) – used by Reset, so that with multiple First/Last segments, the very first segment is always reached.
+
+**`Afg::findFirstBefore(mod, idx)` / `Afg::findLastAfter(mod, idx)`**<br>
+Ring search for the nearest `MOD_FIRST`/`MOD_LAST` stage for automatic wrap-around during Forward/Reverse playback.
+
+**`Afg::advanceStage(mod)`**<br>
+Core logic for the next stage step (Forward/Reverse/Pendulum, skip handling), see [4.2](#sec4-2).
+
+**`Afg::resetPulseEdgeState()`**<br>
+Resets the P1/P2/First/Last edge-detection previous values (on every stage (re-)entry).
+
+**`Afg::process(...)`**<br>
+Main per-sample processing of a section: start/stop, Run Gate, Advance, Sustain/Enable/Stop logic, automatic playback, voltage/time output, all pulse outputs. Takes the already-resolved stage arrays (voltage, time, modifier, curve power) plus Key/Scale and Start/Stop/Run-Gate/Advance inputs.
 
 ### `Marf248.cpp`
 
-| Function/Struct | Description |
-|---|---|
-| `StageVoltageQuantity::getDisplayValueString()` | Tooltip text of the Voltage knob: channel name in External mode, note name with Quantize, otherwise a voltage figure. |
-| `StageTimeQuantity::getDisplayValue()` / `setDisplayValue()` | **New**: converts the internal 0–1 raw value to/from the Buchla Cookbook dial convention (0–10) for display and right-click entry – the internal parameter value itself stays 0–1 (no breaking change for existing presets). |
-| `StageTimeQuantity::getDisplayValueString()` | Tooltip text of the Time knob: shows the 0–10 dial value leading, followed by the number of seconds exactly resolved against the current Time Range in parentheses (e.g. `4.0 (0.132 s)`). |
-| `StageRangeQuantity::getDisplayValueString()` | Tooltip text of the Range knob as plain text ("Full", "Half", "Lim +0"…"+8"). |
-| `TempoQuantity::getDisplayValue()` / `setDisplayValue()` | **New**: maps the raw volt parameter value to BPM (`getDisplayValue`) and converts an entered BPM number back to volts via log2 (`setDisplayValue`) – tooltip and right-click entry use the same field, see [4.12](#sec4-12). |
-| `TempoBpmDisplay::draw()` | **New**: self-drawing live text widget (not a ParamWidget), shows `displayBpmA/B` in amber, same outline technique as `TrangeButton`. |
-| `Marf248::onReset(e)` | Handles VCV Rack's "Initialize": in addition to the standard params, also fully resets modifier bits, both Afg instances, Mode/Pendulum, Stage Address, presets, **Address Memory**, and Scale/Key (fields not stored as Rack params). |
-| `Marf248::savePreset(slot)` / `loadPreset(slot)` | See [4.8](#sec4-8). |
-| `Marf248::performGlobalClear()` | Resets modifier bits, Range, and Curve on all stages, discards pending pickups, triggers the flash light. Shared between the panel button and the trigger-expander input. Leaves Address Memory untouched. |
-| `Marf248::performResetValues()` | Resets only Voltage/Time on all stages to default. Shared between the panel button and the trigger-expander input. |
-| `Marf248::performAutoFill()` | **New**: sets the 16 shared Voltage knobs to a linear 0–10V grid and forces `Range = Full` per stage, see [3.4](#sec3-4). |
-| `Marf248::process(args)` | Central per-sample processing function. Sequence (see also sections 3–4): trigger-expander lookup (right at the top, for SEXT) → Global Clear/Reset Values/Auto-Fill → preset/scale/key arming logic → stage-modifier click buttons (decimated via `stageButtonDivider`) → stage-modifier poly-CV overrides from the trigger expander (every sample, undecimated) → per-stage resolution of voltage/time/curve (range, external sources, time range, additive CV, curve-power cache) → **tempo/BEATS_FACTOR resolution and multiplier back-calculation per section (see [4.12](#sec4-12))** → per-section stage-address processing (incl. channel-select CV) → `afgA.process()`/`afgB.process()` calls (incl. Run Gate and Advance) → output writing → decimated update of the live BPM display values → trigger-expander actions (Clear/Reset/Preset/Address Memory Store/Recall/Scale/Key/Start-End-of-Cycle) → CV-expander gate output → tri-color status LEDs. |
-| `Marf248::dataToJson()` / `dataFromJson(rootJ)` | Persists modifier bits, Mode/Pendulum/Stage-Address states, Scale/Key, all 12 preset slots, and Address Memory (see [Section 9](#sec9)). |
-| `TrangeButton::draw()` | Self-drawing Time Range button (no SVG asset): dark rounded background + digit 1–4 in amber with a dark outline. |
-| `TrangeButton::appendContextMenu()` | Right-click checklist for direct TR1–4 selection (manipulates `stageModifier` directly rather than via the momentary button's raw value). |
-| `RangeKnob::draw()` | In addition to the standard `RoundBlackKnob`, draws a colored pointer (covering the original SVG pointer) and a text abbreviation of the current state in the center of the knob. |
-| `RangeKnob::appendContextMenu()` | Right-click checklist for direct Range selection (standard text entry was found unreliable for this snap-enabled control in practice). |
-| `PulseRingLight` | Custom light widget: draws a thin ring around the P1/P2 output jack instead of a separate dot. |
-| `Marf248Widget::Marf248Widget(module)` | Builds the complete 126HP panel: frames, column geometry (including the new VOUT/TOUT outputs column per section), all knobs/buttons/jacks/lights for external CV, both sections, and the 16 stage columns as well as the preset column (see [3.1](#sec3-1)). |
+**`StageVoltageQuantity::getDisplayValueString()`**<br>
+Tooltip text of the Voltage knob: channel name in External mode, note name with Quantize, otherwise a voltage figure.
+
+**`StageTimeQuantity::getDisplayValue()` / `setDisplayValue()`**<br>
+**New**: converts the internal 0–1 raw value to/from the Buchla Cookbook dial convention (0–10) for display and right-click entry – the internal parameter value itself stays 0–1 (no breaking change for existing presets).
+
+**`StageTimeQuantity::getDisplayValueString()`**<br>
+Tooltip text of the Time knob: shows the 0–10 dial value leading, followed by the number of seconds exactly resolved against the current Time Range in parentheses (e.g. `4.0 (0.132 s)`).
+
+**`StageRangeQuantity::getDisplayValueString()`**<br>
+Tooltip text of the Range knob as plain text ("Full", "Half", "Lim +0"…"+8").
+
+**`TempoQuantity::getDisplayValue()` / `setDisplayValue()`**<br>
+**New**: maps the raw volt parameter value to BPM (`getDisplayValue`) and converts an entered BPM number back to volts via log2 (`setDisplayValue`) – tooltip and right-click entry use the same field, see [4.12](#sec4-12).
+
+**`TempoBpmDisplay::draw()`**<br>
+**New**: self-drawing live text widget (not a ParamWidget), shows `displayBpmA/B` in amber, same outline technique as `TrangeButton`.
+
+**`Marf248::onReset(e)`**<br>
+Handles VCV Rack's "Initialize": in addition to the standard params, also fully resets modifier bits, both Afg instances, Mode/Pendulum, Stage Address, presets, **Address Memory**, and Scale/Key (fields not stored as Rack params).
+
+**`Marf248::savePreset(slot)` / `loadPreset(slot)`**<br>
+See [4.8](#sec4-8).
+
+**`Marf248::performGlobalClear()`**<br>
+Resets modifier bits, Range, and Curve on all stages, discards pending pickups, triggers the flash light. Shared between the panel button and the trigger-expander input. Leaves Address Memory untouched.
+
+**`Marf248::performResetValues()`**<br>
+Resets only Voltage/Time on all stages to default. Shared between the panel button and the trigger-expander input.
+
+**`Marf248::performAutoFill()`**<br>
+**New**: sets the 16 shared Voltage knobs to a linear 0–10V grid and forces `Range = Full` per stage, see [3.4](#sec3-4).
+
+**`Marf248::process(args)`**<br>
+Central per-sample processing function. Sequence (see also sections 3–4): trigger-expander lookup (right at the top, for SEXT) → Global Clear/Reset Values/Auto-Fill → preset/scale/key arming logic → stage-modifier click buttons (decimated via `stageButtonDivider`) → stage-modifier poly-CV overrides from the trigger expander (every sample, undecimated) → per-stage resolution of voltage/time/curve (range, external sources, time range, additive CV, curve-power cache) → **tempo/BEATS_FACTOR resolution and multiplier back-calculation per section (see [4.12](#sec4-12))** → per-section stage-address processing (incl. channel-select CV) → `afgA.process()`/`afgB.process()` calls (incl. Run Gate and Advance) → output writing → decimated update of the live BPM display values → trigger-expander actions (Clear/Reset/Preset/Address Memory Store/Recall/Scale/Key/Start-End-of-Cycle) → CV-expander gate output → tri-color status LEDs.
+
+**`Marf248::dataToJson()` / `dataFromJson(rootJ)`**<br>
+Persists modifier bits, Mode/Pendulum/Stage-Address states, Scale/Key, all 12 preset slots, and Address Memory (see [Section 9](#sec9)).
+
+**`TrangeButton::draw()`**<br>
+Self-drawing Time Range button (no SVG asset): dark rounded background + digit 1–4 in amber with a dark outline.
+
+**`TrangeButton::appendContextMenu()`**<br>
+Right-click checklist for direct TR1–4 selection (manipulates `stageModifier` directly rather than via the momentary button's raw value).
+
+**`RangeKnob::draw()`**<br>
+In addition to the standard `RoundBlackKnob`, draws a colored pointer (covering the original SVG pointer) and a text abbreviation of the current state in the center of the knob.
+
+**`RangeKnob::appendContextMenu()`**<br>
+Right-click checklist for direct Range selection (standard text entry was found unreliable for this snap-enabled control in practice).
+
+**`PulseRingLight`**<br>
+Custom light widget: draws a thin ring around the P1/P2 output jack instead of a separate dot.
+
+**`Marf248Widget::Marf248Widget(module)`**<br>
+Builds the complete 126HP panel: frames, column geometry (including the new VOUT/TOUT outputs column per section), all knobs/buttons/jacks/lights for external CV, both sections, and the 16 stage columns as well as the preset column (see [3.1](#sec3-1)).
 
 ---
 
@@ -851,26 +961,49 @@ docking status).
 
 ### Inputs
 
-| Input | Type | Function |
-|---|---|---|
-| `CLEAR_INPUT` | Trigger | Fires `performGlobalClear()` (same as the panel button). |
-| `RESET_VALUES_INPUT` | Trigger | Fires `performResetValues()`. |
-| `PRESET_LOAD_POLY_INPUT` | Poly trigger (12 channels) | Channel p (0–11) loads preset p+1 **immediately**, with no arming mechanism. Empty slots are ignored. Unused channels return 0V (no trigger). **Channels 13–16 are not evaluated** – the processing loop only runs from `p=0` to `p=11` (see [Pitfalls](#sec10)). |
-| `SCALE_MAJOR_INPUT` / `SCALE_MINOR_INPUT` / `SCALE_CHROMATIC_INPUT` | Trigger | Sets `currentScale` directly (no arming required). |
-| `KEY_CV_INPUT` | Continuous CV, 0–10V | Sets `currentKey` directly (0–11 = C–B), only effective when actually patched (`isConnected()` check prevents an unwanted fallback to C). |
-| `STROBE_A_INPUT` / `STROBE_B_INPUT` ("SEXT") | Trigger | Triggers the same effect as the respective panel Strobe button (OR-combined), including the Continuous lock. |
-| `RUN_GATE_A_INPUT` / `RUN_GATE_B_INPUT` | Level (gate), Schmitt hysteresis 0.1V/1V | OR-combined with the Run button state (`effectiveRunning = running \|\| runGateHigh`); the button's own state is preserved when the gate falls back low. **Ignored while Advance is patched on the same section.** |
-| `ADVANCE_A_INPUT` / `ADVANCE_B_INPUT` | **New**, pure edge trigger | Clock-quantized Advance, see [4.10](#sec4-10). Sits in the Run Gate row (column C/D). |
-| `STAGE_SKIP_POLY_INPUT`, `STAGE_FIRST_POLY_INPUT`, `STAGE_LAST_POLY_INPUT`, `STAGE_STOP_POLY_INPUT`, `STAGE_SUSTAIN_POLY_INPUT`, `STAGE_ENABLE_POLY_INPUT`, `STAGE_PULSE1_POLY_INPUT`, `STAGE_PULSE2_POLY_INPUT`, `STAGE_SLOPE_POLY_INPUT` | Poly gate (16 channels = stage 1–16) | Level override (threshold `GATE_THRESHOLD = 2V`) for the respective modifier bit. Only effective while the jack is patched (`isConnected()`); when active, the CV takes precedence and overrides a manual click processed in the same frame. Without a cable, the state last set by clicking is preserved. **Shape/Lin-Exp-Log is deliberately left without a CV override**, since it is a genuine 3-state cycle rather than a simple bit. |
-| `ADDR_STORE_A_POLY_INPUT` / `ADDR_STORE_B_POLY_INPUT` | **New**, poly trigger (16 channels = slot 1–16) | Address Memory Store, see [4.9](#sec4-9). Sits in row 12. |
-| `ADDR_RECALL_A_POLY_INPUT` / `ADDR_RECALL_B_POLY_INPUT` | **New**, poly trigger (16 channels = slot 1–16) | Address Memory Recall, see [4.9](#sec4-9). Sits in row 12. |
+**`CLEAR_INPUT`** *(Trigger)*<br>
+Fires `performGlobalClear()` (same as the panel button).
+
+**`RESET_VALUES_INPUT`** *(Trigger)*<br>
+Fires `performResetValues()`.
+
+**`PRESET_LOAD_POLY_INPUT`** *(Poly trigger (12 channels))*<br>
+Channel p (0–11) loads preset p+1 **immediately**, with no arming mechanism. Empty slots are ignored. Unused channels return 0V (no trigger). **Channels 13–16 are not evaluated** – the processing loop only runs from `p=0` to `p=11` (see [Pitfalls](#sec10)).
+
+**`SCALE_MAJOR_INPUT` / `SCALE_MINOR_INPUT` / `SCALE_CHROMATIC_INPUT`** *(Trigger)*<br>
+Sets `currentScale` directly (no arming required).
+
+**`KEY_CV_INPUT`** *(Continuous CV, 0–10V)*<br>
+Sets `currentKey` directly (0–11 = C–B), only effective when actually patched (`isConnected()` check prevents an unwanted fallback to C).
+
+**`STROBE_A_INPUT` / `STROBE_B_INPUT` ("SEXT")** *(Trigger)*<br>
+Triggers the same effect as the respective panel Strobe button (OR-combined), including the Continuous lock.
+
+**`RUN_GATE_A_INPUT` / `RUN_GATE_B_INPUT`** *(Level (gate), Schmitt hysteresis 0.1V/1V)*<br>
+OR-combined with the Run button state (`effectiveRunning = running || runGateHigh`); the button's own state is preserved when the gate falls back low. **Ignored while Advance is patched on the same section.**
+
+**`ADVANCE_A_INPUT` / `ADVANCE_B_INPUT`** *(**New**, pure edge trigger)*<br>
+Clock-quantized Advance, see [4.10](#sec4-10). Sits in the Run Gate row (column C/D).
+
+**`STAGE_SKIP_POLY_INPUT`, `STAGE_FIRST_POLY_INPUT`, `STAGE_LAST_POLY_INPUT`, `STAGE_STOP_POLY_INPUT`, `STAGE_SUSTAIN_POLY_INPUT`, `STAGE_ENABLE_POLY_INPUT`, `STAGE_PULSE1_POLY_INPUT`, `STAGE_PULSE2_POLY_INPUT`, `STAGE_SLOPE_POLY_INPUT`** *(Poly gate (16 channels = stage 1–16))*<br>
+Level override (threshold `GATE_THRESHOLD = 2V`) for the respective modifier bit. Only effective while the jack is patched (`isConnected()`); when active, the CV takes precedence and overrides a manual click processed in the same frame. Without a cable, the state last set by clicking is preserved. **Shape/Lin-Exp-Log is deliberately left without a CV override**, since it is a genuine 3-state cycle rather than a simple bit.
+
+**`STAGE_MUTE_POLY_INPUT`** *(**New**, poly gate (16 channels = stage 1–16))*<br>
+Same level-override principle, sets `MOD_MUTE` instead of one of the bits above (see [4.7](#sec4-7)). Sits in row 11, column D (previously unused there). **No panel button/light on the main module** – until the planned panel relayout session, this is the only way to control Mute.
+
+**`ADDR_STORE_A_POLY_INPUT` / `ADDR_STORE_B_POLY_INPUT`** *(**New**, poly trigger (16 channels = slot 1–16))*<br>
+Address Memory Store, see [4.9](#sec4-9). Sits in row 12.
+
+**`ADDR_RECALL_A_POLY_INPUT` / `ADDR_RECALL_B_POLY_INPUT`** *(**New**, poly trigger (16 channels = slot 1–16))*<br>
+Address Memory Recall, see [4.9](#sec4-9). Sits in row 12.
 
 ### Outputs
 
-| Output | Function |
-|---|---|
-| `START_CYCLE_A/B_OUTPUT` | Fires (1ms trigger) when Section A/B reaches a `MOD_FIRST`-marked stage (continuous edge detection, independent of run direction). |
-| `END_CYCLE_A/B_OUTPUT` | Same, for `MOD_LAST`. |
+**`START_CYCLE_A/B_OUTPUT`**<br>
+Fires (1ms trigger) when Section A/B reaches a `MOD_FIRST`-marked stage (continuous edge detection, independent of run direction).
+
+**`END_CYCLE_A/B_OUTPUT`**<br>
+Same, for `MOD_LAST`.
 
 ### Panel Layout (24HP, 4 columns spaced 29mm apart, 8.8mm row pitch)
 
@@ -880,7 +1013,9 @@ and B. Row 7: SEXT A/B. **Row 8: Run Gate A/B (column A/B) + Advance A/B
 (column C/D, new)** – thematically related (both concern run control of
 the respective section), column C/D was previously free there, so no new
 row was needed. Row 9: Stage Skip / First / Last (3 columns). Row 10:
-Stage Stop / Sustain / Enable. Row 11: Stage Pulse1 / Pulse2 / Slope.
+Stage Stop / Sustain / Enable. **Row 11: Stage Pulse1 / Pulse2 / Slope /
+Mute (column D, new)** – column D was previously free there, so Mute
+needed no new row either.
 **Row 12 (new): Address Memory Store A / Store B / Recall A / Recall B**
 (4 columns, same principle as row 8) – thanks to the row pitch tightened
 to 8.8mm, this row still fits with 6.6mm of clearance before the bottom
@@ -910,25 +1045,30 @@ previous documentation revision.
 
 ### Inputs
 
-| Input | Function |
-|---|---|
-| `STAGE_TIME_CV_INPUT` (poly, 16 channels) | Additive CV per stage on the resolved stage time, **after** External/Internal time resolution, **before** the Time Multiplier (so it is also scaled by the multiplier). A shared attenuverter (`TIME_CV_ATTEN_PARAM`) scales all 16 channels together; ±5V CV at full attenuverter travel covers the full span of the currently active Time Range (TR1–4). |
-| `CURVE_CV_INPUT` (poly, 16 channels) | Additive CV per stage on the Curve knob position (slew curve curvature), added before the power calculation. Its own attenuverter (`CURVE_CV_ATTEN_PARAM`), ±5V reference span. |
+**`STAGE_TIME_CV_INPUT` (poly, 16 channels)**<br>
+Additive CV per stage on the resolved stage time, **after** External/Internal time resolution, **before** the Time Multiplier (so it is also scaled by the multiplier). A shared attenuverter (`TIME_CV_ATTEN_PARAM`) scales all 16 channels together; ±5V CV at full attenuverter travel covers the full span of the currently active Time Range (TR1–4).
+
+**`CURVE_CV_INPUT` (poly, 16 channels)**<br>
+Additive CV per stage on the Curve knob position (slew curve curvature), added before the power calculation. Its own attenuverter (`CURVE_CV_ATTEN_PARAM`), ±5V reference span.
 
 ### Parameters
 
-| Parameter | Function |
-|---|---|
-| `TIME_CV_ATTEN_PARAM` | Attenuverter for stage-time CV (−1..+1). |
-| `TIME_CV_OFFSET_PARAM` | Offset trimmer (−10..+10V), subtracted from the raw CV **before** the attenuverter – makes a unipolar source (e.g. a 0–10V envelope) usable bipolarly. |
-| `CURVE_CV_ATTEN_PARAM` | Attenuverter for slew-curve CV (−1..+1). |
-| `CURVE_GLOBAL_PARAM` | Global bias knob (−1..+1): always affects all 16 stages, even with no cable patched into `CURVE_CV_INPUT` – unlike `TIME_CV_OFFSET_PARAM`, which has no effect without a cable. |
+**`TIME_CV_ATTEN_PARAM`**<br>
+Attenuverter for stage-time CV (−1..+1).
+
+**`TIME_CV_OFFSET_PARAM`**<br>
+Offset trimmer (−10..+10V), subtracted from the raw CV **before** the attenuverter – makes a unipolar source (e.g. a 0–10V envelope) usable bipolarly.
+
+**`CURVE_CV_ATTEN_PARAM`**<br>
+Attenuverter for slew-curve CV (−1..+1).
+
+**`CURVE_GLOBAL_PARAM`**<br>
+Global bias knob (−1..+1): always affects all 16 stages, even with no cable patched into `CURVE_CV_INPUT` – unlike `TIME_CV_OFFSET_PARAM`, which has no effect without a cable.
 
 ### Outputs
 
-| Output | Function |
-|---|---|
-| `GATE_A_OUTPUT` / `GATE_B_OUTPUT` (poly, 16 channels) | Channel i is high (10V) as soon as Section A/B is currently addressing stage i – independent of the run state. Optional retrigger gap (context menu, `regateGapEnabled`, on by default): briefly pulls the gate of the currently addressed stage to 0V (~5ms) when a re-entry without an index change is detected (Pendulum turning point, Strobe onto the same address, Sustain/Enable release), so downstream envelope generators retrigger reliably. **Pitfall:** poly-to-mono conversion of these gates produces a continuously high level due to seamless channel transitions (verified via Bogaudio MONO on a scope) – for trigger purposes, use APOUT instead, see [Section 10](#sec10). |
+**`GATE_A_OUTPUT` / `GATE_B_OUTPUT` (poly, 16 channels)**<br>
+Channel i is high (10V) as soon as Section A/B is currently addressing stage i – independent of the run state. Optional retrigger gap (context menu, `regateGapEnabled`, on by default): briefly pulls the gate of the currently addressed stage to 0V (~5ms) when a re-entry without an index change is detected (Pendulum turning point, Strobe onto the same address, Sustain/Enable release), so downstream envelope generators retrigger reliably. **Pitfall:** poly-to-mono conversion of these gates produces a continuously high level due to seamless channel transitions (verified via Bogaudio MONO on a scope) – for trigger purposes, use APOUT instead, see [Section 10](#sec10).
 
 ### Context menu
 
@@ -1134,6 +1274,23 @@ already repaired the state before the fix, since `onReset()` correctly
 re-set the bits – only the Global Clear panel/CV trigger itself was
 affected.
 
+### 10.11 Mute acts module-wide per stage, has no panel feedback, and no dedicated reset
+
+Three quirks of `MOD_MUTE` that are easy to trip over on first test:
+
+- **Module-wide per stage, not per section A/B** – like all other
+  modifier bits, section A and B share the same `stageModifier[]`. A
+  high gate on `STAGE_MUTE_POLY_INPUT` channel i mutes stage i for
+  **both** sections at once, as soon as they reach that stage.
+- **No panel feedback** – until the planned panel relayout session,
+  there is neither a button nor a light on the main module. A stage's
+  Mute state is only visible via the trigger expander's CV level.
+- **No dedicated reset mechanism** – if the cable is unplugged while the
+  channel was high, the stage stays muted permanently (same fallback
+  behavior as all other poly overrides, see [6](#sec6)). The only way to
+  clear a stuck Mute is **Global Clear** (`performGlobalClear()` sets
+  `stageModifier[i] = 0` for all stages).
+
 ---
 
 <a id="sec11"></a>
@@ -1164,6 +1321,23 @@ affected.
   with a larger structural rework.
 - **APOUT is a pure trigger, not a gate** – for envelopes, an AD envelope
   is a better fit than an ADSR.
+- **ART (the combined CV+gate output) and Autotune** (from the Python
+  emulator) are explicitly **not** part of the C++ port. **Distinct from
+  that: APOUT** (`APOUT_A/B_OUTPUT`, "All Pulses") **does exist** in the
+  C++ port – a simple trigger output that fires on every stage entry (see
+  [4.7](#sec4-7)). An earlier, ambiguous note on this topic has been
+  corrected.
+- **Mute deliberately suppresses APOUT too, not just P1/P2** – otherwise
+  both pulse bits would need to be disabled individually to actually
+  silence a stage completely (see [4.7](#sec4-7)).
+- **Mute is module-wide per stage, not per section A/B** – like all other
+  modifier bits, since `stageModifier[]` is shared between section A and
+  B.
+- **Mute currently has no panel button** – only controllable via CV on
+  the trigger expander; a panel button/light arrives with the separately
+  planned panel relayout session (wider 4-column button rows). Important
+  detail: VCV module height is fixed (`RACK_GRID_HEIGHT`), so a relayout
+  can only make the module wider, never shorter.
 - **TR3 is the implicit default** (no bit set), following the same
   pattern as the Range/Shape/Slope defaults.
 - **Gate threshold is uniformly 2V** (not the manual-specified 5V for
@@ -1172,8 +1346,6 @@ affected.
 - **No SIMD**: not currently applicable given the lack of polyphony and
   heavily branching per-stage code; a future polyphony extension would
   be the natural trigger for revisiting this.
-- **ART outputs and Autotune** (from the Python emulator) are explicitly
-  **not** part of the C++ port.
 - **Advance and Continuous are deliberately mutually exclusive** – both
   mechanisms address the stage in conceptually different ways
   (trigger-based vs. direct-addressing), and combining them would be

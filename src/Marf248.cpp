@@ -1231,6 +1231,26 @@ struct Marf248 : Module {
 			}
 		}
 
+		// Stage MUTE Poly-Gate vom Trigger-Expander: identisches Prinzip wie
+		// STAGE_PULSE1/2_POLY_INPUT oben, setzt aber MOD_MUTE statt
+		// MOD_PULSE1/2 - unterdrueckt nur die Trigger-Erzeugung (siehe
+		// Afg::process()), die Pulse1/2-Programmierung selbst bleibt
+		// unangetastet. Noch kein Panel-Light (STAGE_..._LIGHT), da der
+		// Mute-Button auf dem Hauptmodul erst mit dem separat geplanten
+		// Panel-Relayout kommt - rein funktional bis dahin.
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_MUTE_POLY_INPUT).isConnected()) {
+			const float GATE_THRESHOLD = 2.f;
+			for (int i = 0; i < NUM_STAGES; i++) {
+				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_MUTE_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
+				if (gateHigh) {
+					stageModifier[i] |= MOD_MUTE;
+				}
+				else {
+					stageModifier[i] &= ~MOD_MUTE;
+				}
+			}
+		}
+
 		// Stage SLOPE Poly-Gate vom Trigger-Expander: identisches Prinzip
 		// wie STAGE_SKIP_POLY_INPUT oben. MOD_SLOPED ist ein einfaches
 		// Ein/Aus-Bit (rampt vs. springt) - nicht zu verwechseln mit Shape
