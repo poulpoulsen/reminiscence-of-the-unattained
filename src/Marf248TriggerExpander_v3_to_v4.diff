@@ -1,0 +1,52 @@
+--- original/Marf248TriggerExpander_v3.cpp	2026-08-06 19:51:32.091084096 +0000
++++ new/Marf248TriggerExpander.cpp	2026-08-06 19:51:55.153120255 +0000
+@@ -200,19 +200,20 @@
+ 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colD, y)), module, Marf248TriggerExpander::END_CYCLE_B_OUTPUT));
+ 		addLabel(Vec(colD, y), "EOC B", COLOR_SECTION_B);
+ 
+-		// Reihe 4: SEXT (externe Strobe A/B) + ADDR_RECALL_B in Spalte E
+-		// (thematisch Section B, hier untergebracht weil in den reinen
+-		// Stage-Modifier-Reihen 5-7 kein Platz mehr frei war - siehe
+-		// Verteilungs-Kommentar bei Reihe 7). Run Gate A/B sitzt seit
+-		// Kinovice-Wunsch jetzt in Reihe 1, Spalte C/D bleiben hier daher
+-		// leer.
++		// Reihe 4: SEXT (externe Strobe A/B) + Address Memory Recall A/B
++		// direkt daneben (Kinovice-Wunsch: Recall A neben Strobe B, Recall B
++		// direkt danach). Spalte E bleibt hier jetzt leer, dafuer verlieren
++		// Reihe 7 (siehe unten) ihre bisherigen Recall-Eintraege. Run Gate
++		// A/B sitzt seit vorheriger Aenderung in Reihe 1.
+ 		y += stepY;
+ 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, y)), module, Marf248TriggerExpander::STROBE_A_INPUT));
+ 		addLabel(Vec(colA, y), "STROBE A", COLOR_SECTION_A);
+ 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, y)), module, Marf248TriggerExpander::STROBE_B_INPUT));
+ 		addLabel(Vec(colB, y), "STROBE B", COLOR_SECTION_B);
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colE, y)), module, Marf248TriggerExpander::ADDR_RECALL_B_POLY_INPUT));
+-		addLabel(Vec(colE, y), "ADDR RECALL B", COLOR_SECTION_B);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, y)), module, Marf248TriggerExpander::ADDR_RECALL_A_POLY_INPUT));
++		addLabel(Vec(colC, y), "ADDR RECALL A", COLOR_SECTION_A);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colD, y)), module, Marf248TriggerExpander::ADDR_RECALL_B_POLY_INPUT));
++		addLabel(Vec(colD, y), "ADDR RECALL B", COLOR_SECTION_B);
+ 
+ 		// Reihe 5: Advance A/B + Skip/First/Last (Stage-Adress-Modifier).
+ 		y += stepY;
+@@ -241,8 +242,9 @@
+ 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colE, y)), module, Marf248TriggerExpander::STAGE_PULSE2_POLY_INPUT));
+ 		addLabel(Vec(colE, y), "PULSE2", COLOR_STAGEMOD);
+ 
+-		// Reihe 7: Slope/Mute (Stage-Modifier) + Adress-Speicher Store A/B
+-		// und Recall A (Recall B sitzt bereits oben in Reihe 4, siehe dort).
++		// Reihe 7: Slope/Mute (Stage-Modifier) + Adress-Speicher Store A/B.
++		// Recall A/B sitzt seit Kinovice-Wunsch jetzt in Reihe 4 neben den
++		// Strobe-Buchsen, Spalte E bleibt hier daher leer.
+ 		y += stepY;
+ 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, y)), module, Marf248TriggerExpander::STAGE_SLOPE_POLY_INPUT));
+ 		addLabel(Vec(colA, y), "SLOPE", COLOR_STAGEMOD);
+@@ -252,8 +254,6 @@
+ 		addLabel(Vec(colC, y), "ADDR STORE A", COLOR_SECTION_A);
+ 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colD, y)), module, Marf248TriggerExpander::ADDR_STORE_B_POLY_INPUT));
+ 		addLabel(Vec(colD, y), "ADDR STORE B", COLOR_SECTION_B);
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colE, y)), module, Marf248TriggerExpander::ADDR_RECALL_A_POLY_INPUT));
+-		addLabel(Vec(colE, y), "ADDR RECALL A", COLOR_SECTION_A);
+ 	}
+ };
+ 

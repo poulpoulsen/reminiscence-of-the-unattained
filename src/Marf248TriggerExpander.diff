@@ -1,0 +1,348 @@
+--- original/Marf248TriggerExpander.cpp	2026-08-06 19:12:12.437294433 +0000
++++ new/Marf248TriggerExpander.cpp	2026-08-06 19:13:26.297298823 +0000
+@@ -16,21 +16,94 @@
+ 	}
+ };
+ 
++// ---------------------------------------------------------------------
++// Panel-Beschriftungs-System (Session "Panel Labeling", Variante B: reine
++// Code/NanoVG-Labels statt SVG-Artwork, siehe Entscheidung mit Kinovice).
++//
++// Bewusst als eigenstaendiges Widget statt Text direkt in draw() der
++// ModuleWidget-Klasse: dadurch bleibt die Position jedes Labels exakt an
++// derselben Stelle im Code wie die zugehoerige addInput()/addOutput()-
++// Zeile - keine getrennte SVG-Datei, die bei Layout-Aenderungen von Hand
++// synchron gehalten werden muesste (Hauptgrund fuer die Wahl von Variante
++// B in diesem Projekt, siehe Session-Notiz).
++//
++// WICHTIG: Nunito-Bold.ttf ist NICHT im Rack-SDK enthalten und liegt auch
++// nicht bei den hochgeladenen Dateien - diese Datei muss von Kinovice noch
++// besorgt und unter res/fonts/Nunito-Bold.ttf im Plugin-Verzeichnis
++// abgelegt werden (Google Fonts, SIL Open Font License, kostenlos:
++// https://fonts.google.com/specimen/Nunito -> Bold-Schnitt). Ohne diese
++// Datei liefert loadFont() einen leeren Font (font->handle == -1) und
++// draw() ueberspringt den Text still (kein Crash, aber keine sichtbare
++// Beschriftung) - siehe Guard in PanelLabel::draw().
++struct PanelLabel : Widget {
++	std::string text;
++	NVGcolor color;
++	float fontSize;
++	int align;
++	std::shared_ptr<window::Font> font;
++
++	// posMM: Ankerpunkt in mm (Panel-Koordinaten, wie bei allen anderen
++	// addParam/addInput-Aufrufen). align: NVG_ALIGN_* Kombination, Default
++	// zentriert unterhalb eines Bedienelements (siehe Kinovice-Entscheidung
++	// "direkt darunter").
++	PanelLabel(Vec posMM, std::string text, NVGcolor color, float fontSize = 6.f,
++	           int align = NVG_ALIGN_CENTER | NVG_ALIGN_TOP)
++		: text(std::move(text)), color(color), fontSize(fontSize), align(align) {
++		box.pos = mm2px(posMM);
++		box.size = Vec(0.f, 0.f); // reines Text-Overlay, keine eigene Hitbox
++		font = APP->window->loadFont(asset::plugin(pluginInstance, "res/fonts/Nunito-Bold.ttf"));
++	}
++
++	void draw(const DrawArgs& args) override {
++		if (!font || font->handle < 0)
++			return; // Font fehlt (siehe Kommentar oben) - still ueberspringen statt crashen
++		nvgFontFaceId(args.vg, font->handle);
++		nvgFontSize(args.vg, fontSize);
++		nvgTextAlign(args.vg, align);
++		nvgTextLetterSpacing(args.vg, 0.f);
++		nvgFillColor(args.vg, color);
++		nvgText(args.vg, 0.f, 0.f, text.c_str(), NULL);
++	}
++};
++
++// Farbkategorien (Kinovice-Entscheidung: "nach Sektion/Funktion
++// eingefaerbt"). Fuenf Kategorien, ueber alle Reihen hinweg konsistent:
++// - System: modulweite Housekeeping-Trigger (Clear/Reset/Preset)
++// - Musical: Scale/Key - musikalische Funktionen, ebenfalls modulweit
++// - Section A / Section B: alles was eine Section-Kennung traegt (auch
++//   wenn poly, wie Address Memory Store/Recall)
++// - StageMod: die 10 Stage-Modifier-Poly-Inputs (Skip...Mute) - wirken
++//   modulweit auf beide Sections gleichzeitig, daher eigene Kategorie statt
++//   A/B-Zuordnung.
++static const NVGcolor COLOR_SYSTEM   = nvgRGB(70, 70, 68);
++static const NVGcolor COLOR_MUSICAL  = nvgRGB(126, 87, 194);
++static const NVGcolor COLOR_SECTION_A = nvgRGB(30, 100, 200);
++static const NVGcolor COLOR_SECTION_B = nvgRGB(210, 110, 20);
++static const NVGcolor COLOR_STAGEMOD = nvgRGB(0, 140, 130);
++
+ 
+ struct Marf248TriggerExpanderWidget : ModuleWidget {
++	// Kleiner Helfer, um addInput()/addOutput() und das zugehoerige Label
++	// in einer Zeile zu buendeln - Position und Text bleiben dadurch
++	// zusammen im Code, statt an zwei getrennten Stellen gepflegt zu werden
++	// (siehe Kommentar am PanelLabel-Widget oben).
++	void addLabel(Vec posMM, const std::string& text, NVGcolor color) {
++		// Label sitzt "direkt darunter" (Kinovice-Entscheidung): Buchsen-
++		// Radius (PJ301MPort) ~4.2mm + 1.3mm Abstand = 5.5mm Versatz vom
++		// Buchsen-Mittelpunkt zur Textoberkante.
++		addChild(new PanelLabel(posMM + Vec(0.f, 5.5f), text, color));
++	}
++
+ 	Marf248TriggerExpanderWidget(Marf248TriggerExpander* module) {
+ 		setModule(module);
+ 
+-		// 12HP -> 18HP: die 7 neuen Stage-Modifier-Poly-Inputs (First/Last/
+-		// Stop/Sustain/Enable/Pulse1/Pulse2, analog zu STAGE_SKIP_POLY_INPUT)
+-		// brauchen eine 3. Spalte - siehe Marf248TriggerExpander.hpp.
+-		// 18HP -> 24HP: die 2 neuen ADVANCE_A/B_INPUT (Clock-quantisiertes
+-		// Advance) brauchen eine 4. Spalte. Unten ist kein Platz mehr fuer
+-		// eine komplett neue Reihe (nur noch 8,4mm Puffer zu den
+-		// Befestigungsschrauben, siehe Reihen 9-11 weiter unten) - daher
+-		// werden die beiden neuen Buchsen stattdessen in die bereits
+-		// bestehende RUN_GATE-Reihe eingefuegt (dort war Spalte C/D bisher
+-		// frei), statt eine neue Reihe zu erzwingen.
++		// 12HP -> 18HP -> 24HP (siehe bisherige Session-Historie). Fuer
++		// diese Session (Panel-Beschriftung) bleibt die Breite unveraendert
++		// bei 24HP - die Beschriftung wird stattdessen durch eine
++		// Verdichtung auf ein durchgehendes 4-Spalten-Raster UND weniger,
++		// dafuer hoehere Reihen geloest (siehe stepY-Rechnung unten). Damit
++		// bleibt die vorhandene Panel-Breite erhalten, nur die Zeilenzahl
++		// sinkt von 12 auf 8.
+ 		const float HP = 24.f;
+ 		box.size = Vec(HP * RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
+ 
+@@ -49,115 +122,136 @@
+ 
+ 		float colA = 16.f;
+ 		float colB = 45.f;
+-		// 3. Spalte im gleichen Abstand wie colA-colB (29mm), fuer die
+-		// Stage-Modifier-Poly-Inputs unten.
+ 		float colC = 74.f;
+-		// 4. Spalte, gleicher 29mm-Abstand, nur fuer die RUN_GATE-Reihe
+-		// genutzt (ADVANCE_A/B_INPUT) - alle anderen Reihen bleiben bei
+-		// maximal 3 Spalten, der Rest der neuen Panel-Breite bleibt bewusst
+-		// leer (Reserve, analog zum bereits bestehenden ~18mm-Layout-Puffer
+-		// zwischen Normalize/Trange-Reihe und Range-Knob auf dem Hauptpanel).
+ 		float colD = 103.f;
+ 
+-		// Link-Licht: zeigt an, ob gerade ein Marf248 andockt (siehe
+-		// Marf248TriggerExpander::process()).
++		// Link-Licht: zeigt an, ob gerade ein Marf248 andockt. Text daneben
++		// statt darunter (spart die einzige Zeile, die sonst mit der ersten
++		// Bedienreihe kollidieren wuerde - siehe Platzrechnung unten).
+ 		addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec((colA + colB) / 2.f, 10)), module, Marf248TriggerExpander::LINK_LIGHT));
++		addChild(new PanelLabel(Vec((colA + colB) / 2.f + 5.f, 8.f), "LINK", COLOR_SYSTEM, 5.5f, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE));
+ 
+-		// Reihe 1: Clear / Reset Values.
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, 20)), module, Marf248TriggerExpander::CLEAR_INPUT));
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, 20)), module, Marf248TriggerExpander::RESET_VALUES_INPUT));
+-
+-		// Reihen ab hier: 8.8mm-Raster (zurueck von den zwischenzeitlichen
+-		// 9.5mm) - fuer die neue 12. Reihe (Adress-Speicher Store/Recall,
+-		// siehe unten) reicht der Puffer bei 9.5mm nicht mehr aus (Reihe 11
+-		// laege bereits bei 115mm, eine 12. Reihe bei 124.5mm wuerde die
+-		// unteren Befestigungsschrauben bei ~123.4mm touchieren). Mit 8.8mm
+-		// liegt Reihe 11 bei 108mm und die neue Reihe 12 bei 116.8mm -
+-		// 6.6mm Puffer zu den Schrauben, numerisch geprueft (kein Rack-SDK
+-		// im Sandbox, visuell also unbestaetigt). Aendert nur Pixel-
+-		// Positionen, keine Enum-Reihenfolge - bestehende Patch-Kabel sind
+-		// davon nicht betroffen.
+-		const float stepY = 8.8f;
+-
+-		// Reihe 2: Preset Load (Poly, Kanal 1-12 = Preset 1-12) - mittig
+-		// zwischen den beiden Spalten, da nur noch eine Buchse.
+-		float yPreset = 20.f + stepY;
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec((colA + colB) / 2.f, yPreset)), module, Marf248TriggerExpander::PRESET_LOAD_POLY_INPUT));
+-
+-		// Reihe 3: Scale Major / Minor.
+-		float yScale1 = yPreset + stepY;
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yScale1)), module, Marf248TriggerExpander::SCALE_MAJOR_INPUT));
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yScale1)), module, Marf248TriggerExpander::SCALE_MINOR_INPUT));
+-
+-		// Reihe 4: Scale Chromatic / Key CV.
+-		float yScale2 = yScale1 + stepY;
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yScale2)), module, Marf248TriggerExpander::SCALE_CHROMATIC_INPUT));
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yScale2)), module, Marf248TriggerExpander::KEY_CV_INPUT));
+-
+-		// Reihe 5-6: Start-/End-of-Cycle, Section A dann B.
+-		float yCycleA = yScale2 + stepY;
+-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colA, yCycleA)), module, Marf248TriggerExpander::START_CYCLE_A_OUTPUT));
+-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colB, yCycleA)), module, Marf248TriggerExpander::END_CYCLE_A_OUTPUT));
+-
+-		float yCycleB = yCycleA + stepY;
+-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colA, yCycleB)), module, Marf248TriggerExpander::START_CYCLE_B_OUTPUT));
+-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colB, yCycleB)), module, Marf248TriggerExpander::END_CYCLE_B_OUTPUT));
+-
+-		// Reihe 7: SEXT - externe Strobe-Pulse Section A / B (siehe
+-		// Marf248TriggerExpander.hpp und Marf248::process()).
+-		float ySext = yCycleB + stepY;
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, ySext)), module, Marf248TriggerExpander::STROBE_A_INPUT));
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, ySext)), module, Marf248TriggerExpander::STROBE_B_INPUT));
+-
+-		// Reihe 8 (NEU): Start/Stop-Gate Section A / B (Pegel, ODER-
+-		// verknuepft mit dem Panel-Taster - siehe Marf248TriggerExpander.hpp
+-		// und Afg::process() in Marf248.hpp).
+-		float yRunGate = ySext + stepY;
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yRunGate)), module, Marf248TriggerExpander::RUN_GATE_A_INPUT));
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yRunGate)), module, Marf248TriggerExpander::RUN_GATE_B_INPUT));
+-		// Advance A/B (Clock-quantisiertes Advance) in derselben Reihe wie
+-		// RUN_GATE: thematisch verwandt (beide betreffen die Lauf-Steuerung
+-		// der jeweiligen Section) und Spalte C/D war hier bisher frei -
+-		// braucht daher keine eigene neue Reihe (siehe HP-Kommentar oben).
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, yRunGate)), module, Marf248TriggerExpander::ADVANCE_A_INPUT));
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colD, yRunGate)), module, Marf248TriggerExpander::ADVANCE_B_INPUT));
+-
+-		// Reihe 9: Stage-Adress-Modifier Poly-Gates (Skip/First/Last) - jetzt
+-		// zu dritt in einer Reihe dank 3. Spalte, statt Skip allein mittig
+-		// wie zuvor (siehe Marf248TriggerExpander.hpp und Marf248::process()).
+-		float yStageSkip = yRunGate + stepY;
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yStageSkip)), module, Marf248TriggerExpander::STAGE_SKIP_POLY_INPUT));
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yStageSkip)), module, Marf248TriggerExpander::STAGE_FIRST_POLY_INPUT));
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, yStageSkip)), module, Marf248TriggerExpander::STAGE_LAST_POLY_INPUT));
+-
+-		// Reihe 10 (NEU): Stage-Zustands-Modifier Poly-Gates (Stop/Sustain/
+-		// Enable), gleiches Prinzip wie Reihe 9.
+-		float yStageState = yStageSkip + stepY;
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yStageState)), module, Marf248TriggerExpander::STAGE_STOP_POLY_INPUT));
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yStageState)), module, Marf248TriggerExpander::STAGE_SUSTAIN_POLY_INPUT));
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, yStageState)), module, Marf248TriggerExpander::STAGE_ENABLE_POLY_INPUT));
+-
+-		// Reihe 11: Stage-Pulse-Modifier Poly-Gates (Pulse1/Pulse2) plus
+-		// SLOPE in der 3. Spalte. Spalte D war hier bisher frei (nur in
+-		// Reihe 8 und 12 genutzt) - nimmt jetzt MUTE auf, ohne dass eine
+-		// neue Reihe noetig wird (siehe Marf248TriggerExpander.hpp).
+-		float yStagePulse = yStageState + stepY;
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yStagePulse)), module, Marf248TriggerExpander::STAGE_PULSE1_POLY_INPUT));
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yStagePulse)), module, Marf248TriggerExpander::STAGE_PULSE2_POLY_INPUT));
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, yStagePulse)), module, Marf248TriggerExpander::STAGE_SLOPE_POLY_INPUT));
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colD, yStagePulse)), module, Marf248TriggerExpander::STAGE_MUTE_POLY_INPUT));
+-
+-		// Reihe 12 (NEU): Adress-Speicher Store/Recall (siehe
+-		// Marf248TriggerExpander.hpp und Marf248::process()) - Store A/B und
+-		// Recall A/B nebeneinander in derselben Reihe, gleiches 4-Spalten-
+-		// Prinzip wie Reihe 8 (RUN_GATE + ADVANCE). Durch das auf 8.8mm
+-		// verdichtete Zeilenraster (siehe stepY oben) passt diese Reihe noch
+-		// mit 6.6mm Puffer zu den unteren Befestigungsschrauben.
+-		float yAddrMem = yStagePulse + stepY;
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, yAddrMem)), module, Marf248TriggerExpander::ADDR_STORE_A_POLY_INPUT));
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, yAddrMem)), module, Marf248TriggerExpander::ADDR_STORE_B_POLY_INPUT));
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, yAddrMem)), module, Marf248TriggerExpander::ADDR_RECALL_A_POLY_INPUT));
+-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colD, yAddrMem)), module, Marf248TriggerExpander::ADDR_RECALL_B_POLY_INPUT));
++		// ---------------------------------------------------------------
++		// Neues Zeilenraster (Session "Panel Labeling"): 8 Reihen a 4
++		// Spalten statt vorher 12 Reihen mit wechselnder Spaltenzahl. Grund:
++		// unter jeder Buchse steht jetzt ein Label (siehe addLabel() oben),
++		// das braucht zusaetzlichen Vertikalraum, den das alte 8.8mm-Raster
++		// nicht mehr hergibt (Label wuerde die naechste Reihe ueberlappen).
++		//
++		// Rechnung fuer den neuen Zeilenabstand: PJ301MPort-Radius ~4.2mm +
++		// Label-Versatz 5.5mm (siehe addLabel()) + Textzeile bei 6pt Font
++		// ~2.3mm Caphoehe = Label endet bei ca. 7.8mm unterhalb der
++		// Buchsenmitte. Naechste Buchse braucht oberhalb ihrer Mitte
++		// wiederum ~4.2mm frei. macht in Summe ca. 12mm Minimalabstand -
++		// stepY = 12.5mm gewaehlt (0.5mm Sicherheitsmarge, keine krumme
++		// Zahl fuer die spaetere Nachrechnung).
++		//
++		// Damit 8 Reihen statt 12 gebraucht werden, wurden Bedienelemente,
++		// die vorher aus Platzgruenden nur zu zweit in einer Reihe standen
++		// (Scale, Cycle-Outputs, Strobe+RunGate, Advance+erste Stage-
++		// Modifier), auf ein durchgehendes 4er-Raster verteilt. Enum-
++		// Reihenfolge in der .hpp bleibt unangetastet - nur reine Pixel-
++		// Positionen aendern sich, bestehende Patch-Kabel sind nicht
++		// betroffen.
++		const float stepY = 12.5f;
++		float y = 20.f;
++
++		// Reihe 1: Clear / Reset Values / Preset Load (System, grau).
++		// Spalte D bleibt hier bewusst frei (nur 3 Elemente).
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, y)), module, Marf248TriggerExpander::CLEAR_INPUT));
++		addLabel(Vec(colA, y), "CLEAR", COLOR_SYSTEM);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, y)), module, Marf248TriggerExpander::RESET_VALUES_INPUT));
++		addLabel(Vec(colB, y), "RESET VAL", COLOR_SYSTEM);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, y)), module, Marf248TriggerExpander::PRESET_LOAD_POLY_INPUT));
++		addLabel(Vec(colC, y), "PRESET", COLOR_SYSTEM);
++
++		// Reihe 2: Scale Major/Minor/Chromatic + Key CV (Musical, violett).
++		y += stepY;
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, y)), module, Marf248TriggerExpander::SCALE_MAJOR_INPUT));
++		addLabel(Vec(colA, y), "SCALE MAJ", COLOR_MUSICAL);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, y)), module, Marf248TriggerExpander::SCALE_MINOR_INPUT));
++		addLabel(Vec(colB, y), "SCALE MIN", COLOR_MUSICAL);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, y)), module, Marf248TriggerExpander::SCALE_CHROMATIC_INPUT));
++		addLabel(Vec(colC, y), "SCALE CHR", COLOR_MUSICAL);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colD, y)), module, Marf248TriggerExpander::KEY_CV_INPUT));
++		addLabel(Vec(colD, y), "KEY CV", COLOR_MUSICAL);
++
++		// Reihe 3: Start-/End-of-Cycle, Section A dann B (Outputs).
++		y += stepY;
++		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colA, y)), module, Marf248TriggerExpander::START_CYCLE_A_OUTPUT));
++		addLabel(Vec(colA, y), "START A", COLOR_SECTION_A);
++		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colB, y)), module, Marf248TriggerExpander::END_CYCLE_A_OUTPUT));
++		addLabel(Vec(colB, y), "END A", COLOR_SECTION_A);
++		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colC, y)), module, Marf248TriggerExpander::START_CYCLE_B_OUTPUT));
++		addLabel(Vec(colC, y), "START B", COLOR_SECTION_B);
++		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colD, y)), module, Marf248TriggerExpander::END_CYCLE_B_OUTPUT));
++		addLabel(Vec(colD, y), "END B", COLOR_SECTION_B);
++
++		// Reihe 4: SEXT (externe Strobe) + Start/Stop-Gate, A und B je
++		// nebeneinander.
++		y += stepY;
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, y)), module, Marf248TriggerExpander::STROBE_A_INPUT));
++		addLabel(Vec(colA, y), "STROBE A", COLOR_SECTION_A);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, y)), module, Marf248TriggerExpander::STROBE_B_INPUT));
++		addLabel(Vec(colB, y), "STROBE B", COLOR_SECTION_B);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, y)), module, Marf248TriggerExpander::RUN_GATE_A_INPUT));
++		addLabel(Vec(colC, y), "RUN GATE A", COLOR_SECTION_A);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colD, y)), module, Marf248TriggerExpander::RUN_GATE_B_INPUT));
++		addLabel(Vec(colD, y), "RUN GATE B", COLOR_SECTION_B);
++
++		// Reihe 5: Advance A/B + erste beiden Stage-Adress-Modifier
++		// (Skip/First). Ab hier StageMod-Farbe (tuerkis) fuer die
++		// modulweiten Poly-Stage-Overrides.
++		y += stepY;
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, y)), module, Marf248TriggerExpander::ADVANCE_A_INPUT));
++		addLabel(Vec(colA, y), "ADVANCE A", COLOR_SECTION_A);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, y)), module, Marf248TriggerExpander::ADVANCE_B_INPUT));
++		addLabel(Vec(colB, y), "ADVANCE B", COLOR_SECTION_B);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, y)), module, Marf248TriggerExpander::STAGE_SKIP_POLY_INPUT));
++		addLabel(Vec(colC, y), "SKIP", COLOR_STAGEMOD);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colD, y)), module, Marf248TriggerExpander::STAGE_FIRST_POLY_INPUT));
++		addLabel(Vec(colD, y), "FIRST", COLOR_STAGEMOD);
++
++		// Reihe 6: Last/Stop/Sustain/Enable (Stage-Modifier, tuerkis).
++		y += stepY;
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, y)), module, Marf248TriggerExpander::STAGE_LAST_POLY_INPUT));
++		addLabel(Vec(colA, y), "LAST", COLOR_STAGEMOD);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, y)), module, Marf248TriggerExpander::STAGE_STOP_POLY_INPUT));
++		addLabel(Vec(colB, y), "STOP", COLOR_STAGEMOD);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, y)), module, Marf248TriggerExpander::STAGE_SUSTAIN_POLY_INPUT));
++		addLabel(Vec(colC, y), "SUSTAIN", COLOR_STAGEMOD);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colD, y)), module, Marf248TriggerExpander::STAGE_ENABLE_POLY_INPUT));
++		addLabel(Vec(colD, y), "ENABLE", COLOR_STAGEMOD);
++
++		// Reihe 7: Pulse1/Pulse2/Slope/Mute (Stage-Modifier, tuerkis).
++		y += stepY;
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, y)), module, Marf248TriggerExpander::STAGE_PULSE1_POLY_INPUT));
++		addLabel(Vec(colA, y), "PULSE1", COLOR_STAGEMOD);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, y)), module, Marf248TriggerExpander::STAGE_PULSE2_POLY_INPUT));
++		addLabel(Vec(colB, y), "PULSE2", COLOR_STAGEMOD);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, y)), module, Marf248TriggerExpander::STAGE_SLOPE_POLY_INPUT));
++		addLabel(Vec(colC, y), "SLOPE", COLOR_STAGEMOD);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colD, y)), module, Marf248TriggerExpander::STAGE_MUTE_POLY_INPUT));
++		addLabel(Vec(colD, y), "MUTE", COLOR_STAGEMOD);
++
++		// Reihe 8: Adress-Speicher Store/Recall, A und B je nebeneinander.
++		y += stepY;
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, y)), module, Marf248TriggerExpander::ADDR_STORE_A_POLY_INPUT));
++		addLabel(Vec(colA, y), "ADDR STORE A", COLOR_SECTION_A);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colB, y)), module, Marf248TriggerExpander::ADDR_STORE_B_POLY_INPUT));
++		addLabel(Vec(colB, y), "ADDR STORE B", COLOR_SECTION_B);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colC, y)), module, Marf248TriggerExpander::ADDR_RECALL_A_POLY_INPUT));
++		addLabel(Vec(colC, y), "ADDR RECALL A", COLOR_SECTION_A);
++		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colD, y)), module, Marf248TriggerExpander::ADDR_RECALL_B_POLY_INPUT));
++		addLabel(Vec(colD, y), "ADDR RECALL B", COLOR_SECTION_B);
++
++		// Puffer-Kontrolle zu den unteren Befestigungsschrauben: Reihe 8
++		// liegt bei y=20+7*12.5=107.5mm, Label endet bei ca. 107.5+7.8=
++		// 115.3mm. Schrauben-Reihe liegt (siehe fruehere Session-Rechnung,
++		// RACK_GRID_HEIGHT-RACK_GRID_WIDTH) bei ca. 123.4mm -> ca. 8mm
++		// Puffer, numerisch geprueft, aber wie immer im Sandbox ohne
++		// Rack-SDK nicht visuell bestaetigt. Kinovice bitte lokal
++		// gegenchecken.
+ 	}
+ };
+ 
