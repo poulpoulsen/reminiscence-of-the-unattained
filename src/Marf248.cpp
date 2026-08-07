@@ -4,6 +4,27 @@
 
 struct Marf248; // Forward-Deklaration fuer StageVoltageQuantity
 
+// Rechtsklick-Zahleneingabe: Racks Basisimplementierung (ParamQuantity::
+// setDisplayValueString()) parst per std::stof im "C"-Locale, das NUR den
+// Punkt als Dezimaltrennzeichen akzeptiert. Bei deutscher Schreibweise mit
+// Komma (z.B. "3,472") bricht das Parsen beim Komma ab und uebernimmt nur
+// den Teil davor ("3") - wirkt wie sinnloses Runden auf Ganzzahlen und laesst
+// bei zum Testen gern nahe am Maximum eingegebenen Werten (z.B. "10,0" ->
+// "10") den Eindruck von "Vollausschlag" entstehen (Kinovice-Bugreport).
+// Alle drei ParamQuantity-Subklassen mit eigener Rechtsklick-Eingabe
+// (StageVoltageQuantity, StageTimeQuantity, TempoQuantity) ersetzen daher
+// Kommas durch Punkte, BEVOR sie an die Basisklasse durchreichen - simpelste
+// und robusteste Loesung, ohne Racks Locale-Handling selbst anfassen zu
+// muessen.
+static std::string normalizeDecimalComma(std::string s) {
+	for (char& c : s) {
+		if (c == ',') {
+			c = '.';
+		}
+	}
+	return s;
+}
+
 // Zeigt den Voltage-Regler-Wert als Notenname (z.B. "C#4") an, wenn Quantize
 // fuer die jeweilige Stage aktiv ist; sonst normale Volt-Anzeige. Die
 // Methode wird erst NACH der vollstaendigen Definition von Marf248
@@ -11,6 +32,9 @@ struct Marf248; // Forward-Deklaration fuer StageVoltageQuantity
 struct StageVoltageQuantity : ParamQuantity {
 	int stageIndex = 0;
 	std::string getDisplayValueString() override;
+	void setDisplayValueString(std::string s) override {
+		ParamQuantity::setDisplayValueString(normalizeDecimalComma(s));
+	}
 };
 
 // Zeigt den Drehschalter-Wert als Klartext-Modus an ("Full", "Half",
@@ -34,6 +58,11 @@ struct StageTimeQuantity : ParamQuantity {
 	float getDisplayValue() override { return getValue() * 10.f; }
 	void setDisplayValue(float displayValue) override { setValue(displayValue / 10.f); }
 	std::string getDisplayValueString() override;
+	// Komma-Fix (siehe normalizeDecimalComma oben) - hier besonders
+	// relevant, da genau dieses Feld den Kinovice-Bugreport ausgeloest hat.
+	void setDisplayValueString(std::string s) override {
+		ParamQuantity::setDisplayValueString(normalizeDecimalComma(s));
+	}
 };
 
 // Zeigt den TIME_MULT_A/B_PARAM-Rohwert (jetzt eine V/Oct-Spannung, siehe
@@ -66,6 +95,11 @@ struct TempoQuantity : ParamQuantity {
 	}
 	std::string getDisplayValueString() override {
 		return string::f("%.1f BPM (%.2f V)", getDisplayValue(), getValue());
+	}
+	// Komma-Fix (siehe normalizeDecimalComma oben) - gleiche Rack-Eigenheit
+	// betrifft auch die BPM-Eingabe.
+	void setDisplayValueString(std::string s) override {
+		ParamQuantity::setDisplayValueString(normalizeDecimalComma(s));
 	}
 };
 
@@ -190,6 +224,13 @@ struct Marf248 : Module {
 		// bestehende Preset-/Patch-Indizes unveraendert bleiben.
 		BEATS_FACTOR_A_PARAM,
 		BEATS_FACTOR_B_PARAM,
+		// Stage MUTE (Session "Hauptmodul-Relayout"): bisher nur ueber
+		// Marf248TriggerExpander::STAGE_MUTE_POLY_INPUT bedienbar (siehe
+		// dortiger Kommentar), jetzt zusaetzlich als eigener Panel-Button pro
+		// Stage - gleiches Klick-Toggle-Prinzip wie STAGE_PULSE1/2_PARAM.
+		// Ans Enum-Ende angehaengt statt einsortiert, um bestehende Patch-
+		// Indizes nicht zu verschieben (Standard-Prinzip in dieser Datei).
+		ENUMS(STAGE_MUTE_PARAM, NUM_STAGES),
 		PARAMS_LEN
 	};
 	enum InputId {
@@ -331,6 +372,8 @@ struct Marf248 : Module {
 		// Flash beim Uebernehmen, kein Dauerlicht).
 		SCALE_LIGHT,
 		KEY_LIGHT,
+		// Passend zu STAGE_MUTE_PARAM oben (Session "Hauptmodul-Relayout").
+		ENUMS(STAGE_MUTE_LIGHT, NUM_STAGES),
 		LIGHTS_LEN
 	};
 
@@ -497,6 +540,7 @@ struct Marf248 : Module {
 	dsp::SchmittTrigger stagePulse2Trigger[NUM_STAGES];
 	dsp::SchmittTrigger stageSkipTrigger[NUM_STAGES];
 	dsp::SchmittTrigger stageTrangeTrigger[NUM_STAGES];
+	dsp::SchmittTrigger stageMuteTrigger[NUM_STAGES];
 
 	// CPU-Optimierung (siehe perf-Profiling-Session): die Klick-Button-
 	// Erkennung + Light-Update fuer alle 16 Stages (weiter unten in
@@ -579,6 +623,7 @@ struct Marf248 : Module {
 			configButton(STAGE_SKIP_PARAM + i, string::f("Stage %d Skip", i + 1));
 			configButton(STAGE_TRANGE_PARAM + i, string::f(
 				"Stage %d Time Range (TR1 .002-.03s / TR2 .02-.3s / TR3 .2-3s Default / TR4 2-30s)", i + 1));
+			configButton(STAGE_MUTE_PARAM + i, string::f("Stage %d Mute (suppresses Pulse1/2 output only)", i + 1));
 		}
 		configButton(RUN_A_PARAM, "Section A Start/Stop");
 		configButton(RUN_B_PARAM, "Section B Start/Stop");
@@ -1036,6 +1081,9 @@ struct Marf248 : Module {
 			if (stageSkipTrigger[i].process(params[STAGE_SKIP_PARAM + i].getValue())) {
 				stageModifier[i] ^= MOD_SKIP;
 			}
+			if (stageMuteTrigger[i].process(params[STAGE_MUTE_PARAM + i].getValue())) {
+				stageModifier[i] ^= MOD_MUTE;
+			}
 			if (stageShapeTrigger[i].process(params[STAGE_SHAPE_PARAM + i].getValue())) {
 				// Zyklus: Linear -> Exponentiell -> Logarithmisch -> Linear.
 				// Beide Bits sind exklusiv, daher immer erst beide loeschen.
@@ -1087,6 +1135,7 @@ struct Marf248 : Module {
 			lights[STAGE_PULSE1_LIGHT + i].setBrightness(stageModifier[i] & MOD_PULSE1 ? 1.f : 0.f);
 			lights[STAGE_PULSE2_LIGHT + i].setBrightness(stageModifier[i] & MOD_PULSE2 ? 1.f : 0.f);
 			lights[STAGE_SKIP_LIGHT + i].setBrightness(stageModifier[i] & MOD_SKIP ? 1.f : 0.f);
+			lights[STAGE_MUTE_LIGHT + i].setBrightness(stageModifier[i] & MOD_MUTE ? 1.f : 0.f);
 		}
 		}
 
@@ -1235,9 +1284,11 @@ struct Marf248 : Module {
 		// STAGE_PULSE1/2_POLY_INPUT oben, setzt aber MOD_MUTE statt
 		// MOD_PULSE1/2 - unterdrueckt nur die Trigger-Erzeugung (siehe
 		// Afg::process()), die Pulse1/2-Programmierung selbst bleibt
-		// unangetastet. Noch kein Panel-Light (STAGE_..._LIGHT), da der
-		// Mute-Button auf dem Hauptmodul erst mit dem separat geplanten
-		// Panel-Relayout kommt - rein funktional bis dahin.
+		// unangetastet. Seit Session "Hauptmodul-Relayout" gibt es einen
+		// eigenen Panel-Button/Light (STAGE_MUTE_PARAM/LIGHT) - CV hat wie
+		// bei allen anderen Stage-Modifiern Vorrang vor dem manuellen Klick,
+		// solange die Buchse gepatcht ist (siehe STAGE_SKIP_POLY_INPUT-
+		// Kommentar oben fuer das allgemeine Rueckfall-Prinzip).
 		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_MUTE_POLY_INPUT).isConnected()) {
 			const float GATE_THRESHOLD = 2.f;
 			for (int i = 0; i < NUM_STAGES; i++) {
@@ -1248,6 +1299,7 @@ struct Marf248 : Module {
 				else {
 					stageModifier[i] &= ~MOD_MUTE;
 				}
+				lights[STAGE_MUTE_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
 			}
 		}
 
@@ -2086,8 +2138,16 @@ std::string StageTimeQuantity::getDisplayValueString() {
 	// Rechtsklick-Zahleneingabe (setDisplayValueString(), Basisklasse) liest
 	// per std::stof ohnehin nur die fuehrende Zahl und ignoriert den Rest -
 	// der Klammerzusatz stoert die Eingabe also nicht.
+	//
+	// %.1f -> %.3f (Kinovice-Feedback "Time Slider rundet auf eine
+	// Nachkommastelle"): der gespeicherte Wert war nie tatsaechlich
+	// gerundet (setDisplayValue() rundet nirgends), nur die Anzeige selbst
+	// war mit einer Nachkommastelle zu grob - anders als Voltage, das ohne
+	// eigenes getDisplayValue()/setDisplayValue() das praezisere Rack-
+	// Standardformat nutzt. 3 Nachkommastellen auf der 0-10-Dial-Skala
+	// entsprechen der Aufloesung von 1/1000 des Reglerwegs.
 	if (!m) {
-		return string::f("%.1f", getDisplayValue());
+		return string::f("%.3f", getDisplayValue());
 	}
 	int idx = getTimeRangeIndex(m->stageModifier[stageIndex]);
 	float seconds = TIME_RANGE_MIN[idx] + getValue() * (TIME_RANGE_MAX[idx] - TIME_RANGE_MIN[idx]);
@@ -2095,7 +2155,7 @@ std::string StageTimeQuantity::getDisplayValueString() {
 	// brauchen daher mehr Nachkommastellen als TR3/TR4, sonst wuerde z.B.
 	// ".00 s" fuer den gesamten TR1-Bereich angezeigt.
 	std::string secStr = (seconds < 1.f) ? string::f("%.3f s", seconds) : string::f("%.2f s", seconds);
-	return string::f("%.1f (%s)", getDisplayValue(), secStr.c_str());
+	return string::f("%.3f (%s)", getDisplayValue(), secStr.c_str());
 }
 
 
@@ -2391,6 +2451,144 @@ struct RangeKnob : RoundBlackKnob {
 };
 
 
+// Vertikaler Schieberegler fuer Voltage/Time (Session "Hauptmodul-Relayout",
+// ersetzt die bisherigen RoundBlackKnob-Drehregler). Komplett per NVG
+// gezeichnet, kein SVG-Asset (siehe PanelBackground/RangeKnob/TrangeButton).
+//
+// ZWEITER ANLAUF beim Interaktions-Verhalten (Kinovice-Feedback: "Slider
+// laesst sich nicht fassen/bedienen, Klick bewegt stattdessen das ganze
+// Modul" - blieb auch nach dem ersten Fix-Versuch, box.size im Konstruktor
+// zu setzen, bestehen). Erbte zuvor von app::Knob in der Annahme, dessen
+// eingebautes Drag-Verhalten liesse sich 1:1 fuer einen linearen Fader
+// wiederverwenden (vertikale Mausbewegung aendert den Wert, exakt wie bei
+// einem Fader gewuenscht) - vermutlich haengt Knob's Interaktions-Pipeline
+// aber an internen Annahmen (z.B. einem SVG-Kind-Widget aus SvgKnob), die
+// bei einem nackten Knob ohne SVG nicht erfuellt sind, sodass der Klick nie
+// beim Widget selbst ankam. Jetzt stattdessen direkt von ParamWidget
+// abgeleitet, mit komplett selbst geschriebenem onButton/onDragStart/
+// onDragMove/onDragEnd - keine Abhaengigkeit mehr von Knob-internem
+// Verhalten, nur noch Rack-Grundmechanik (Event-Konsum bei PRESS, dann
+// direkte Drag-Events an genau dieses Widget).
+struct StageSlider : ParamWidget {
+	// 48 -> 50mm Gesamthoehe (Kinovice-Feedback, zweite Runde: "Slider noch
+	// etwas hoeher"), TRAVEL_MM entsprechend 42 -> 44mm bei gleichem 6mm-
+	// Griffpuffer.
+	static constexpr float WIDTH_MM = 8.f;
+	static constexpr float TRAVEL_MM = 44.f;
+	static constexpr float HANDLE_H_MM = 6.f;
+	static constexpr float HEIGHT_MM = TRAVEL_MM + HANDLE_H_MM;
+
+	StageSlider() {
+		box.size = mm2px(Vec(WIDTH_MM, HEIGHT_MM));
+	}
+
+	void draw(const DrawArgs& args) override {
+		float t = 0.5f;
+		ParamQuantity* pq = getParamQuantity();
+		if (pq) {
+			t = rack::rescale(pq->getValue(), pq->getMinValue(), pq->getMaxValue(), 0.f, 1.f);
+			t = math::clamp(t, 0.f, 1.f);
+		}
+
+		float w = box.size.x;
+		float travelPx = mm2px(TRAVEL_MM);
+		float handleHPx = mm2px(HANDLE_H_MM);
+		float railTop = handleHPx / 2.f;
+		float railBottom = railTop + travelPx;
+		// t=1 (Maximalwert) -> Griff oben, t=0 -> Griff unten (physisches
+		// Fader-Gefuehl: hoch = mehr, wie bei einem Mischpult-Fader).
+		float handleY = railBottom - t * travelPx;
+		float railX = w / 2.f;
+
+		// Gehaeuse.
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0.5f, 0.5f, w - 1.f, box.size.y - 1.f, 2.f);
+		nvgFillColor(args.vg, nvgRGB(40, 40, 44));
+		nvgFill(args.vg);
+		nvgStrokeColor(args.vg, nvgRGBA(90, 90, 100, 200));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+
+		// Nut (dunkel).
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, railX, railTop);
+		nvgLineTo(args.vg, railX, railBottom);
+		nvgLineCap(args.vg, NVG_ROUND);
+		nvgStrokeWidth(args.vg, 3.f);
+		nvgStrokeColor(args.vg, nvgRGB(20, 20, 22));
+		nvgStroke(args.vg);
+
+		// Fuellstand von unten bis zum Griff (Amber, gleiche Akzentfarbe wie
+		// RangeKnob-Zeiger/TrangeButton-Ziffer, fuer ein einheitliches
+		// Erscheinungsbild aller "aktiven" Anzeigeelemente im Panel).
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, railX, railBottom);
+		nvgLineTo(args.vg, railX, handleY);
+		nvgLineCap(args.vg, NVG_ROUND);
+		nvgStrokeWidth(args.vg, 3.f);
+		nvgStrokeColor(args.vg, nvgRGB(235, 170, 60));
+		nvgStroke(args.vg);
+
+		// Griff.
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 1.5f, handleY - handleHPx / 2.f, w - 3.f, handleHPx, 1.2f);
+		nvgFillColor(args.vg, nvgRGB(220, 220, 216));
+		nvgFill(args.vg);
+		nvgStrokeColor(args.vg, nvgRGB(60, 60, 64));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, 3.5f, handleY);
+		nvgLineTo(args.vg, w - 3.5f, handleY);
+		nvgStrokeColor(args.vg, nvgRGBA(60, 60, 64, 200));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+	}
+
+	// --- Interaktion, komplett selbst implementiert (siehe Kommentar oben). ---
+
+	void onButton(const ButtonEvent& e) override {
+		ParamWidget::onButton(e);
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			e.consume(this);
+		}
+	}
+
+	void onDragStart(const DragStartEvent& e) override {
+		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
+			return;
+		APP->window->cursorLock();
+	}
+
+	void onDragEnd(const DragEndEvent& e) override {
+		APP->window->cursorUnlock();
+	}
+
+	void onDragMove(const DragMoveEvent& e) override {
+		ParamQuantity* pq = getParamQuantity();
+		if (!pq)
+			return;
+		float travelPx = mm2px(TRAVEL_MM);
+		float range = pq->getMaxValue() - pq->getMinValue();
+		// Maus nach oben (negatives mouseDelta.y) = Wert steigt - deckungs-
+		// gleich mit der visuellen Zuordnung in draw() oben. 1:1-Kopplung an
+		// den tatsaechlichen Griffweg (travelPx) statt einer festen, von
+		// Knob geerbten Drehregler-Sensitivitaet - ein Mausweg exakt in
+		// Hoehe des Reglerwegs faehrt den kompletten Wertebereich, wie bei
+		// einem echten Fader erwartet.
+		float delta = -e.mouseDelta.y / travelPx * range;
+		float newVal = math::clamp(pq->getValue() + delta, pq->getMinValue(), pq->getMaxValue());
+		pq->setValue(newVal);
+	}
+
+	void onDoubleClick(const DoubleClickEvent& e) override {
+		ParamQuantity* pq = getParamQuantity();
+		if (pq)
+			pq->reset();
+	}
+};
+
+
 // Ring-Light fuer Pulse-Output-Buchsen (Manual "Output LEDs"): statt eines
 // separaten Punkts neben dem Jack wird die Modul-Light-Farbe als duenner
 // Ring direkt UM die Buchse herum gezeichnet. Wird exakt auf die gleiche
@@ -2431,6 +2629,14 @@ struct PulseRingLight : app::ModuleLightWidget {
 
 
 
+// HINWEIS: die lokale PanelLabel-Kopie (analog zu den beiden Expandern) und
+// eine StageMod-Akzentfarbe wurden hier versuchsweise fuer eine einmalige
+// Stage-Array-Legende ergaenzt, dann aber wieder entfernt (Kollision mit der
+// Section-B-Ausgangsspalte, siehe Kommentar am Ende der Stage-Schleife) -
+// kommen in der geplanten Beschriftungs-Folgesession mit sauber eingeplantem
+// Platzbedarf zurueck.
+
+
 struct Marf248Widget : ModuleWidget {
 	Marf248Widget(Marf248* module) {
 		setModule(module);
@@ -2440,7 +2646,21 @@ struct Marf248Widget : ModuleWidget {
 		// 22mm Rahmenbreite zu dicht gedraengt.
 		// 120 -> 126: 6HP mehr fuer die neue VOUT/TOUT-Ausgangsspalte pro
 		// Section (siehe gapJacksToOutputs/gapOutputsToStage weiter unten).
-		const float HP = 126.f;
+		// Session "Hauptmodul-Relayout": die tatsaechlich benoetigte Breite
+		// ist durch die Slider/Button-Umstellung deutlich gewachsen (siehe
+		// gapOutputsToStage/xStep/frameWidthMM weiter unten) - HP musste
+		// entsprechend mitgezogen werden. War in den ersten beiden
+		// Session-Iterationen versehentlich als fixer Wert (126) stehen
+		// geblieben, obwohl die Spalten-Positionen (colBControls, colPresets
+		// etc.) laengst weiter rechts lagen - dadurch fiel Section B UND die
+		// gesamte Preset-Spalte ausserhalb des sichtbaren Panel-Hintergrunds
+		// (Kinovice-Feedback "ganz rechts fehlt die gesamte Sektion B").
+		// 150 -> 146: die 30mm Randmarge des ersten Fixes war zu grosszuegig
+		// (Kinovice-Feedback "rechts etwas zu breit, ca. um die Breite der
+		// Preset-Spalte schmaler") - jetzt ca. 10mm Marge hinter der Preset-
+		// Rahmenkante, naeher an den uebrigen, knapp bemessenen Luecken
+		// dieses Panels.
+		const float HP = 146.f;
 		box.size = Vec(HP * RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
 
 		// Panel-Hintergrund + klare Aussenkante (sonst bleibt das Modul
@@ -2458,29 +2678,31 @@ struct Marf248Widget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		// Geometrie-Konstanten: xStep/frameWidth fuer das 3-spaltige
-		// Modifier-Raster pro Stage (Pulse1/Pulse2/Skip usw.).
-		const float xStep = 29.f;
-		const float frameWidthMM = 25.f;
+		// Geometrie-Konstanten fuer die Stage-Spalte.
+		// Session "Hauptmodul-Relayout", zweiter Anlauf (Kinovice-Feedback
+		// nach erstem Test): Buttons jetzt in 2 statt 4 Spalten (siehe
+		// buttonColOffsets weiter unten) - dadurch wird die Stage-Spalte
+		// insgesamt SCHMALER als im ersten Entwurf (32mm statt 46mm), obwohl
+		// die Slider gleichzeitig LAENGER werden (siehe StageSlider::HEIGHT_MM
+		// unten): der Shape/Curve/TRange/Range-Block zieht in dieselbe
+		// schmale Button-Unterspalte um (statt wie vorher ueber die volle
+		// Stage-Breite zu gehen), was der Slider-Spalte die komplette
+		// Rahmenhoehe frei macht.
+		const float xStep = 36.f;
+		const float frameWidthMM = 32.f;
 		const float frameTopMM = 12.f;
-		const float frameBottomMM = 120.f;
-		const float tripleSpreadStage = 8.f;
-		// Zwei Luecken statt vorher einer einzigen (colToStageGap): Controls
-		// -> Jacks-Spalte, dann Jacks-Spalte -> Stage-Array. Symmetrisch fuer
-		// beide Sections (Jacks-Spalte liegt jeweils naeher am Stage-Array,
-		// Controls-Spalte aussen). Beide Luecken so knapp wie moeglich
-		// bemessen (nur so viel Rand, dass sich die jeweiligen Rahmen NICHT
-		// beruehren), damit das Modul insgesamt schmaler bleibt.
+		const float frameBottomMM = 126.f;
 		const float gapControlsToJacks = 19.f;
-		// Vorher eine einzige Luecke (gapJacksToStage, 26mm) direkt zwischen
-		// Jacks-Spalte und Stage-Array. Jetzt durch zwei Luecken ersetzt, da
-		// dazwischen die neue schmale VOUT/TOUT-Ausgangsspalte eingefuegt
-		// wird (Kinovice-Wunsch: mehr Platz in der Jacks-Spalte fuer die
-		// vergroesserte BPM-Anzeige). Werte so gewaehlt, dass Jacks-Rahmen
-		// (20mm breit), neue Outputs-Rahmen (12mm) und Stage-Rahmen (25mm)
-		// auch mit Toleranz nicht ueberlappen.
 		const float gapJacksToOutputs = 18.f;
-		const float gapOutputsToStage = 22.f;
+		// 22 -> 26: beim ersten Entwurf ragte die VOUT/TOUT-Ausgangsspalte
+		// in die (damals auf 46mm verbreiterte) Stage-Spalte hinein
+		// (Kinovice-Feedback "alle 16 Stages muessen nach rechts
+		// verschoben werden"). Selbst nach der Rueckverschmalerung auf
+		// 32mm braucht es mehr Abstand als die urspruenglichen 22mm (die
+		// waren auf frameWidthMM=25 austariert) - 26mm haelt denselben
+		// relativen Sicherheitsabstand wie im Original (Rahmenkante zu
+		// Outputs-Spalte ca. 9-10mm Luft, siehe Rechnung im Chat-Verlauf).
+		const float gapOutputsToStage = 26.f;
 
 		// Rahmenbreite der neuen VOUT/TOUT-Ausgangsspalte: nur zwei PJ301M-
 		// Buchsen (Voltage/Time Ramp Out), daher schmaler als die grosse
@@ -2757,9 +2979,64 @@ struct Marf248Widget : ModuleWidget {
 			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(outCol, 36)), module, toutOutputs[s]));
 		}
 
-		// --- Stage-Array (Mitte) ---
+		// --- Stage-Array (Mitte), Session "Hauptmodul-Relayout" (zweiter
+		// Anlauf nach Kinovice-Feedback zum ersten Entwurf) ---
+		//
+		// Aufbau pro Stage-Spalte: links zwei gestapelte Schieberegler
+		// (Voltage oben, Time darunter), rechts daneben EIN gemeinsamer
+		// Block aller Modifier-Buttons - jetzt in 2 statt 4 Spalten
+		// (Kinovice-Feedback "Buttons in zwei Spalten"), UND der bisherige
+		// volle-Breite-Block (Shape/Curve/TRange/Range) zieht in dieselbe
+		// schmale Button-Unterspalte um, statt separat quer ueber die volle
+		// Stage-Breite zu liegen. Beide Aenderungen zusammen machen die
+		// Stage-Spalte insgesamt SCHMALER (32mm statt 46mm im ersten
+		// Entwurf) und geben gleichzeitig der Slider-Unterspalte die
+		// komplette Rahmenhoehe frei - die Slider koennen dadurch von 30mm
+		// auf 42mm Weg wachsen (siehe StageSlider::TRAVEL_MM), mit deutlich mehr
+		// Abstand zur Stage-aktiv-LED darueber (war beim ersten Entwurf nur
+		// ca. 1mm Luft, Kinovice-Feedback "zu dicht an den LEDs").
+		//
+		// Beschriftung (Kinovice-Entscheidung "Option A", unveraendert):
+		// KEIN Label pro Button in jeder der 16 Stage-Spalten - stattdessen
+		// eine einmalige Legende rechts neben Stage 16 (siehe nach dieser
+		// Schleife), jetzt an die 2-Spalten/8-Zeilen-Gruppierung angepasst
+		// (eine Legendenzeile pro thematischer Zweier-Zeilen-Gruppe statt
+		// vorher pro Einzelzeile).
+		const float sliderColOffsetX = -10.f;
+		// Slider-Oberkante jetzt buendig mit der OBERKANTE der ersten
+		// Buttonreihe statt mit deren Mittelpunkt (Kinovice-Feedback,
+		// zweite Runde: "Oberkante des Buttons ist besser, also um den
+		// Radius des Buttons hoeher"). LEDButton-Radius ~3mm (Rack-
+		// Standardgroesse) -> Oberkante = buttonRowsY[0] - 3 = 20-3 = 17.
+		// Hoehe kommt jetzt direkt aus StageSlider::HEIGHT_MM (50mm) - hier
+		// nur noch die Mittelpunkte:
+		//   voltSliderY = 17 (Oberkante) + HEIGHT_MM/2 (50/2=25) = 42
+		//   timeSliderY = voltSliderY + HEIGHT_MM (50) + 6mm Luecke = 98
+		const float voltSliderY = 42.f;
+		const float timeSliderY = 98.f;
+		// Slider-Unterkante liegt damit bei 98+25=123mm, 3mm Luft zu
+		// frameBottomMM (126) - knapp, aber passend.
+		const float stageLedY = 13.f;
+		// 2-Spalten-Raster (Kinovice-Feedback "Buttons in zwei Spalten"),
+		// bewaehrter 8mm-Pitch. 8 Zeilen fuer 14 Modifier + 2 bewusst freie
+		// Plaetze (Platzreserve wie beim vorherigen 4x4-Entwurf), in
+		// thematischen Zweiergruppen wie zuvor: Puls/Output, Zustand/Halten,
+		// Adress-Fluss, Quelle/Override.
+		const float buttonColOffsets[2] = {2.f, 10.f};
+		const float buttonRowsY[8] = {20.f, 28.f, 36.f, 44.f, 52.f, 60.f, 68.f, 76.f};
+		// Shape/Curve/TRange/Range: jetzt Teil der Button-Unterspalte
+		// (mittig zwischen den beiden Button-Spalten, offsetX=6 = Mittelwert
+		// von buttonColOffsets), nicht mehr ueber die volle Stage-Breite.
+		const float shapeCurveOffsetX = 6.f;
+		const float shapeCurveY = 88.f;
+		const float trangeOffsetX = 6.f;
+		const float trangeY = 100.f;
+		const float rangeOffsetX = 6.f;
+		const float rangeY = 115.f;
+
 		for (int i = 0; i < NUM_STAGES; i++) {
 			float x = xStart + i * xStep;
+			float sliderX = x + sliderColOffsetX;
 
 			// Dekorativer Rahmen um die gesamte Stage-Spalte.
 			StageFrame* frame = new StageFrame;
@@ -2767,108 +3044,129 @@ struct Marf248Widget : ModuleWidget {
 			frame->box.size = mm2px(Vec(frameWidthMM, frameBottomMM - frameTopMM));
 			addChild(frame);
 
-			addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(x, 18)), module, Marf248::STAGE_VOLTAGE_PARAM + i));
-			addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(x, 30)), module, Marf248::STAGE_TIME_PARAM + i));
-			addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(x - 1.5f, 40)), module, Marf248::STAGE_LIGHT_A + i));
-			addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(x + 1.5f, 40)), module, Marf248::STAGE_LIGHT_B + i));
+			// --- Slider-Subspalte: Voltage oben, Time darunter. Groesse
+			// kommt jetzt fest aus StageSlider selbst (siehe Konstruktor
+			// dort) - createParamCentered() zentriert direkt korrekt, keine
+			// nachtraegliche box.size-Anpassung mehr noetig.
+			StageSlider* voltSlider = createParamCentered<StageSlider>(mm2px(Vec(sliderX, voltSliderY)), module, Marf248::STAGE_VOLTAGE_PARAM + i);
+			addParam(voltSlider);
 
-			// Modifier-Buttons dreispaltig, horizontale Aufteilung:
-			//   Reihe 1: Pulse 1 | Pulse 2 | Skip
-			//   Reihe 2: Stop    | Sustain | Enable
-			//   Reihe 3: First   | Last    | Slope
-			//   Reihe 4: Quantize| Volt-Source (Ext) | Time-Source (Ext)
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x - tripleSpreadStage, 48)), module, Marf248::STAGE_PULSE1_PARAM + i));
-			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x - tripleSpreadStage, 48)), module, Marf248::STAGE_PULSE1_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x, 48)), module, Marf248::STAGE_PULSE2_PARAM + i));
-			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x, 48)), module, Marf248::STAGE_PULSE2_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + tripleSpreadStage, 48)), module, Marf248::STAGE_SKIP_PARAM + i));
-			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + tripleSpreadStage, 48)), module, Marf248::STAGE_SKIP_LIGHT + i));
+			StageSlider* timeSlider = createParamCentered<StageSlider>(mm2px(Vec(sliderX, timeSliderY)), module, Marf248::STAGE_TIME_PARAM + i);
+			addParam(timeSlider);
 
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x - tripleSpreadStage, 56)), module, Marf248::STAGE_STOP_PARAM + i));
-			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x - tripleSpreadStage, 56)), module, Marf248::STAGE_STOP_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x, 56)), module, Marf248::STAGE_SUSTAIN_PARAM + i));
-			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x, 56)), module, Marf248::STAGE_SUSTAIN_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + tripleSpreadStage, 56)), module, Marf248::STAGE_ENABLE_PARAM + i));
-			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + tripleSpreadStage, 56)), module, Marf248::STAGE_ENABLE_LIGHT + i));
+			// Stage-aktiv-Anzeige (A/B): oben ueber dem Slider-Block, mit
+			// jetzt ausreichend Abstand zum Slider darunter (siehe
+			// stageLedY-Kommentar oben).
+			addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(sliderX - 1.5f, stageLedY)), module, Marf248::STAGE_LIGHT_A + i));
+			addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(sliderX + 1.5f, stageLedY)), module, Marf248::STAGE_LIGHT_B + i));
 
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x - tripleSpreadStage, 64)), module, Marf248::STAGE_FIRST_PARAM + i));
-			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x - tripleSpreadStage, 64)), module, Marf248::STAGE_FIRST_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x, 64)), module, Marf248::STAGE_LAST_PARAM + i));
-			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x, 64)), module, Marf248::STAGE_LAST_LIGHT + i));
-			// Slope-Button (MOD_SLOPED): war im Code seit je vollstaendig
-			// implementiert (Param, Trigger, Light), hatte aber nie einen
-			// addParam()/addChild()-Aufruf im Widget - der Regler war also
-			// unerreichbar und die Stage blieb immer im Default Stepped
-			// haengen. Fix: nutzt die bisher bewusst freigelassene dritte
-			// Position dieser Reihe (gleiches Muster wie Pulse1/2/Skip und
-			// Stop/Sustain/Enable).
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + tripleSpreadStage, 64)), module, Marf248::STAGE_SLOPE_PARAM + i));
-			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + tripleSpreadStage, 64)), module, Marf248::STAGE_SLOPE_LIGHT + i));
+			// --- Button-Subspalte: 2x8-Raster in thematischen Zweiergruppen.
+			//   Gruppe Puls/Output:   Pulse1 | Pulse2  /  Skip  | Mute
+			//   Gruppe Zustand:       Stop   | Sustain /  Enable| -
+			//   Gruppe Adress-Fluss:  First  | Last    /  Slope | -
+			//   Gruppe Quelle/Override: Quant| Volt-Ext/ Time-Ext| Normalize
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[0])), module, Marf248::STAGE_PULSE1_PARAM + i));
+			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[0])), module, Marf248::STAGE_PULSE1_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[0])), module, Marf248::STAGE_PULSE2_PARAM + i));
+			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[0])), module, Marf248::STAGE_PULSE2_LIGHT + i));
 
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x - tripleSpreadStage, 72)), module, Marf248::STAGE_QUANT_PARAM + i));
-			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x - tripleSpreadStage, 72)), module, Marf248::STAGE_QUANT_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x, 72)), module, Marf248::STAGE_VOLTEXT_PARAM + i));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x, 72)), module, Marf248::STAGE_VOLTEXT_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + tripleSpreadStage, 72)), module, Marf248::STAGE_TIMEEXT_PARAM + i));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + tripleSpreadStage, 72)), module, Marf248::STAGE_TIMEEXT_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[1])), module, Marf248::STAGE_SKIP_PARAM + i));
+			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[1])), module, Marf248::STAGE_SKIP_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[1])), module, Marf248::STAGE_MUTE_PARAM + i));
+			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[1])), module, Marf248::STAGE_MUTE_LIGHT + i));
 
-			// Shape + Curve jetzt in einer gemeinsamen Reihe statt zwei
-			// getrennten (Platzgewinn fuer die vergroesserte Time-Range-
-			// Anzeige weiter unten, siehe Kinovice-Feedback): Shape nach
-			// rechts, Curve-Trimmer links daneben.
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + 6.f, 82)), module, Marf248::STAGE_SHAPE_PARAM + i));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + 2.f, 82)), module, Marf248::STAGE_SHAPE_EXP_LIGHT + i));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + 10.f, 82)), module, Marf248::STAGE_SHAPE_LOG_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[2])), module, Marf248::STAGE_STOP_PARAM + i));
+			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[2])), module, Marf248::STAGE_STOP_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[2])), module, Marf248::STAGE_SUSTAIN_PARAM + i));
+			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[2])), module, Marf248::STAGE_SUSTAIN_LIGHT + i));
 
-			// Curve-Trimmer: Mitte = Referenzkruemmung, links linearer, rechts kurviger.
-			addParam(createParamCentered<Trimpot>(mm2px(Vec(x - 6.f, 82)), module, Marf248::STAGE_CURVE_PARAM + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[3])), module, Marf248::STAGE_ENABLE_PARAM + i));
+			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[3])), module, Marf248::STAGE_ENABLE_LIGHT + i));
+			// buttonColOffsets[1] in dieser Reihe bewusst frei.
 
-			// Normalize nach rechts verschoben (gleiche Reihe wie Time
-			// Range, die den frei gewordenen linken/mittleren Platz bekommt).
-			// Y=92 statt 90: die vergroesserte Time-Range-Box (9mm) braucht
-			// etwas mehr Abstand zur Shape/Curve-Reihe darueber als ein
-			// normaler LEDButton, sonst wuerden sich beide Reihen beruehren.
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + 6.f, 92)), module, Marf248::STAGE_NORMALIZE_PARAM + i));
-			addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(x + 6.f, 92)), module, Marf248::STAGE_NORMALIZE_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[4])), module, Marf248::STAGE_FIRST_PARAM + i));
+			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[4])), module, Marf248::STAGE_FIRST_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[4])), module, Marf248::STAGE_LAST_PARAM + i));
+			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[4])), module, Marf248::STAGE_LAST_LIGHT + i));
 
-			// Time Range (TR1-4): jetzt deutlich groesser als ein normaler
-			// LEDButton, damit die Ziffer 1-4 lesbar bleibt (siehe Kinovice-
-			// Feedback "Ziffer viel zu klein"). TrangeButton zeichnet sich
-			// komplett selbst (kein SVG-Frame), daher ist eine freie
-			// box.size-Wahl hier unproblematisch - createParamCentered()
-			// zentriert zunaechst mit der ererbten LEDButton-Default-Groesse,
-			// danach wird box.size auf 9x9mm vergroessert und um denselben
-			// Mittelpunkt neu zentriert.
-			TrangeButton* trangeBtn = createParamCentered<TrangeButton>(mm2px(Vec(x - 4.f, 92)), module, Marf248::STAGE_TRANGE_PARAM + i);
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[5])), module, Marf248::STAGE_SLOPE_PARAM + i));
+			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[5])), module, Marf248::STAGE_SLOPE_LIGHT + i));
+			// buttonColOffsets[1] in dieser Reihe bewusst frei.
+
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[6])), module, Marf248::STAGE_QUANT_PARAM + i));
+			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[6])), module, Marf248::STAGE_QUANT_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[6])), module, Marf248::STAGE_VOLTEXT_PARAM + i));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[6])), module, Marf248::STAGE_VOLTEXT_LIGHT + i));
+
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[7])), module, Marf248::STAGE_TIMEEXT_PARAM + i));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[7])), module, Marf248::STAGE_TIMEEXT_LIGHT + i));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[7])), module, Marf248::STAGE_NORMALIZE_PARAM + i));
+			addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[7])), module, Marf248::STAGE_NORMALIZE_LIGHT + i));
+
+			// --- Shape/Curve/TRange/Range: jetzt in der Button-Unterspalte
+			// (mittig zwischen den zwei Button-Spalten), NICHT mehr ueber
+			// die volle Stage-Breite - das macht der Slider-Unterspalte
+			// erst die komplette Rahmenhoehe frei (siehe Kommentar oben).
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + shapeCurveOffsetX + 4.f, shapeCurveY)), module, Marf248::STAGE_SHAPE_PARAM + i));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + shapeCurveOffsetX + 1.f, shapeCurveY)), module, Marf248::STAGE_SHAPE_EXP_LIGHT + i));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + shapeCurveOffsetX + 7.f, shapeCurveY)), module, Marf248::STAGE_SHAPE_LOG_LIGHT + i));
+			addParam(createParamCentered<Trimpot>(mm2px(Vec(x + shapeCurveOffsetX - 4.f, shapeCurveY)), module, Marf248::STAGE_CURVE_PARAM + i));
+
+			// Time Range (TR1-4): eigene Reihe, mittig in der Button-
+			// Unterspalte. TrangeButton zeichnet sich komplett selbst (kein
+			// SVG-Frame), daher ist eine freie box.size-Wahl hier
+			// unproblematisch - createParamCentered() zentriert zunaechst
+			// mit der ererbten LEDButton-Default-Groesse, danach wird
+			// box.size auf 9x9mm vergroessert und um denselben Mittelpunkt
+			// neu zentriert.
+			TrangeButton* trangeBtn = createParamCentered<TrangeButton>(mm2px(Vec(x + trangeOffsetX, trangeY)), module, Marf248::STAGE_TRANGE_PARAM + i);
 			Vec trangeCenter = trangeBtn->box.getCenter();
 			trangeBtn->box.size = mm2px(Vec(9.f, 9.f));
 			trangeBtn->box.pos = trangeCenter.minus(trangeBtn->box.size.div(2));
 			addParam(trangeBtn);
 
-			// Range: eigene Reihe unten, gleiche Groesse/Optik wie die
-			// Voltage/Time-CV-Knoepfe, mit eingeblendeter Zustands-Abkuerzung
-			// (siehe RangeKnob).
-			addParam(createParamCentered<RangeKnob>(mm2px(Vec(x, 110)), module, Marf248::STAGE_RANGE_PARAM + i));
+			// Range: eigene Reihe unten, mittig in der Button-Unterspalte,
+			// mit eingeblendeter Zustands-Abkuerzung (siehe RangeKnob).
+			addParam(createParamCentered<RangeKnob>(mm2px(Vec(x + rangeOffsetX, rangeY)), module, Marf248::STAGE_RANGE_PARAM + i));
 		}
+
+		// HINWEIS: die einmalige Stage-Array-Legende (Kinovice-Entscheidung
+		// "Option A") aus den ersten beiden Session-Iterationen wurde
+		// wieder entfernt - sie kollidierte mit der Section-B-Ausgangs-
+		// spalte (VOUT/TOUT): dort stehen real nur ca. 4mm Luft zur
+		// Verfuegung (colBOutputs hat selbst schon 12mm Rahmenbreite), die
+		// Legendentexte brauchen aber je nach Zeile bis zu ca. 35mm - genau
+		// das war der von Kinovice als "Text bei Section B, vermutlich von
+		// den Expandern" gemeldete Fehler (tatsaechlich unsere eigene, zu
+		// eng platzierte Legende, kein Expander-Bezug). Die vollstaendige
+		// Beschriftung der Stage-Spalte braucht einen eigenen Design-
+		// Durchgang mit bewusst eingeplantem Platzbedarf, statt sie in die
+		// zufaellig uebrige Luecke vor Section B zu quetschen - kommt daher
+		// wie ohnehin geplant als eigene Folge-Session (zusammen mit der
+		// Beschriftung von Controls-/Jacks-/Ext-/Preset-Spalte).
 
 		// Global Clear: einzelner, geteilter Taster mittig ueber dem
 		// Stage-Array (kein Bezug zu einer einzelnen Section, siehe
 		// Kommentar bei CLEAR_PARAM). Zentriert ueber die 16 Stages selbst
 		// (xStart..letzte Stage), nicht ueber die Controls-Spalten, da diese
 		// jetzt durch die neuen Jacks-Spalten weiter aussen liegen.
+		// Y=6 statt vorher 8 (Kinovice-Feedback "etwas hoeher, auf der
+		// Mitte zwischen Stage-Oberkante und Modulrahmen"): Modulrahmen
+		// liegt bei y=0, Stage-Oberkante (frameTopMM) bei y=12, Mitte also
+		// bei 6.
 		float colClear = xStart + (NUM_STAGES - 1) * xStep / 2.f;
-		addParam(createParamCentered<LEDButton>(mm2px(Vec(colClear, 8)), module, Marf248::CLEAR_PARAM));
-		addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(colClear, 8)), module, Marf248::CLEAR_LIGHT));
+		addParam(createParamCentered<LEDButton>(mm2px(Vec(colClear, 6)), module, Marf248::CLEAR_PARAM));
+		addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(colClear, 6)), module, Marf248::CLEAR_LIGHT));
 
 		// Reset Values: direkt neben Global Clear, gleiche Reihe, andere
 		// Lichtfarbe (Gelb statt Rot) zur klaren optischen Unterscheidung.
-		addParam(createParamCentered<LEDButton>(mm2px(Vec(colClear + 12.f, 8)), module, Marf248::RESET_VALUES_PARAM));
-		addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(colClear + 12.f, 8)), module, Marf248::RESET_VALUES_LIGHT));
+		addParam(createParamCentered<LEDButton>(mm2px(Vec(colClear + 12.f, 6)), module, Marf248::RESET_VALUES_PARAM));
+		addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(colClear + 12.f, 6)), module, Marf248::RESET_VALUES_LIGHT));
 
 		// Auto-Fill: dritter Button in derselben Reihe, blaues Licht zur
 		// Unterscheidung von Clear (rot) und Reset Values (gelb).
-		addParam(createParamCentered<LEDButton>(mm2px(Vec(colClear + 24.f, 8)), module, Marf248::AUTOFILL_PARAM));
-		addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(colClear + 24.f, 8)), module, Marf248::AUTOFILL_LIGHT));
+		addParam(createParamCentered<LEDButton>(mm2px(Vec(colClear + 24.f, 6)), module, Marf248::AUTOFILL_PARAM));
+		addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(colClear + 24.f, 6)), module, Marf248::AUTOFILL_LIGHT));
 
 		// --- Preset-Spalte ganz rechts (Manual "PRESETS AND QUANTIZATION
 		// SCALES"), spiegelbildlich zur External-CV-Spalte ganz links.
