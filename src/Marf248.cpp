@@ -2537,12 +2537,51 @@ struct StageSlider : ParamWidget {
 		nvgStrokeColor(args.vg, nvgRGB(60, 60, 64));
 		nvgStrokeWidth(args.vg, 1.f);
 		nvgStroke(args.vg);
-		nvgBeginPath(args.vg);
-		nvgMoveTo(args.vg, 3.5f, handleY);
-		nvgLineTo(args.vg, w - 3.5f, handleY);
-		nvgStrokeColor(args.vg, nvgRGBA(60, 60, 64, 200));
-		nvgStrokeWidth(args.vg, 1.f);
-		nvgStroke(args.vg);
+		// Mittellinie entfernt (Kinovice-Feedback: stoerte die Lesbarkeit der
+		// neuen Wertanzeige, siehe direkt darunter).
+
+		// Gerundeter Wert im Griff (Kinovice-Wunsch): nutzt pq->getDisplayValue()
+		// statt getValue() direkt - liefert fuer STAGE_TIME_PARAM automatisch
+		// die 0-10-Dial-Skala (StageTimeQuantity::getDisplayValue() rechnet
+		// intern *10 um, siehe dortige Definition), fuer STAGE_VOLTAGE_PARAM
+		// mangels eigenem Override den rohen 0-10V-Wert - beide landen also
+		// einheitlich auf einer 0-10-Skala, exakt wie am Buchla-Original
+		// aufgedruckt. Bewusst OHNE Ruecksicht auf Quant/Ext-Sondermodi (Noten-
+		// name/Kanalwahl) - das wuerde die Zahl in den seltenen Sonderfaellen
+		// verfaelschen, aber eine Notenname-Kuerzung waere in 8mm Griffbreite
+		// ohnehin nicht lesbar; Quant/Ext-Zustand ist bereits per eigenem
+		// Panel-Light sichtbar. Aufgerundet auf ganze Zahl ("%.0f"), da selbst
+		// eine Nachkommastelle bei zwei Ziffern (z.B. "10.0") in den 8mm nicht
+		// mehr zuverlaessig passt (Kinovice-Wunsch "gerundet, damit es passt").
+		// Optik (Font/Outline-Technik) von TrangeButton uebernommen, Farben
+		// aber bewusst UMGEKEHRT (Kinovice-Feedback nach Test: schwarzer
+		// Rand/goldene Fuellung war auf dem hellen Griff schwer lesbar) -
+		// hier also goldener Rand, schwarze Fuellung. fontSize=15 (nach
+		// Kinovice-Feedback "koennten noch etwas groesser sein", erste
+		// Fassung war 12) mit proportional angepasstem Outline-Versatz
+		// (0.75 statt 0.6) - beides weiterhin kleiner als TrangeButton
+		// (18px/0.8), da der Griff (8x6mm) deutlich kleiner ist als der
+		// TrangeButton (9x9mm). Bei zwei Ziffern ("10") auf Randschaerfe
+		// pruefen, falls es im 8mm-Griff eng wird.
+		ParamQuantity* pqDisplay = getParamQuantity();
+		if (pqDisplay) {
+			std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+			if (font && font->handle >= 0) {
+				std::string label = string::f("%.0f", pqDisplay->getDisplayValue());
+				nvgFontFaceId(args.vg, font->handle);
+				nvgFontSize(args.vg, 15.f);
+				nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+
+				nvgFillColor(args.vg, nvgRGB(235, 170, 60));
+				nvgText(args.vg, railX - 0.75f, handleY, label.c_str(), NULL);
+				nvgText(args.vg, railX + 0.75f, handleY, label.c_str(), NULL);
+				nvgText(args.vg, railX, handleY - 0.75f, label.c_str(), NULL);
+				nvgText(args.vg, railX, handleY + 0.75f, label.c_str(), NULL);
+
+				nvgFillColor(args.vg, nvgRGB(20, 20, 20));
+				nvgText(args.vg, railX, handleY, label.c_str(), NULL);
+			}
+		}
 	}
 
 	// --- Interaktion, komplett selbst implementiert (siehe Kommentar oben). ---
