@@ -202,9 +202,11 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 
 		// Reihe 4: SEXT (externe Strobe A/B) + Address Memory Recall A/B
 		// direkt daneben (Kinovice-Wunsch: Recall A neben Strobe B, Recall B
-		// direkt danach). Spalte E bleibt hier jetzt leer, dafuer verlieren
-		// Reihe 7 (siehe unten) ihre bisherigen Recall-Eintraege. Run Gate
-		// A/B sitzt seit vorheriger Aenderung in Reihe 1.
+		// direkt danach). Spalte E war bisher leer (siehe aeltere Fassung
+		// dieses Kommentars) - jetzt belegt mit der Voltage-External-
+		// Kanalwahl-CV (Session "VOLT_EXT/TIME_EXT-Kanalwahl per CV"), da
+		// hier thematisch am naechsten zur bisherigen Recall/Strobe-Reihe.
+		// Run Gate A/B sitzt seit vorheriger Aenderung in Reihe 1.
 		y += stepY;
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, y)), module, Marf248TriggerExpander::STROBE_A_INPUT));
 		addLabel(Vec(colA, y), "STROBE A", COLOR_SECTION_A);
@@ -214,6 +216,8 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		addLabel(Vec(colC, y), "ADDR RECALL A", COLOR_SECTION_A);
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colD, y)), module, Marf248TriggerExpander::ADDR_RECALL_B_POLY_INPUT));
 		addLabel(Vec(colD, y), "ADDR RECALL B", COLOR_SECTION_B);
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colE, y)), module, Marf248TriggerExpander::STAGE_VOLTEXT_CH_POLY_INPUT));
+		addLabel(Vec(colE, y), "VOLT EXT CH", COLOR_STAGEMOD);
 
 		// Reihe 5: Advance A/B + Skip/First/Last (Stage-Adress-Modifier).
 		y += stepY;
@@ -244,7 +248,9 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 
 		// Reihe 7: Slope/Mute (Stage-Modifier) + Adress-Speicher Store A/B.
 		// Recall A/B sitzt seit Kinovice-Wunsch jetzt in Reihe 4 neben den
-		// Strobe-Buchsen, Spalte E bleibt hier daher leer.
+		// Strobe-Buchsen. Spalte E war dadurch frei geworden - jetzt belegt
+		// mit der Time-External-Kanalwahl-CV (Session "VOLT_EXT/TIME_EXT-
+		// Kanalwahl per CV"), als Gegenstueck zu VOLT EXT CH in Reihe 4.
 		y += stepY;
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, y)), module, Marf248TriggerExpander::STAGE_SLOPE_POLY_INPUT));
 		addLabel(Vec(colA, y), "SLOPE", COLOR_STAGEMOD);
@@ -254,6 +260,8 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		addLabel(Vec(colC, y), "ADDR STORE A", COLOR_SECTION_A);
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colD, y)), module, Marf248TriggerExpander::ADDR_STORE_B_POLY_INPUT));
 		addLabel(Vec(colD, y), "ADDR STORE B", COLOR_SECTION_B);
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colE, y)), module, Marf248TriggerExpander::STAGE_TIMEEXT_CH_POLY_INPUT));
+		addLabel(Vec(colE, y), "TIME EXT CH", COLOR_STAGEMOD);
 	}
 };
 

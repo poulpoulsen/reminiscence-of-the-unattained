@@ -3,7 +3,7 @@
 VCV-Rack-C++-Portierung des Buchla/Tiptop 248t MARF (Multiple Arbitrary
 Function Generator). Diese Dokumentation beschreibt das Hauptmodul
 **Marf248** sowie die beiden Erweiterungsmodule **Marf248TriggerExpander**
-(24HP) und **Marf248CvExpander** (12HP): jedes Bedienelement, jeden
+(30HP) und **Marf248CvExpander** (12HP): jedes Bedienelement, jeden
 Ein-/Ausgang, die interne Signalverarbeitung, die wichtigsten C++-Funktionen
 und die bekannten Fallstricke im Zusammenspiel der Funktionen.
 
@@ -65,7 +65,7 @@ Das Projekt besteht aus drei VCV-Rack-Modulen, die zusammen ein Plugin bilden:
 Hauptmodul: zwei unabhängige AFG-Sections (A/B), die sich 16 gemeinsame Stages teilen. Enthält die gesamte DSP-Kernlogik.
 
 **Marf248TriggerExpander** *(`Marf248TriggerExpander.hpp/.cpp`)*<br>
-Optionaler 24HP-Expander: zusätzliche Trigger-/Gate-Ein- und Ausgänge (Clear, Presets, Scale/Key, Start/End-of-Cycle, Run-Gates, Advance, Adress-Speicher, Stage-Modifier-CV, SEXT).
+Optionaler 30HP-Expander: zusätzliche Trigger-/Gate-Ein- und Ausgänge (Clear, Presets, Scale/Key, Start/End-of-Cycle, Run-Gates, Advance, Adress-Speicher, Stage-Modifier-CV inkl. VOLT_EXT/TIME_EXT-Kanalwahl, SEXT).
 
 **Marf248CvExpander** *(`Marf248CvExpander.hpp/.cpp`)*<br>
 Optionaler 12HP-Expander: polyphone CV-Modulation der Stage-Zeit und der Slew-Kurve, sowie polyphone Gate-Ausgänge pro Stage.
@@ -964,8 +964,11 @@ Baut das komplette 146HP-Panel auf: Rahmen, Spalten-Geometrie (inkl. VOUT/TOUT-A
 ## 6. Marf248TriggerExpander
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
-24HP-Expander (Entwicklungsverlauf: 12HP → 18HP für die Stage-Modifier-
-Poly-CVs → 24HP für Advance). Reiner Jack-Träger ohne eigene DSP-Logik –
+30HP-Expander (Entwicklungsverlauf: 12HP → 18HP für die Stage-Modifier-
+Poly-CVs → 24HP für Advance → 30HP für die Panel-Beschriftungs-Session,
+die eine 5. Spalte sowie größere, besser lesbare Schrift brauchte und dabei
+auch mehrere Buchsen neu angeordnet hat, siehe Panel-Layout unten). Reiner
+Jack-Träger ohne eigene DSP-Logik –
 die gesamte Verarbeitung findet in `Marf248::process()` statt, sobald das
 Modul als linker oder rechter Nachbar erkannt wird (`LINK_LIGHT` zeigt den
 Andock-Status).
@@ -993,20 +996,23 @@ Löst denselben Effekt wie der jeweilige Panel-Strobe-Taster aus (ODER-verknüpf
 **`RUN_GATE_A_INPUT` / `RUN_GATE_B_INPUT`** *(Pegel (Gate), Schmitt-Hysterese 0,1V/1V)*<br>
 ODER-verknüpft mit dem Run-Taster-Zustand (`effectiveRunning = running || runGateHigh`); der Taster-Zustand selbst bleibt beim Zurückfallen des Gates erhalten. **Wird ignoriert, solange Advance auf derselben Section gepatcht ist.**
 
-**`ADVANCE_A_INPUT` / `ADVANCE_B_INPUT`** *(**Neu**, reiner Flanken-Trigger)*<br>
-Clock-quantisiertes Advance, siehe [4.10](#sec4-10). Sitzt in der Run-Gate-Reihe (Spalte C/D).
+**`ADVANCE_A_INPUT` / `ADVANCE_B_INPUT`** *(reiner Flanken-Trigger)*<br>
+Clock-quantisiertes Advance, siehe [4.10](#sec4-10). Sitzt seit der Panel-Beschriftungs-Session in Reihe 5, Spalte A/B.
 
 **`STAGE_SKIP_POLY_INPUT`, `STAGE_FIRST_POLY_INPUT`, `STAGE_LAST_POLY_INPUT`, `STAGE_STOP_POLY_INPUT`, `STAGE_SUSTAIN_POLY_INPUT`, `STAGE_ENABLE_POLY_INPUT`, `STAGE_PULSE1_POLY_INPUT`, `STAGE_PULSE2_POLY_INPUT`, `STAGE_SLOPE_POLY_INPUT`** *(Poly-Gate (16 Kanäle = Stage 1–16))*<br>
 Pegel-Override (Schwelle `GATE_THRESHOLD = 2V`) für das jeweilige Modifier-Bit. Nur wirksam, solange die Buchse gepatcht ist (`isConnected()`); dann hat CV Vorrang und überschreibt einen im selben Frame verarbeiteten manuellen Klick. Ohne Kabel bleibt der zuletzt per Klick gesetzte Zustand erhalten. **Shape/Lin-Exp-Log bleibt bewusst ohne CV-Override**, da es ein echter 3-Zustands-Zyklus statt eines einfachen Bits ist.
 
-**`STAGE_MUTE_POLY_INPUT`** *(**Neu**, Poly-Gate (16 Kanäle = Stage 1–16))*<br>
-Identisches Pegel-Override-Prinzip, setzt `MOD_MUTE` statt eines der obigen Bits (siehe [4.7](#sec4-7)). Sitzt in Reihe 11, Spalte D (dort bisher frei). **Kein Panel-Button/Light am Hauptmodul** – bis zur geplanten Panel-Relayout-Session ist dies die einzige Bedienmöglichkeit für Mute.
+**`STAGE_MUTE_POLY_INPUT`** *(Poly-Gate (16 Kanäle = Stage 1–16))*<br>
+Identisches Pegel-Override-Prinzip, setzt `MOD_MUTE` statt eines der obigen Bits (siehe [4.7](#sec4-7)). Sitzt in Reihe 7, Spalte B. **Kein Panel-Button/Light am Hauptmodul** – bis zur geplanten Panel-Relayout-Session ist dies die einzige Bedienmöglichkeit für Mute.
 
-**`ADDR_STORE_A_POLY_INPUT` / `ADDR_STORE_B_POLY_INPUT`** *(**Neu**, Poly-Trigger (16 Kanäle = Slot 1–16))*<br>
-Adress-Speicher Store, siehe [4.9](#sec4-9). Sitzt in Reihe 12.
+**`STAGE_VOLTEXT_CH_POLY_INPUT` / `STAGE_TIMEEXT_CH_POLY_INPUT`** *(**Neu**, Poly-CV (16 Kanäle = Stage 1–16))*<br>
+Kanalwahl per CV für `MOD_VOLT_EXT`/`MOD_TIME_EXT` (siehe [4.5](#sec4-5) und die Bit-Tabelle in [2.](#sec2)). Ergänzt das bestehende Bit-Override-Prinzip der übrigen Stage-Modifier-Poly-Inputs um eine gleichzeitige Kanalwahl (A–D), statt nur ein einfaches Ein/Aus-Gate zu sein. Fünf Zonen à 2V im 0–10V-Bereich: 0–2V = Intern (Bit wird gelöscht), 2–4V = Kanal A, 4–6V = B, 6–8V = C, 8–10V = D (Bit gesetzt **und** Kanal erzwungen). Nur wirksam, solange die Buchse gepatcht ist – dann hat die CV Vorrang vor dem Panel-Button **und** vor der bisherigen Slider-Kanalwahl (Reglerposition bestimmt sonst den Kanal). Ohne Kabel bleibt das bestehende Verhalten (Button-Klick + Slider-Position als Kanalwahl) unverändert. Nicht angesteuerte Poly-Kanäle liefern automatisch 0V = Intern-Zone. Bewusst getrennte Eingänge statt einem gemeinsamen, da Voltage- und Time-Kanalwahl unabhängig sein können. Bewusst **nicht** auf dem CV-Expander untergebracht, obwohl es sich um CV-Signale handelt: es sind Zustands-/Bit-Overrides analog zu Skip/First/Last usw., kein additiver/attenuierter Modulationswert wie Stage Time CV/Curve CV – daher konsequent beim Trigger-Expander, wo bereits alle anderen Stage-Modifier-Poly-Overrides sitzen. `VOLT EXT CH` sitzt in Reihe 4, Spalte E, `TIME EXT CH` in Reihe 7, Spalte E (beides bisher leere Plätze, keine Panel-Verbreiterung nötig).
 
-**`ADDR_RECALL_A_POLY_INPUT` / `ADDR_RECALL_B_POLY_INPUT`** *(**Neu**, Poly-Trigger (16 Kanäle = Slot 1–16))*<br>
-Adress-Speicher Recall, siehe [4.9](#sec4-9). Sitzt in Reihe 12.
+**`ADDR_STORE_A_POLY_INPUT` / `ADDR_STORE_B_POLY_INPUT`** *(Poly-Trigger (16 Kanäle = Slot 1–16))*<br>
+Adress-Speicher Store, siehe [4.9](#sec4-9). Sitzt in Reihe 7, Spalte C/D.
+
+**`ADDR_RECALL_A_POLY_INPUT` / `ADDR_RECALL_B_POLY_INPUT`** *(Poly-Trigger (16 Kanäle = Slot 1–16))*<br>
+Adress-Speicher Recall, siehe [4.9](#sec4-9). Sitzt in Reihe 4, Spalte C/D (neben SEXT, seit der Panel-Beschriftungs-Session).
 
 ### Ausgänge
 
@@ -1016,21 +1022,32 @@ Feuert (1ms-Trigger), wenn Section A/B eine `MOD_FIRST`-markierte Stage erreicht
 **`END_CYCLE_A/B_OUTPUT`**<br>
 Analog für `MOD_LAST`.
 
-### Panel-Layout (24HP, 4 Spalten à 29mm Abstand, 8,8mm-Zeilenraster)
+### Panel-Layout (30HP, 5 Spalten à 27mm Abstand, 14mm-Zeilenraster)
 
-Reihe 1: Clear / Reset Values. Reihe 2: Preset Load (Poly, mittig). Reihe
-3–4: Scale Major/Minor/Chromatic + Key CV. Reihe 5–6: Start-/End-of-Cycle
-A und B. Reihe 7: SEXT A/B. **Reihe 8: Run-Gate A/B (Spalte A/B) + Advance
-A/B (Spalte C/D, neu)** – thematisch verwandt (beide betreffen die
-Lauf-Steuerung der jeweiligen Section), Spalte C/D war hier bisher frei,
-daher keine eigene neue Reihe nötig. Reihe 9: Stage Skip / First / Last (3
-Spalten). Reihe 10: Stage Stop / Sustain / Enable. **Reihe 11: Stage Pulse1
-/ Pulse2 / Slope / Mute (Spalte D, neu)** – Spalte D war hier bisher frei,
-daher auch für Mute keine eigene neue Reihe nötig. Reihe 12 (neu):
-Adress-Speicher Store A / Store B /
-Recall A / Recall B** (4 Spalten, gleiches Prinzip wie Reihe 8) – durch das
-auf 8,8mm verdichtete Zeilenraster passt diese Reihe noch mit 6,6mm Puffer
-zu den unteren Befestigungsschrauben.
+Seit der Panel-Beschriftungs-Session (reine Code/NanoVG-Labels statt
+SVG-Artwork, siehe [1.](#sec1)) hat das Panel eine 5. Spalte und ein
+neues, großzügigeres Zeilenraster bekommen – die größere, besser lesbare
+Schrift (9pt statt der anfänglich zu kleinen 6pt) brauchte mehr Platz, was
+Kinovice zum Anlass nahm, gleichzeitig einige Buchsen sinnvoller
+zusammenzugruppieren. 7 Reihen (`colA`=16mm … `colE`=124mm, `y`=20mm bis
+104mm in 14mm-Schritten):
+
+- **Reihe 1** (y=20): Clear (A) / Reset Values (B) / Preset Load, Poly (C) / Run Gate A (D) / Run Gate B (E) – Run Gate sitzt seit dieser Session hier statt in einer eigenen Reihe, da es thematisch zu den übrigen globalen Housekeeping-Controls passt.
+- **Reihe 2** (y=34): Scale Major (A) / Scale Minor (B) / Scale Chromatic (C) / Key CV (D).
+- **Reihe 3** (y=48): Start of Cycle A (A) / End of Cycle A (B) / Start of Cycle B (C) / End of Cycle B (D).
+- **Reihe 4** (y=62): Strobe A/SEXT (A) / Strobe B/SEXT (B) / Address Memory Recall A (C) / Address Memory Recall B (D) / **Voltage-External-Kanalwahl-CV (E, neu)** – Recall A/B sitzt seit dieser Session hier statt in einer eigenen Reihe (Kinovice-Wunsch: Recall neben Strobe).
+- **Reihe 5** (y=76): Advance A (A) / Advance B (B) / Stage Skip (C) / Stage First (D) / Stage Last (E).
+- **Reihe 6** (y=90): Stage Stop (A) / Stage Sustain (B) / Stage Enable (C) / Stage Pulse1 (D) / Stage Pulse2 (E).
+- **Reihe 7** (y=104): Stage Slope (A) / Stage Mute (B) / Address Memory Store A (C) / Address Memory Store B (D) / **Time-External-Kanalwahl-CV (E, neu)**.
+
+Beide neuen Kanalwahl-CV-Eingänge (`STAGE_VOLTEXT_CH_POLY_INPUT` in Reihe
+4, `STAGE_TIMEEXT_CH_POLY_INPUT` in Reihe 7) belegen die einzigen beiden
+bis dahin leeren Spalte-E-Plätze im 30HP-Panel – keine weitere
+Panel-Verbreiterung nötig. Farbcodierung nach Funktion: System (Grau) /
+Musical (Violett) / Section A (Blau) / Section B (Orange) / Stage-Modifier
+(Türkis), durchgängig über alle Reihen. Noch offen: visuelle
+Kollisionsprüfung der Labels direkt in Rack (die Positionierung wurde
+numerisch geprüft, aber nicht am Bildschirm bestätigt).
 
 ### Wichtiger Implementierungshinweis: kontinuierliche statt einmalige Flankenerkennung
 
