@@ -2668,15 +2668,115 @@ struct PulseRingLight : app::ModuleLightWidget {
 
 
 
-// HINWEIS: die lokale PanelLabel-Kopie (analog zu den beiden Expandern) und
-// eine StageMod-Akzentfarbe wurden hier versuchsweise fuer eine einmalige
-// Stage-Array-Legende ergaenzt, dann aber wieder entfernt (Kollision mit der
-// Section-B-Ausgangsspalte, siehe Kommentar am Ende der Stage-Schleife) -
-// kommen in der geplanten Beschriftungs-Folgesession mit sauber eingeplantem
-// Platzbedarf zurueck.
+// ---------------------------------------------------------------------
+// Panel-Beschriftungs-System (Session "Panel Labeling", Fortsetzung).
+// Gleiches Prinzip wie bei den beiden Expandern (siehe
+// Marf248TriggerExpander.cpp fuer die ausfuehrliche Begruendung/Historie
+// inkl. Font-Groessen-Korrektur), lokale Kopie hier aus demselben ODR-Grund
+// (kein gemeinsamer Header fuer dieses triviale, headerlose Widget).
+//
+// KORREKTUR nach Testlauf (Kinovice-Feedback): eine erste, deutlich
+// umfangreichere Fassung beschriftete auch Controls- und Jacks-Spalte
+// (Time Multiplier, Run/Mode/Pendulum, Stage-Address, Start/Stop,
+// Pulse-Outs usw.) mit kleinen seitlichen Labels. Bei dem dort sehr engen
+// Rastermass (6-13mm Zeilenabstand) wirkten diese Labels zu klein und
+// unruhig - wieder entfernt, dort reicht der Tooltip (Hover ueber
+// Regler/Buchse). Beschriftet bleiben nur noch: Ext-Spalte (A-D),
+// VOUT/TOUT-Ausgangsspalte, sowie "PRESETS"/"PRESET NR" (vertikale
+// Spaltennamen) und die 12 Preset-Ziffern.
+//
+// Zwei Label-Varianten:
+//   - addLabelBelow(): Label sitzt unter dem Element (Ext-Spalte: 22mm
+//     Pitch; VOUT/TOUT-Ausgangsspalte: 12mm Pitch).
+//   - addLabelSide(): Label sitzt SEITLICH auf gleicher Hoehe wie das
+//     Element (Preset-Ziffern, links vom Taster).
+//   - addLabelVertical(): Text 90 Grad gedreht, fuer die beiden
+//     Spaltennamen "PRESETS"/"PRESET NR" rechts neben ihrem jeweiligen
+//     Block.
+// Grad -> Radiant, fuer PanelLabel::draw() (siehe rotationDeg dort). Eigene
+// Konstante statt M_PI: die ist keine C++-Standardkonstante, sondern nur
+// bedingt ueber <math.h>/<cmath> verfuegbar (Compiler-/Flag-abhaengig) -
+// das hatte hier bereits einen Rack-Absturz verursacht. Eine selbst
+// definierte Konstante ist genauso sicher (keine Header-Abhaengigkeit),
+// aber lesbarer als eine unkommentierte Zahl im Funktionsaufruf.
+static constexpr float DEG_TO_RAD = 0.017453293f; // pi/180
+
+struct PanelLabel : Widget {
+	std::string text;
+	NVGcolor color;
+	float fontSize;
+	int align;
+	// 0 = normale horizontale Beschriftung. Ungleich 0 (Grad, im
+	// Uhrzeigersinn) fuer vertikal laufenden Text (siehe addLabelVertical()
+	// weiter unten, Preset-Ziffern) - rotiert um den Anker-Punkt (box.pos),
+	// bevor bei (0,0) gezeichnet wird, daher bleibt die Textmitte exakt auf
+	// dem Anker, unabhaengig vom Rotationswinkel.
+	float rotationDeg;
+	std::shared_ptr<window::Font> font;
+
+	PanelLabel(Vec posMM, std::string text, NVGcolor color, float fontSize, int align, float rotationDeg = 0.f)
+		: text(std::move(text)), color(color), fontSize(fontSize), align(align), rotationDeg(rotationDeg) {
+		box.pos = mm2px(posMM);
+		box.size = Vec(0.f, 0.f); // reines Text-Overlay, keine eigene Hitbox
+		font = APP->window->loadFont(asset::plugin(pluginInstance, "res/fonts/Nunito-Bold.ttf"));
+	}
+
+	void draw(const DrawArgs& args) override {
+		if (!font || font->handle < 0)
+			return; // Font fehlt - still ueberspringen statt crashen
+		nvgSave(args.vg);
+		if (rotationDeg != 0.f)
+			nvgRotate(args.vg, rotationDeg * DEG_TO_RAD);
+		nvgFontFaceId(args.vg, font->handle);
+		nvgFontSize(args.vg, fontSize);
+		nvgTextAlign(args.vg, align);
+		nvgTextLetterSpacing(args.vg, 0.f);
+		nvgFillColor(args.vg, color);
+		nvgText(args.vg, 0.f, 0.f, text.c_str(), NULL);
+		nvgRestore(args.vg);
+	}
+};
+
+// Gleiche Farbpalette wie bei den beiden Expandern, fuer konsistente Optik
+// ueber alle drei Module hinweg (siehe Marf248TriggerExpander.cpp fuer die
+// Kategorien-Begruendung). COLOR_MUSICAL und die eigens fuer diese Session
+// eingefuehrte COLOR_TEMPO (Amber, Tempo/BPM/Address) sind nach der obigen
+// Reduzierung nicht mehr referenziert und daher entfernt - bei Bedarf
+// (z.B. falls Controls-/Jacks-Beschriftung in kleinerem Umfang doch wieder
+// aufgegriffen wird) einfach wieder ergaenzen.
+static const NVGcolor COLOR_SYSTEM    = nvgRGB(70, 70, 68);
+static const NVGcolor COLOR_SECTION_A = nvgRGB(30, 100, 200);
+static const NVGcolor COLOR_SECTION_B = nvgRGB(210, 110, 20);
+static const NVGcolor COLOR_STAGEMOD  = nvgRGB(0, 140, 130);
 
 
 struct Marf248Widget : ModuleWidget {
+	// Label UNTER dem Element (Expander-Muster) - nur fuer Spalten mit
+	// ausreichendem Zeilenabstand, siehe Kommentar oben.
+	void addLabelBelow(Vec posMM, float yOffsetMM, const std::string& text, NVGcolor color, float fontSize = 9.f) {
+		addChild(new PanelLabel(posMM + Vec(0.f, yOffsetMM), text, color, fontSize, NVG_ALIGN_CENTER | NVG_ALIGN_TOP));
+	}
+
+	// Label SEITLICH auf Element-Hoehe - braucht keinen vertikalen Platz.
+	// dir=+1: Text laeuft nach rechts (Anker links vom Text), dir=-1:
+	// Text laeuft nach links (Anker rechts vom Text). Aktuell nur noch
+	// fuer die 12 Preset-Ziffern in Gebrauch (dir=-1, links vom Taster).
+	void addLabelSide(Vec posMM, float xOffsetMM, float dir, const std::string& text, NVGcolor color, float fontSize = 6.5f) {
+		int align = (dir >= 0.f) ? (NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE) : (NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+		addChild(new PanelLabel(posMM + Vec(dir * xOffsetMM, 0.f), text, color, fontSize, align));
+	}
+
+	// Label vertikal (90 Grad gedreht) rechts neben dem Element, mittig
+	// zentriert auf dessen Hoehe - Kinovice-Wunsch fuer die Preset-Ziffern:
+	// dadurch braucht das Label keinen Zeilen-Pitch mehr (wie addLabelSide),
+	// sondern nur noch schmale Breite, wodurch deutlich groessere Schrift
+	// moeglich wird. -90 Grad = Text laeuft von unten nach oben, gaengige
+	// Konvention fuer seitliche Panel-Beschriftung.
+	void addLabelVertical(Vec posMM, float xOffsetMM, const std::string& text, NVGcolor color, float fontSize) {
+		addChild(new PanelLabel(posMM + Vec(xOffsetMM, 0.f), text, color, fontSize,
+		                        NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE, -90.f));
+	}
+
 	Marf248Widget(Marf248* module) {
 		setModule(module);
 
@@ -2788,9 +2888,20 @@ struct Marf248Widget : ModuleWidget {
 		extFrame->box.size = mm2px(Vec(extFrameWidthMM, extFrameBottomMM - extFrameTopMM));
 		addChild(extFrame);
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colExt, 22)), module, Marf248::EXT_A_INPUT));
+		// fontSize explizit 10pt statt der addLabelBelow()-Default (9pt,
+		// identisch zum Trigger-Expander) - im dichten 146HP-Hauptpanel
+		// wirkte 9pt neben den vielen anderen Elementen optisch kleiner/
+		// duenner als am deutlich luftigeren 30HP-Trigger-Expander, obwohl
+		// Schriftdatei/Groesse/Versatz codeseitig identisch waren
+		// (Kinovice-Feedback). 22mm Zeilenpitch der Ext-Spalte gibt genug
+		// Luft fuer den zusaetzlichen Punkt.
+		addLabelBelow(Vec(colExt, 22), 5.5f, "EXT A", COLOR_STAGEMOD, 10.f);
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colExt, 44)), module, Marf248::EXT_B_INPUT));
+		addLabelBelow(Vec(colExt, 44), 5.5f, "EXT B", COLOR_STAGEMOD, 10.f);
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colExt, 66)), module, Marf248::EXT_C_INPUT));
+		addLabelBelow(Vec(colExt, 66), 5.5f, "EXT C", COLOR_STAGEMOD, 10.f);
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colExt, 88)), module, Marf248::EXT_D_INPUT));
+		addLabelBelow(Vec(colExt, 88), 5.5f, "EXT D", COLOR_STAGEMOD, 10.f);
 
 		// Eigene Jacks-Spalten pro Section (neu): buendeln alle Buchsen der
 		// jeweiligen Section (Time Multiplier CV, Start/Stop, Voltage/Time-
@@ -3014,8 +3125,30 @@ struct Marf248Widget : ModuleWidget {
 			// jetzt eigenstaendig zwischen Jacks-Spalte und Stage-Array statt
 			// in der Jacks-Spalte selbst - schafft dort Platz fuer die
 			// vergroesserte BPM-Anzeige (siehe oben).
-			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(outCol, 24)), module, voutOutputs[s]));
-			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(outCol, 36)), module, toutOutputs[s]));
+			// VOUT auf Hoehe von Start (y=20, siehe jacksCols-Spalte
+			// nebenan) hochgezogen, TOUT nur etwas hoeher (36 -> 34.5) -
+			// beides auf Kinovice-Wunsch, um unter der jetzt groesseren
+			// Beschriftung (siehe unten) Platz zu schaffen, ohne den
+			// bestehenden Ausgangs-Rahmen (12-44mm, "der ist gut") zu
+			// aendern. Beide Buchsen bleiben damit klar innerhalb des
+			// Rahmens (VOUT-Oberkante ca. 15.8mm, TOUT-Label-Unterkante
+			// ca. 44.1mm - letzteres beruehrt die Rahmenunterkante quasi
+			// exakt, siehe naechster Kommentar).
+			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(outCol, 20)), module, voutOutputs[s]));
+			// Gleiches Schriftbild wie Ext A-D (10pt, 5.5mm Versatz statt
+			// der vorherigen kompakten 6.5pt/4mm-Variante) - Kinovice-
+			// Wunsch nach einheitlicher, besser lesbarer Beschriftung.
+			addLabelBelow(Vec(outCol, 20), 5.5f, "VOUT", (s == 0 ? COLOR_SECTION_A : COLOR_SECTION_B), 10.f);
+			// 14.5mm Pitch zu VOUT (statt vorher 12mm) - bei 10pt braucht
+			// das VOUT-Label ca. 9.6mm Platz (5.5mm Versatz + ca. 4.1mm
+			// Zeilenhoehe bei 10pt, siehe Kommentar am Dateianfang zur
+			// 3.7mm-Zeilenhoehe bei 9pt, linear hochskaliert) - bei
+			// 14.5mm Pitch bleiben der PJ301M-Oberkante von TOUT (Radius
+			// ~4.2mm) davor noch ca. 0.7mm Luft. Knapp, aber numerisch
+			// passend - bitte in Rack gegenchecken (siehe Hinweis am
+			// Dateianfang zum PanelLabel-System).
+			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(outCol, 34.5f)), module, toutOutputs[s]));
+			addLabelBelow(Vec(outCol, 34.5f), 5.5f, "TOUT", (s == 0 ? COLOR_SECTION_A : COLOR_SECTION_B), 10.f);
 		}
 
 		// --- Stage-Array (Mitte), Session "Hauptmodul-Relayout" (zweiter
@@ -3225,6 +3358,20 @@ struct Marf248Widget : ModuleWidget {
 		// Inhalt beginnt erst bei 20mm (statt 14mm) - bei der jetzt
 		// einheitlichen Oberkante von 12mm (wie alle anderen Spalten) ragte
 		// der LOAD-Button bei 14mm sonst leicht ueber den Rahmenrand hinaus.
+		//
+		// Spalten-Header "PRESETS": vertikal rechts neben dem LOAD/SAVE/
+		// SCALE/KEY-Viererblock (Kinovice-Wunsch, Korrektur nach erster
+		// Fassung - die betraf faelschlich die 12 Ziffern statt des
+		// Spaltennamens). Ankerpunkt vertikal mittig zwischen LOAD (20)
+		// und KEY (44), also y=32 - der Viererblock spannt dabei 24mm auf
+		// (17-47mm inkl. Button-Radius), reichlich Platz fuer eine deutlich
+		// groessere Schrift als bei den seitlichen Button-Labels (16pt statt
+		// 6.5pt): "PRESETS" (7 Zeichen) braucht vertikal ca. 20.9mm
+		// (Zeichenbreite ~0.55*16/2.9528 = 2.98mm/Zeichen), passt mit ca.
+		// 4.5mm Luft je Seite. Horizontal bleibt bei 6mm Versatz + halber
+		// Zeilenhoehe (~3.25mm) noch ca. 0.75mm Luft zum 10mm-Rahmenrand.
+		addLabelVertical(Vec(colPresets, (20.f + 44.f) / 2.f), 6.f, "PRESETS", COLOR_SYSTEM, 16.f);
+
 		addParam(createParamCentered<LEDButton>(mm2px(Vec(colPresets, 20)), module, Marf248::LOAD_PARAM));
 		addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(colPresets, 20)), module, Marf248::LOAD_LIGHT));
 		addParam(createParamCentered<LEDButton>(mm2px(Vec(colPresets, 28)), module, Marf248::SAVE_PARAM));
@@ -3246,10 +3393,35 @@ struct Marf248Widget : ModuleWidget {
 
 		const float presetStartY = 55.f;
 		const float presetStepY = 6.f;
+
+		// Spalten-Header fuer den Zwoelfer-Block, gleiches Prinzip wie
+		// "PRESETS" beim Viererblock oben: vertikal, rechts daneben,
+		// mittig auf die Blockmitte zentriert (y=(55+121)/2=88). Deutlich
+		// mehr Luft als beim Viererblock (72mm Blockhoehe statt 24mm),
+		// daher bleibt "PRESET NR" bei gleicher Schriftgroesse (16pt, fuer
+		// einheitliches Erscheinungsbild mit "PRESETS") komfortabel
+		// mittig, ohne die Rahmenkanten (55-3=52 bis 121+3=124mm) auch nur
+		// annaehernd auszureizen.
+		addLabelVertical(Vec(colPresets, (presetStartY + (presetStartY + 11.f * presetStepY)) / 2.f), 6.f, "PRESET NR", COLOR_SYSTEM, 16.f);
+
 		for (int p = 0; p < 12; p++) {
 			float y = presetStartY + p * presetStepY;
 			addParam(createParamCentered<LEDButton>(mm2px(Vec(colPresets, y)), module, Marf248::PRESET_PARAM + p));
 			addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(colPresets, y)), module, Marf248::PRESET_LIGHT + p));
+			// 6mm Pitch (Button-Radius 3mm je Seite = 0mm Luft) - Labels
+			// unterhalb sind hier unmoeglich, daher reine Ziffer seitlich,
+			// horizontal (nur 1-2 Zeichen, passt auch bei sehr wenig
+			// Breite). Bleibt bewusst horizontal - nur der Spaltenname
+			// steht vertikal, siehe oben. 13pt statt vorher 6.5pt
+			// (Kinovice-Wunsch "Zahlen groesser") - Obergrenze liegt bei
+			// ca. 14.7pt: die Ziffern sitzen bei 6mm Pitch alle in
+			// derselben schmalen Spalte links neben der Taster-Spalte,
+			// bei zu grosser Schrift wuerden Nachbar-Ziffern (z.B. "9" zu
+			// "10") sich beruehren. 13pt haelt hier noch reichlich
+			// Abstand (ca. 1mm Luft) und passt gleichzeitig horizontal
+			// klar in den 10mm-Rahmenhalbwert (zweistellig "12" braucht
+			// bei 13pt ca. 4.8mm, plus 4mm Versatz = 8.8mm).
+			addLabelSide(Vec(colPresets, y), 4.f, -1.f, std::to_string(p + 1), COLOR_SYSTEM, 13.f);
 		}
 	}
 };

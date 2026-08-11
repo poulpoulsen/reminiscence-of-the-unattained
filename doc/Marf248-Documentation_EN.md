@@ -148,8 +148,10 @@ confused with one another.
 ### 3.1 Panel Layout
 *[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
 
-The panel is 126HP wide (was 120HP – 6HP more for the new outputs column,
-see below) and organized into several vertical columns (left to right):
+The panel is 146HP wide (was 120HP, then 126HP for the new outputs
+column, then widened further as the slider/button relayout grew the
+required width – see below) and organized into several vertical columns
+(left to right):
 
 ```
 [External CV A–D] [Section A Controls] [Section A Jacks] [Section A Outputs] [Stage Array (16×)] [Section B Outputs] [Section B Jacks] [Section B Controls] [Preset Column]
@@ -183,11 +185,14 @@ horizontal divider lines (`HDivider`).
 
 Each of the 16 stage columns contains, from top to bottom:
 
-**Voltage** (`STAGE_VOLTAGE_PARAM`) *(Knob, 0–10V)*<br>
-Programmed output voltage of the stage. In External mode (`MOD_VOLT_EXT`), the knob position instead selects the channel A–D (4 zones of 2.5V each). The tooltip shows volts, note name (when Quantize is active), or channel name (when External is active) – see `StageVoltageQuantity`.
+**Voltage** (`STAGE_VOLTAGE_PARAM`) *(Vertical slider, 0–10V)*<br>
+Programmed output voltage of the stage. In External mode (`MOD_VOLT_EXT`), the slider position instead selects the channel A–D (4 zones of 2.5V each). The tooltip shows volts, note name (when Quantize is active), or channel name (when External is active) – see `StageVoltageQuantity`.
 
-**Time** (`STAGE_TIME_PARAM`) *(Knob, normalized 0–1)*<br>
+**Time** (`STAGE_TIME_PARAM`) *(Vertical slider, normalized 0–1)*<br>
 Programmed stage time as a position **within** the selected Time Range bracket (TR1–4). The tooltip shows the Buchla Cookbook dial value (0–10, leading) with the exactly resolved number of seconds in parentheses afterward, e.g. `4.0 (0.132 s)` – see `StageTimeQuantity`. Right-click number entry still accepts the 0–10 dial value. In External mode (`MOD_TIME_EXT`), the position selects the channel A–D.
+
+**Grip Value Readout** *(both sliders, printed directly on the grip)*<br>
+In addition to the tooltip, the slider grip shows the current value rounded to a whole number (0–10) directly on the panel – for Voltage the voltage level in volts, for Time the same Buchla Cookbook dial value shown in the tooltip (the leading number before the parentheses), since `pq->getDisplayValue()` returns the same 0–10 scale for both parameters. Font is ShareTechMono, gold outline (RGB 235,170,60) with a black fill, centered in the grip. In Quantize/External special modes the digit still shows the raw slider-position value (0–10), not the resolved meaning (note name or channel A–D) – the tooltip remains authoritative for those, since an abbreviated readout wouldn't reliably fit in the 8×6mm grip.
 
 **Two stage LEDs (`STAGE_LIGHT_A/B`)** *(Light)*<br>
 Indicate whether Section A or B is currently addressing this stage (green/red, side by side).
@@ -945,7 +950,7 @@ Right-click checklist for direct Range selection (standard text entry was found 
 Custom light widget: draws a thin ring around the P1/P2 output jack instead of a separate dot.
 
 **`Marf248Widget::Marf248Widget(module)`**<br>
-Builds the complete 126HP panel: frames, column geometry (including the new VOUT/TOUT outputs column per section), all knobs/buttons/jacks/lights for external CV, both sections, and the 16 stage columns as well as the preset column (see [3.1](#sec3-1)).
+Builds the complete 146HP panel: frames, column geometry (including the VOUT/TOUT outputs column per section), all knobs/buttons/jacks/lights for external CV, both sections, and the 16 stage columns as well as the preset column (see [3.1](#sec3-1)).
 
 ---
 

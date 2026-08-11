@@ -148,8 +148,9 @@ voneinander getrennt und dürfen nicht verwechselt werden.
 ### 3.1 Panel-Layout
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
-Das Panel ist 126HP breit (vorher 120HP – 6HP mehr für die neue
-Ausgangsspalte, siehe unten) und in mehrere senkrechte Spalten gegliedert
+Das Panel ist 146HP breit (vorher 120HP, dann 126HP für die neue
+Ausgangsspalte, dann durch das Slider-/Button-Relayout nochmal breiter
+geworden, siehe unten) und in mehrere senkrechte Spalten gegliedert
 (von links nach rechts):
 
 ```
@@ -186,11 +187,14 @@ werden zusätzlich durch dünne horizontale Trennlinien (`HDivider`) abgesetzt.
 
 Jede der 16 Stage-Spalten enthält von oben nach unten:
 
-**Voltage** (`STAGE_VOLTAGE_PARAM`) *(Drehregler, 0–10V)*<br>
+**Voltage** (`STAGE_VOLTAGE_PARAM`) *(Vertikaler Schieberegler, 0–10V)*<br>
 Programmierte Ausgangsspannung der Stage. Im External-Modus (`MOD_VOLT_EXT`) dient die Reglerposition stattdessen als Kanalwahl A–D (4 Zonen à 2,5V). Tooltip zeigt je nach Zustand Volt, Notenname (bei Quantize) oder Kanalname (bei External) – siehe `StageVoltageQuantity`.
 
-**Time** (`STAGE_TIME_PARAM`) *(Drehregler, normalisiert 0–1)*<br>
+**Time** (`STAGE_TIME_PARAM`) *(Vertikaler Schieberegler, normalisiert 0–1)*<br>
 Programmierte Stage-Zeit als Position **innerhalb** des gewählten Time-Range-Bereichs (TR1–4). Der Tooltip zeigt den Buchla-Cookbook-Dial-Wert (0–10, führend) mit der exakt aufgelösten Sekundenzahl dahinter in Klammern, z.B. `4.0 (0.132 s)` – siehe `StageTimeQuantity`. Rechtsklick-Zahleneingabe akzeptiert weiterhin den 0–10-Dial-Wert. Im External-Modus (`MOD_TIME_EXT`) dient die Position als Kanalwahl A–D.
+
+**Griff-Wertanzeige** *(beide Slider, direkt im Griff)*<br>
+Zusätzlich zum Tooltip zeigt der Schieberegler-Griff den aktuellen Wert gerundet auf eine Ganzzahl (0–10) direkt auf dem Panel an – bei Voltage die Spannungshöhe in Volt, bei Time denselben Buchla-Cookbook-Dial-Wert wie im Tooltip (die führende Zahl vor der Klammer), da `pq->getDisplayValue()` für beide Parameter dieselbe 0–10-Skala liefert. Schriftart ShareTechMono, goldener Rand (RGB 235,170,60) mit schwarzer Füllung, mittig im Griff. In den Quantize-/External-Sondermodi zeigt die Ziffer weiterhin den rohen Reglerwert (0–10), nicht die aufgelöste Bedeutung (Notenname bzw. Kanalwahl A–D) – dafür bleibt der Tooltip zuständig, da eine Kürzung im 8×6mm-Griff nicht zuverlässig lesbar wäre.
 
 **Zwei Stage-LEDs (`STAGE_LIGHT_A/B`)** *(Licht)*<br>
 Zeigen an, ob Section A bzw. B gerade diese Stage adressiert (grün/rot, nebeneinander).
@@ -952,7 +956,7 @@ Rechtsklick-Checkliste zur direkten Range-Auswahl (Standard-Texteingabe war laut
 Eigenes Licht-Widget: zeichnet einen dünnen Ring um die P1/P2-Ausgangsbuchse statt eines separaten Punkts.
 
 **`Marf248Widget::Marf248Widget(module)`**<br>
-Baut das komplette 126HP-Panel auf: Rahmen, Spalten-Geometrie (inkl. neuer VOUT/TOUT-Ausgangsspalte pro Section), alle Regler/Taster/Buchsen/Lichter für External-CV, beide Sections und die 16 Stage-Spalten sowie die Preset-Spalte (siehe [3.1](#sec3-1)).
+Baut das komplette 146HP-Panel auf: Rahmen, Spalten-Geometrie (inkl. VOUT/TOUT-Ausgangsspalte pro Section), alle Regler/Taster/Buchsen/Lichter für External-CV, beide Sections und die 16 Stage-Spalten sowie die Preset-Spalte (siehe [3.1](#sec3-1)).
 
 ---
 
