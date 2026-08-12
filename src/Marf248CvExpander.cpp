@@ -1,7 +1,10 @@
 #include "Marf248CvExpander.hpp"
+#include "PanelLabel.hpp"
 
 // Gleiche schlichte Panel-Optik wie die anderen Marf248-Module (siehe
-// Marf248TriggerExpander.cpp fuer die identische lokale Kopie-Begruendung).
+// Marf248TriggerExpander.cpp fuer die identische lokale Kopie-Begruendung -
+// PanelBackground bleibt bewusst dupliziert, da wortidentisch und daher
+// ODR-unkritisch, im Unterschied zu PanelLabel).
 struct PanelBackground : Widget {
 	NVGcolor color = nvgRGB(228, 228, 226);
 
@@ -13,48 +16,11 @@ struct PanelBackground : Widget {
 	}
 };
 
-// ---------------------------------------------------------------------
-// Panel-Beschriftungs-System (Session "Panel Labeling", Variante B - siehe
-// Marf248TriggerExpander.cpp fuer die vollstaendige Begruendung/Historie,
-// inkl. der Font-Groessen-Korrektur von 6 auf 9). Lokale Kopie hier aus
-// demselben ODR-Grund wie PanelBackground oben - keine gemeinsame Header-
-// Datei fuer diese trivialen, headerlosen Widgets.
-struct PanelLabel : Widget {
-	std::string text;
-	NVGcolor color;
-	float fontSize;
-	int align;
-	std::shared_ptr<window::Font> font;
-
-	PanelLabel(Vec posMM, std::string text, NVGcolor color, float fontSize = 9.f,
-	           int align = NVG_ALIGN_CENTER | NVG_ALIGN_TOP)
-		: text(std::move(text)), color(color), fontSize(fontSize), align(align) {
-		box.pos = mm2px(posMM);
-		box.size = Vec(0.f, 0.f); // reines Text-Overlay, keine eigene Hitbox
-		font = APP->window->loadFont(asset::plugin(pluginInstance, "res/fonts/Nunito-Bold.ttf"));
-	}
-
-	void draw(const DrawArgs& args) override {
-		if (!font || font->handle < 0)
-			return; // Font fehlt - still ueberspringen statt crashen
-		nvgFontFaceId(args.vg, font->handle);
-		nvgFontSize(args.vg, fontSize);
-		nvgTextAlign(args.vg, align);
-		nvgTextLetterSpacing(args.vg, 0.f);
-		nvgFillColor(args.vg, color);
-		nvgText(args.vg, 0.f, 0.f, text.c_str(), NULL);
-	}
-};
-
-// Gleiche Farbpalette wie Marf248TriggerExpander.cpp, fuer konsistente
-// Optik ueber alle drei Module hinweg. CvExpander nutzt davon nur zwei
-// Kategorien: StageMod (tuerkis) fuer die modulweiten Time/Curve-CV-
-// Regler (analog zu den Stage-Modifier-Poly-Inputs auf dem Trigger-
-// Expander - beide wirken pro Stage, unabhaengig von Section A/B), sowie
-// Section A/B (blau/orange) fuer die beiden Gate-Ausgaenge.
-static const NVGcolor COLOR_SECTION_A = nvgRGB(30, 100, 200);
-static const NVGcolor COLOR_SECTION_B = nvgRGB(210, 110, 20);
-static const NVGcolor COLOR_STAGEMOD  = nvgRGB(0, 140, 130);
+// PanelLabel-Struct, DEG_TO_RAD und COLOR_SECTION_A/COLOR_SECTION_B/
+// COLOR_STAGEMOD kommen jetzt zentral aus PanelLabel.hpp (Session
+// "Fehlende Labels auf Trigger Expander" - die vorherige lokale Kopie hier
+// war eine von drei abweichenden PanelLabel-Definitionen und Teil eines
+// ODR-Verstosses, siehe dortiger Kommentar).
 
 
 struct Marf248CvExpanderWidget : ModuleWidget {

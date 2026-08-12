@@ -1,6 +1,7 @@
 #include "Marf248.hpp"
 #include "Marf248TriggerExpander.hpp"
 #include "Marf248CvExpander.hpp"
+#include "PanelLabel.hpp"
 
 struct Marf248; // Forward-Deklaration fuer StageVoltageQuantity
 
@@ -2757,61 +2758,16 @@ struct PulseRingLight : app::ModuleLightWidget {
 //   - addLabelVertical(): Text 90 Grad gedreht, fuer die beiden
 //     Spaltennamen "PRESETS"/"PRESET NR" rechts neben ihrem jeweiligen
 //     Block.
-// Grad -> Radiant, fuer PanelLabel::draw() (siehe rotationDeg dort). Eigene
-// Konstante statt M_PI: die ist keine C++-Standardkonstante, sondern nur
-// bedingt ueber <math.h>/<cmath> verfuegbar (Compiler-/Flag-abhaengig) -
-// das hatte hier bereits einen Rack-Absturz verursacht. Eine selbst
-// definierte Konstante ist genauso sicher (keine Header-Abhaengigkeit),
-// aber lesbarer als eine unkommentierte Zahl im Funktionsaufruf.
-static constexpr float DEG_TO_RAD = 0.017453293f; // pi/180
-
-struct PanelLabel : Widget {
-	std::string text;
-	NVGcolor color;
-	float fontSize;
-	int align;
-	// 0 = normale horizontale Beschriftung. Ungleich 0 (Grad, im
-	// Uhrzeigersinn) fuer vertikal laufenden Text (siehe addLabelVertical()
-	// weiter unten, Preset-Ziffern) - rotiert um den Anker-Punkt (box.pos),
-	// bevor bei (0,0) gezeichnet wird, daher bleibt die Textmitte exakt auf
-	// dem Anker, unabhaengig vom Rotationswinkel.
-	float rotationDeg;
-	std::shared_ptr<window::Font> font;
-
-	PanelLabel(Vec posMM, std::string text, NVGcolor color, float fontSize, int align, float rotationDeg = 0.f)
-		: text(std::move(text)), color(color), fontSize(fontSize), align(align), rotationDeg(rotationDeg) {
-		box.pos = mm2px(posMM);
-		box.size = Vec(0.f, 0.f); // reines Text-Overlay, keine eigene Hitbox
-		font = APP->window->loadFont(asset::plugin(pluginInstance, "res/fonts/Nunito-Bold.ttf"));
-	}
-
-	void draw(const DrawArgs& args) override {
-		if (!font || font->handle < 0)
-			return; // Font fehlt - still ueberspringen statt crashen
-		nvgSave(args.vg);
-		if (rotationDeg != 0.f)
-			nvgRotate(args.vg, rotationDeg * DEG_TO_RAD);
-		nvgFontFaceId(args.vg, font->handle);
-		nvgFontSize(args.vg, fontSize);
-		nvgTextAlign(args.vg, align);
-		nvgTextLetterSpacing(args.vg, 0.f);
-		nvgFillColor(args.vg, color);
-		nvgText(args.vg, 0.f, 0.f, text.c_str(), NULL);
-		nvgRestore(args.vg);
-	}
-};
-
-// Gleiche Farbpalette wie bei den beiden Expandern, fuer konsistente Optik
-// ueber alle drei Module hinweg (siehe Marf248TriggerExpander.cpp fuer die
-// Kategorien-Begruendung). COLOR_MUSICAL und die eigens fuer diese Session
-// eingefuehrte COLOR_TEMPO (Amber, Tempo/BPM/Address) sind nach der obigen
-// Reduzierung nicht mehr referenziert und daher entfernt - bei Bedarf
-// (z.B. falls Controls-/Jacks-Beschriftung in kleinerem Umfang doch wieder
-// aufgegriffen wird) einfach wieder ergaenzen.
-static const NVGcolor COLOR_SYSTEM    = nvgRGB(70, 70, 68);
-static const NVGcolor COLOR_SECTION_A = nvgRGB(30, 100, 200);
-static const NVGcolor COLOR_SECTION_B = nvgRGB(210, 110, 20);
-static const NVGcolor COLOR_STAGEMOD  = nvgRGB(0, 140, 130);
+// PanelLabel-Struct, DEG_TO_RAD und COLOR_SYSTEM/COLOR_SECTION_A/
+// COLOR_SECTION_B/COLOR_STAGEMOD kommen jetzt zentral aus PanelLabel.hpp
+// (Session "Fehlende Labels auf Trigger Expander": die drei Module hatten
+// bisher je eine eigene lokale PanelLabel-Kopie, die hier in Marf248.cpp
+// um rotationDeg erweitert war, in den beiden Expandern aber nicht -
+// klassischer ODR-Verstoss mit undefiniertem Verhalten je nach Link-
+// Reihenfolge, siehe PanelLabel.hpp fuer die volle Erklaerung). Die
+// COLOR_MUSICAL/COLOR_TEMPO-Entfernung von vorher bleibt unveraendert -
+// COLOR_MUSICAL wird nur vom Trigger Expander gebraucht und ist dort
+// lokal geblieben.
 
 
 struct Marf248Widget : ModuleWidget {

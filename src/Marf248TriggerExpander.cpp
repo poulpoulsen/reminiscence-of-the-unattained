@@ -1,10 +1,12 @@
 #include "Marf248TriggerExpander.hpp"
+#include "PanelLabel.hpp"
 
 // Gleiche schlichte Panel-Optik wie Marf248 (kein SVG-Asset, nur eine
 // eingefaerbte Flaeche + Rack-Standard-PanelBorder). Lokale Kopie statt
 // gemeinsamem Header, da es sich um einen trivialen, headerlosen Widget
-// handelt (kein ODR-Risiko: reine Klassendefinition ohne exportierte
-// Symbole, siehe Marf248.cpp fuer das Original).
+// handelt, dessen Definition in allen drei Modulen wortidentisch ist
+// (im Unterschied zu PanelLabel, siehe PanelLabel.hpp - dort war genau
+// diese Annahme falsch und hat einen ODR-Verstoss verursacht).
 struct PanelBackground : Widget {
 	NVGcolor color = nvgRGB(228, 228, 226);
 
@@ -16,72 +18,13 @@ struct PanelBackground : Widget {
 	}
 };
 
-// ---------------------------------------------------------------------
-// Panel-Beschriftungs-System (Session "Panel Labeling", Variante B: reine
-// Code/NanoVG-Labels statt SVG-Artwork).
-//
-// Bewusst als eigenstaendiges Widget statt Text direkt in draw() der
-// ModuleWidget-Klasse: dadurch bleibt die Position jedes Labels exakt an
-// derselben Stelle im Code wie die zugehoerige addInput()/addOutput()-
-// Zeile - keine getrennte SVG-Datei, die bei Layout-Aenderungen von Hand
-// synchron gehalten werden muesste.
-//
-// SCHRIFTGROESSE (Korrektur nach erstem Test, war zu klein): NVG-
-// Fontgroessen sind in Rack-px angegeben, 1mm entspricht ca. 2.9528px
-// (SVG_DPI 75 / MM_PER_IN 25.4). fontSize=6 (erster Entwurf) ergab nur
-// ca. 1.4mm Kappenhoehe - kaum lesbar, wie von Kinovice bemaengelt.
-// fontSize=9 (jetzt) ergibt ca. 2.1mm Kappenhoehe / ca. 3.7mm Zeilenhoehe
-// - spuerbar besser lesbar, ohne das Layout komplett zu sprengen.
-//
-// WICHTIG: Nunito-Bold.ttf ist NICHT im Rack-SDK enthalten und liegt auch
-// nicht bei den hochgeladenen Dateien - diese Datei muss von Kinovice noch
-// besorgt und unter res/fonts/Nunito-Bold.ttf im Plugin-Verzeichnis
-// abgelegt werden (Google Fonts, SIL Open Font License, kostenlos:
-// https://fonts.google.com/specimen/Nunito -> Bold-Schnitt). Ohne diese
-// Datei liefert loadFont() einen leeren Font (font->handle == -1) und
-// draw() ueberspringt den Text still (kein Crash, aber keine sichtbare
-// Beschriftung) - siehe Guard in PanelLabel::draw().
-struct PanelLabel : Widget {
-	std::string text;
-	NVGcolor color;
-	float fontSize;
-	int align;
-	std::shared_ptr<window::Font> font;
-
-	PanelLabel(Vec posMM, std::string text, NVGcolor color, float fontSize = 9.f,
-	           int align = NVG_ALIGN_CENTER | NVG_ALIGN_TOP)
-		: text(std::move(text)), color(color), fontSize(fontSize), align(align) {
-		box.pos = mm2px(posMM);
-		box.size = Vec(0.f, 0.f); // reines Text-Overlay, keine eigene Hitbox
-		font = APP->window->loadFont(asset::plugin(pluginInstance, "res/fonts/Nunito-Bold.ttf"));
-	}
-
-	void draw(const DrawArgs& args) override {
-		if (!font || font->handle < 0)
-			return; // Font fehlt (siehe Kommentar oben) - still ueberspringen statt crashen
-		nvgFontFaceId(args.vg, font->handle);
-		nvgFontSize(args.vg, fontSize);
-		nvgTextAlign(args.vg, align);
-		nvgTextLetterSpacing(args.vg, 0.f);
-		nvgFillColor(args.vg, color);
-		nvgText(args.vg, 0.f, 0.f, text.c_str(), NULL);
-	}
-};
-
-// Farbkategorien (Kinovice-Entscheidung: "nach Sektion/Funktion
-// eingefaerbt"). Fuenf Kategorien, ueber alle Reihen hinweg konsistent:
-// - System: modulweite Housekeeping-Trigger (Clear/Reset/Preset)
-// - Musical: Scale/Key - musikalische Funktionen, ebenfalls modulweit
-// - Section A / Section B: alles was eine Section-Kennung traegt (auch
-//   wenn poly, wie Address Memory Store/Recall)
-// - StageMod: die 10 Stage-Modifier-Poly-Inputs (Skip...Mute) - wirken
-//   modulweit auf beide Sections gleichzeitig, daher eigene Kategorie statt
-//   A/B-Zuordnung.
-static const NVGcolor COLOR_SYSTEM    = nvgRGB(70, 70, 68);
-static const NVGcolor COLOR_MUSICAL   = nvgRGB(126, 87, 194);
-static const NVGcolor COLOR_SECTION_A = nvgRGB(30, 100, 200);
-static const NVGcolor COLOR_SECTION_B = nvgRGB(210, 110, 20);
-static const NVGcolor COLOR_STAGEMOD  = nvgRGB(0, 140, 130);
+// PanelLabel-Struct, DEG_TO_RAD und COLOR_SYSTEM/COLOR_SECTION_A/
+// COLOR_SECTION_B/COLOR_STAGEMOD kommen jetzt zentral aus PanelLabel.hpp
+// (siehe dortiger Kommentar zur Session "Fehlende Labels auf Trigger
+// Expander" - vorherige lokale Kopie wich im Konstruktor von Marf248.cpp
+// ab und verursachte einen ODR-Verstoss). COLOR_MUSICAL wird nur hier
+// gebraucht (Scale/Key), daher lokal:
+static const NVGcolor COLOR_MUSICAL = nvgRGB(126, 87, 194);
 
 
 struct Marf248TriggerExpanderWidget : ModuleWidget {
