@@ -1,91 +1,20 @@
---- /mnt/user-data/uploads/Marf248.cpp	2026-08-11 18:45:21.584049000 +0000
-+++ Marf248.cpp	2026-08-11 18:48:19.376514235 +0000
-@@ -1321,6 +1321,59 @@
- 			}
- 		}
- 
-+		// Stage VOLT_EXT/TIME_EXT Kanalwahl per CV (Poly, Kanal i = Stage
-+		// i+1), zwei getrennte Eingaenge auf dem Trigger-Expander. 5 Zonen a
-+		// 2V im 0-10V-Bereich: 0-2V = Intern (Bit wird geloescht, kein
-+		// Kanal-Override), 2-4V = Kanal A, 4-6V = B, 6-8V = C, 8-10V = D
-+		// (Bit wird gesetzt UND der Kanal erzwungen). Wirkt nur bei
-+		// gepatchtem Kabel (isConnected()-Guard, identisches Prinzip wie
-+		// alle bisherigen Stage-Modifier-Poly-Overrides oben), ueberschreibt
-+		// dann sowohl den Panel-Button als auch die bisherige Slider-
-+		// Kanalwahl-Doppelbelegung weiter unten (siehe MOD_VOLT_EXT/
-+		// MOD_TIME_EXT-Aufloesung). Ohne Kabel bleibt das bestehende
-+		// Verhalten (Button-Klick + Slider-Position als Kanalwahl)
-+		// unveraendert - die Override-Arrays bleiben dann auf -1 (kein
-+		// Override). Nicht angesteuerte Poly-Kanaele liefern automatisch 0V
-+		// = Intern-Zone (sicherer Default). Bewusst NICHT fuer Shape (Lin/
-+		// Exp/Log) - siehe STAGE_SLOPE_POLY_INPUT-Kommentar oben.
-+		int voltExtChannelOverride[NUM_STAGES];
-+		int timeExtChannelOverride[NUM_STAGES];
-+		for (int i = 0; i < NUM_STAGES; i++) {
-+			voltExtChannelOverride[i] = -1;
-+			timeExtChannelOverride[i] = -1;
-+		}
-+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_VOLTEXT_CH_POLY_INPUT).isConnected()) {
-+			for (int i = 0; i < NUM_STAGES; i++) {
-+				float v = rack::clamp(trigExp->getInput(Marf248TriggerExpander::STAGE_VOLTEXT_CH_POLY_INPUT).getPolyVoltage(i), 0.f, 10.f);
-+				int zone = (int) rack::clamp(v / 2.f, 0.f, 4.f);
-+				if (zone == 0) {
-+					stageModifier[i] &= ~MOD_VOLT_EXT;
+--- /mnt/user-data/uploads/Marf248.cpp	2026-08-12 20:06:08.985828000 +0000
++++ /home/claude/marf248/Marf248.cpp	2026-08-12 20:08:16.101196748 +0000
+@@ -1059,6 +1059,17 @@
+ 				float rawRange = params[STAGE_RANGE_PARAM + i].getValue();
+ 				float effRange = pickupRange[i].resolve(rawRange);
+ 				int rangePos = (int) std::round(effRange);
++				// Range-CV-Override (Trigger-Expander, STAGE_RANGE_POLY_INPUT,
++				// Session "Range CV Override"): identisches isConnected()-Guard-
++				// Prinzip wie alle anderen Stage-Modifier-Poly-Overrides -
++				// wirkt nur, solange die Buchse gepatcht ist, und hat dann
++				// Vorrang vor Reglerposition/Pickup, noch im selben Frame.
++				// Ohne Kabel bleibt exakt das bisherige Verhalten (Regler +
++				// Pickup) unveraendert.
++				if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_RANGE_POLY_INPUT).isConnected()) {
++					float rangeCv = trigExp->getInput(Marf248TriggerExpander::STAGE_RANGE_POLY_INPUT).getPolyVoltage(i);
++					rangePos = resolveRangeZone(rangeCv);
 +				}
-+				else {
-+					stageModifier[i] |= MOD_VOLT_EXT;
-+					voltExtChannelOverride[i] = zone - 1;
-+				}
-+				// Eigenstaendiges Licht-Update, gleiches Prinzip wie bei
-+				// STAGE_SKIP_POLY_INPUT oben - CV-Override soll ohne
-+				// Dezimierungs-Latenz sichtbar sein.
-+				lights[STAGE_VOLTEXT_LIGHT + i].setBrightness(stageModifier[i] & MOD_VOLT_EXT ? 1.f : 0.f);
-+			}
-+		}
-+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_TIMEEXT_CH_POLY_INPUT).isConnected()) {
-+			for (int i = 0; i < NUM_STAGES; i++) {
-+				float v = rack::clamp(trigExp->getInput(Marf248TriggerExpander::STAGE_TIMEEXT_CH_POLY_INPUT).getPolyVoltage(i), 0.f, 10.f);
-+				int zone = (int) rack::clamp(v / 2.f, 0.f, 4.f);
-+				if (zone == 0) {
-+					stageModifier[i] &= ~MOD_TIME_EXT;
-+				}
-+				else {
-+					stageModifier[i] |= MOD_TIME_EXT;
-+					timeExtChannelOverride[i] = zone - 1;
-+				}
-+				lights[STAGE_TIMEEXT_LIGHT + i].setBrightness(stageModifier[i] & MOD_TIME_EXT ? 1.f : 0.f);
-+			}
-+		}
-+
- 		float stageVoltage[NUM_STAGES];
- 		float stageTime[NUM_STAGES];
- 		float resolvedVoltage[NUM_STAGES];
-@@ -1431,7 +1484,13 @@
- 			// hier, VOR Range/Quantize, die weiterhin unveraendert in
- 			// Afg::process()/applyRange() auf das Ergebnis wirken.
- 			if (stageModifier[i] & MOD_VOLT_EXT) {
--				int ch = (int) rack::clamp(stageVoltage[i] / 2.5f, 0.f, 3.f);
-+				// Kanalwahl-CV (STAGE_VOLTEXT_CH_POLY_INPUT) hat Vorrang vor
-+				// der bisherigen Slider-Kanalwahl, siehe Override-Block
-+				// oben. voltExtChannelOverride[i] == -1 bedeutet "kein
-+				// Kabel gepatcht" - dann unveraendertes Verhalten.
-+				int ch = (voltExtChannelOverride[i] >= 0)
-+					? voltExtChannelOverride[i]
-+					: (int) rack::clamp(stageVoltage[i] / 2.5f, 0.f, 3.f);
- 				resolvedVoltage[i] = extVoltage[ch];
- 			}
- 			else {
-@@ -1448,7 +1507,12 @@
- 				// normalisierte 0..1) Slider-Position selbst als Kanalwahl
- 				// (A-D) in 4 gleich grossen Zonen - keine Rueckrechnung ueber
- 				// TIME_PARAM_MIN/MAX mehr noetig, da stageTime[i] schon 0..1 ist.
--				int ch = (int) rack::clamp(stageTime[i] * 4.f, 0.f, 3.f);
-+				// Kanalwahl-CV (STAGE_TIMEEXT_CH_POLY_INPUT) hat auch hier
-+				// Vorrang, siehe Override-Block oben und Kommentar bei
-+				// MOD_VOLT_EXT oben.
-+				int ch = (timeExtChannelOverride[i] >= 0)
-+					? timeExtChannelOverride[i]
-+					: (int) rack::clamp(stageTime[i] * 4.f, 0.f, 3.f);
- 				if (extConnected[ch]) {
- 					float v = rack::clamp(extVoltage[ch], 0.f, 10.f);
- 					resolvedTime[i] = timeRangeMin + (v / 10.f) * timeRangeSpan;
+ 				if (rangePos == 1) {
+ 					stageModifier[i] |= MOD_RANGE_HALF;
+ 				}

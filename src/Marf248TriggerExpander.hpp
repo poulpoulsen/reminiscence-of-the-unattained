@@ -167,6 +167,21 @@ struct Marf248TriggerExpander : Module {
 		// STAGE_SLOPE_POLY_INPUT-Kommentar oben.
 		STAGE_VOLTEXT_CH_POLY_INPUT,
 		STAGE_TIMEEXT_CH_POLY_INPUT,
+		// Stage RANGE Kanalwahl per CV (Poly, Kanal i = Stage i+1): Override
+		// fuer den 7-Positionen-Range-Drehschalter (F/H/L0/L2/L4/L6/L8,
+		// siehe StageRangeQuantity/STAGE_RANGE_PARAM in Marf248.hpp/.cpp) -
+		// analog zum VOLT_EXT/TIME_EXT-Kanalwahl-Prinzip oben, aber mit 7
+		// statt 5 Zonen (kein "Intern/Aus"-Sonderfall, jede Zone entspricht
+		// direkt einer gueltigen Range-Position). 7 gleich grosse Zonen a
+		// 10V/7 ~= 1.4286V im 0-10V-Bereich: Zone 0 = Full, 1 = Half,
+		// 2..6 = Limited +0/+2/+4/+6/+8V (siehe RANGE_ZONE_THRESHOLDS/
+		// resolveRangeZone() in Marf248.hpp). Ueberschreibt bei gepatchtem
+		// Kabel die Panel-Reglerposition (inkl. Pickup) komplett - reines
+		// Bit-Override wie alle anderen Stage-Modifier-Poly-Eingaenge,
+		// isConnected()-Guard, ohne Kabel bleibt der Regler unveraendert
+		// massgeblich. Nicht angesteuerte Poly-Kanaele liefern automatisch
+		// 0V = Zone 0 = Full (sicherer Default).
+		STAGE_RANGE_POLY_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
@@ -221,6 +236,7 @@ struct Marf248TriggerExpander : Module {
 		configInput(STAGE_MUTE_POLY_INPUT, "Stage MUTE gate (poly, ch. 1-16 = stage 1-16, high suppresses Pulse1/2 output without changing their programming)");
 		configInput(STAGE_VOLTEXT_CH_POLY_INPUT, "Stage Voltage External channel select CV (poly, ch. 1-16 = stage 1-16, 0-2V=Internal, 2-4V=A, 4-6V=B, 6-8V=C, 8-10V=D)");
 		configInput(STAGE_TIMEEXT_CH_POLY_INPUT, "Stage Time External channel select CV (poly, ch. 1-16 = stage 1-16, 0-2V=Internal, 2-4V=A, 4-6V=B, 6-8V=C, 8-10V=D)");
+		configInput(STAGE_RANGE_POLY_INPUT, "Stage Range CV (poly, ch. 1-16 = stage 1-16, 7 zones of ~1.43V: Full/Half/L0/L2/L4/L6/L8, overrides panel knob)");
 
 		configOutput(START_CYCLE_A_OUTPUT, "Section A Start of Cycle trigger");
 		configOutput(END_CYCLE_A_OUTPUT, "Section A End of Cycle trigger");

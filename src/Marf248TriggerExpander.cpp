@@ -131,6 +131,13 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		addLabel(Vec(colC, y), "SCALE CHR", COLOR_MUSICAL);
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colD, y)), module, Marf248TriggerExpander::KEY_CV_INPUT));
 		addLabel(Vec(colD, y), "KEY CV", COLOR_MUSICAL);
+		// Spalte E war in Reihe 2 bisher leer - jetzt belegt mit der
+		// Range-Kanalwahl-CV (Session "Range CV Override"), thematisch als
+		// Stage-Modifier eingefaerbt (teal) statt musikalisch (violett), da
+		// sie wie Skip/First/Last... auf stageModifier wirkt statt auf
+		// Scale/Key.
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colE, y)), module, Marf248TriggerExpander::STAGE_RANGE_POLY_INPUT));
+		addLabel(Vec(colE, y), "RANGE CV", COLOR_STAGEMOD);
 
 		// Reihe 3: Start-/End-of-Cycle, Section A dann B (Outputs).
 		y += stepY;

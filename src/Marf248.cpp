@@ -1059,6 +1059,17 @@ struct Marf248 : Module {
 				float rawRange = params[STAGE_RANGE_PARAM + i].getValue();
 				float effRange = pickupRange[i].resolve(rawRange);
 				int rangePos = (int) std::round(effRange);
+				// Range-CV-Override (Trigger-Expander, STAGE_RANGE_POLY_INPUT,
+				// Session "Range CV Override"): identisches isConnected()-Guard-
+				// Prinzip wie alle anderen Stage-Modifier-Poly-Overrides -
+				// wirkt nur, solange die Buchse gepatcht ist, und hat dann
+				// Vorrang vor Reglerposition/Pickup, noch im selben Frame.
+				// Ohne Kabel bleibt exakt das bisherige Verhalten (Regler +
+				// Pickup) unveraendert.
+				if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_RANGE_POLY_INPUT).isConnected()) {
+					float rangeCv = trigExp->getInput(Marf248TriggerExpander::STAGE_RANGE_POLY_INPUT).getPolyVoltage(i);
+					rangePos = resolveRangeZone(rangeCv);
+				}
 				if (rangePos == 1) {
 					stageModifier[i] |= MOD_RANGE_HALF;
 				}

@@ -124,6 +124,38 @@ inline int setRangeOffsetIndex(int mod, int idx) {
 	return (mod & ~RANGE_OFFSET_MASK) | ((idx & 0x7) << RANGE_OFFSET_SHIFT);
 }
 
+// Zonen-Schwellen fuer den Range-CV-Override (Trigger-Expander,
+// STAGE_RANGE_POLY_INPUT, Session "Range CV Override"): 7 gleich grosse
+// Zonen im 0-10V-Bereich, eine je Range-Position (F/H/L0/L2/L4/L6/L8) -
+// identisches Positions-Encoding wie der Panel-Drehschalter oben
+// (rangePos 0=Full, 1=Half, 2..6=Limited +0..+8, siehe
+// Marf248::process()). Zonenbreite = 10V/7 ~= 1.4286V; 6 Schwellwerte
+// trennen die 7 Zonen (Zone k liegt bei Spannungen >= Schwelle[k-1] und
+// < Schwelle[k], Zone 0 darunter). Explizites Array statt Division im
+// Hot-Path, damit die Zonengrenzen an einer Stelle nachvollziehbar
+// stehen (analog zu TIME_RANGE_MIN/MAX oben).
+static const float RANGE_ZONE_THRESHOLDS[6] = {
+	10.f / 7.f * 1.f,
+	10.f / 7.f * 2.f,
+	10.f / 7.f * 3.f,
+	10.f / 7.f * 4.f,
+	10.f / 7.f * 5.f,
+	10.f / 7.f * 6.f,
+};
+
+// Loest eine 0-10V-Spannung zur Range-Position (0..6) auf, siehe
+// RANGE_ZONE_THRESHOLDS oben. Spannung wird vorab auf 0-10V geklemmt,
+// daher immer ein gueltiger Rueckgabewert.
+inline int resolveRangeZone(float voltage) {
+	float v = rack::clamp(voltage, 0.f, 10.f);
+	int zone = 0;
+	for (int i = 0; i < 6; i++) {
+		if (v >= RANGE_ZONE_THRESHOLDS[i])
+			zone = i + 1;
+	}
+	return zone;
+}
+
 // Referenz-Kruemmung bei Knob-Mittelstellung (0.5) - entspricht dem bisherigen
 // festen Wert. Ueber den Curve-Knob je Stage wird die tatsaechliche Power
 // stufenlos dagegen verschoben (siehe Marf248::process()).
