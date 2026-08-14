@@ -52,6 +52,7 @@ APOUT-Unterdrückung).
 9. [Persistenz (Patch-Speicherung)](#sec9) · [[#9. Persistenz (Patch-Speicherung)|Obsidian]]
 10. [Bekannte Fallstricke im Zusammenspiel](#sec10) · [[#10. Bekannte Fallstricke im Zusammenspiel|Obsidian]]
 11. [Design-Entscheidungen & Abgrenzungen](#sec11) · [[#11. Design-Entscheidungen & Abgrenzungen|Obsidian]]
+12. [Abbildungsverzeichnis](#figures) · [[#Abbildungsverzeichnis|Obsidian]]
 
 ---
 
@@ -127,6 +128,7 @@ Alle drei Module werden in `plugin.cpp`/`plugin.hpp` registriert
 | `MOD_SLEW_NORMALIZE` | Streckt die sichtbar bewegte Kurve auf die volle Stage-Zeit | **nein** |
 | `MOD_TRANGE_1/2/4` | Time Range TR1/TR2/TR4 (kein Bit = TR3, Default) | ja (TR1–4) |
 | `MOD_MUTE` | Unterdrückt P1OUT/P2OUT **und** APOUT für diese Stage, ohne `MOD_PULSE1`/`MOD_PULSE2` zu verändern; Voltage/Slew unbeeinflusst | **nein** |
+| `MOD_QUANT_GLIDE` | Quantisiert den kompletten Slew (nicht nur den Zielwert) Sample für Sample auf Scale/Key – "Treppen-Glide"; nur wirksam zusammen mit `MOD_SLOPED` | **nein** (reine Software-Erweiterung) |
 
 Zusätzlich kodiert ein 3-Bit-Feld (`RANGE_OFFSET_MASK`) den Oktav-Offset im
 Limited-Range-Modus (5 Stufen: +0/+2/+4/+6/+8 V).
@@ -157,6 +159,8 @@ geworden, siehe unten) und in mehrere senkrechte Spalten gegliedert
 [External CV A–D] [Section-A-Controls] [Section-A-Jacks] [Section-A-Ausgänge] [Stage-Array (16×)] [Section-B-Ausgänge] [Section-B-Jacks] [Section-B-Controls] [Preset-Spalte]
 ```
 
+*[Siehe [Abbildung 1](#fig1) für eine schematische Übersicht dieser Spaltenstruktur.]*
+
 - **External-CV-Spalte** (ganz links): die vier modulweit geteilten
   externen CV-Eingänge (Buchsen A–D), die von `MOD_VOLT_EXT`/`MOD_TIME_EXT`
   je Stage referenziert werden können.
@@ -185,6 +189,8 @@ werden zusätzlich durch dünne horizontale Trennlinien (`HDivider`) abgesetzt.
 ### 3.2 Bedienelemente pro Stage
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
+*[Siehe [Abbildung 2](#fig2) für die exakte Position jedes unten beschriebenen Bedienelements, da alle 16 Stage-Spalten identisch aufgebaut sind.]*
+
 Jede der 16 Stage-Spalten enthält von oben nach unten:
 
 **Voltage** (`STAGE_VOLTAGE_PARAM`) *(Vertikaler Schieberegler, 0–10V)*<br>
@@ -205,8 +211,8 @@ Reihe 1: `MOD_PULSE1`/`MOD_PULSE2` lösen beim Erreichen der Stage einen kurzen 
 **Stop / Sustain / Enable** *(LED-Taster (Toggle))*<br>
 Reihe 2: `MOD_STOP` = programmierte Stop-Stage (pausiert den Ablauf, bis die Section neu gestartet wird). `MOD_SUSTAIN` = hält die Stage, solange am Start-Eingang ein High-Pegel (Gate) anliegt (Release-Verhalten wie ADSR). `MOD_ENABLE` = hält die Stage, solange **kein** High-Pegel anliegt (Freigabe erst durch Gate). Beide Halte-Zustände pausieren den Verweilzeit-Zähler `elapsed`. **Achtung Fallstrick ohne gepatchtes Kabel an START_A/B – siehe [Abschnitt 10](#sec10).**
 
-**First / Last / Slope** *(LED-Taster (Toggle))*<br>
-Reihe 3: `MOD_FIRST`/`MOD_LAST` markieren Zyklus-Anfang/-Ende (Wrap-Punkte für Forward/Reverse/Pendulum, lösen Start-/End-of-Cycle-Trigger am Trigger-Expander aus; mehrere First/Last-Paare sind möglich, siehe [4.2](#sec4-2)). `MOD_SLOPED` schaltet zwischen gesprungener (Stepped, Default) und rampender (Slew) Spannungsänderung um.
+**First / Last / Slope / Quantized Glide** *(LED-Taster (Toggle))*<br>
+Reihe 3: `MOD_FIRST`/`MOD_LAST` markieren Zyklus-Anfang/-Ende (Wrap-Punkte für Forward/Reverse/Pendulum, lösen Start-/End-of-Cycle-Trigger am Trigger-Expander aus; mehrere First/Last-Paare sind möglich, siehe [4.2](#sec4-2)). `MOD_SLOPED` schaltet zwischen gesprungener (Stepped, Default) und rampender (Slew) Spannungsänderung um. `MOD_QUANT_GLIDE`, direkt neben Slope platziert, quantisiert die komplette Rampe Sample für Sample auf das globale Scale/Key-Raster statt nur den Zielwert – siehe [4.4](#sec4-4) für den dadurch entstehenden "Treppen-Glide"-Effekt; nur hör-/sichtbar, wenn Slope ebenfalls aktiv ist.
 
 **Quantize / Volt-Ext / Time-Ext** *(LED-Taster (Toggle))*<br>
 Reihe 4: `MOD_QUANT_OCT` quantisiert die Zielspannung auf das globale Scale/Key-Raster. `MOD_VOLT_EXT`/`MOD_TIME_EXT` schalten Spannungs- bzw. Zeitquelle der Stage auf extern (Kanalwahl über den jeweiligen Regler).
@@ -534,6 +540,21 @@ Reihenfolge im Signalpfad (in `Afg::process()`), pro Sample:
    Curve-Einstellung, dass die theoretisch fast schon erreichte Kurve
    (>99,9%) den Zielwert erst exakt bei `t=1` erreicht, statt vorher
    „hängenzubleiben" – streckt dazu die Zeitachse (`slewExpNormalized()`).
+5. **Quantized Glide** (erneut `quantizeToScale()`), falls sowohl
+   `MOD_SLOPED` als auch `MOD_QUANT_GLIDE` gesetzt sind: anders als
+   Schritt 2, der nur den Zielwert einmalig quantisiert, wird hier das
+   bereits interpolierte `voltageOut` bei jedem Sample während der
+   gesamten Rampe erneut quantisiert. Jedes Mal, wenn die laufende
+   Spannung eine Scale-Raster-Grenze überschreitet, snapt der Output
+   dorthin und hält, bis die nächste Grenze überschritten wird – dadurch
+   entsteht eine hör-/sichtbare Treppe *innerhalb* eines einzelnen
+   Stage-Übergangs, statt einer glatten Rampe, die erst ganz am Ende
+   einrastet (Kinovice-Feature, kein direktes Hardware-Vorbild; auf
+   einem echten 248t/MARF wird derselbe Effekt durch einen extern
+   nachgeschalteten Quantizer hinter VOUT erreicht). Wirkt unabhängig
+   von `MOD_QUANT_OCT` – auch wenn der Zielwert selbst nicht separat
+   quantisiert ist, bleibt der Ruhewert dank der kontinuierlichen
+   Neuquantisierung während der Rampe trotzdem auf dem Raster.
 
 <a id="sec4-5"></a>
 ### 4.5 Time-Signalpfad: Time Range, External Time, Time-CV, Time Multiplier
@@ -973,6 +994,8 @@ die gesamte Verarbeitung findet in `Marf248::process()` statt, sobald das
 Modul als linker oder rechter Nachbar erkannt wird (`LINK_LIGHT` zeigt den
 Andock-Status).
 
+*[Siehe [Abbildung 3](#fig3) für das vollständige Panel mit allen beschrifteten Buchsen.]*
+
 ### Eingänge
 
 **`CLEAR_INPUT`** *(Trigger)*<br>
@@ -1014,6 +1037,12 @@ Adress-Speicher Store, siehe [4.9](#sec4-9). Sitzt in Reihe 7, Spalte C/D.
 **`ADDR_RECALL_A_POLY_INPUT` / `ADDR_RECALL_B_POLY_INPUT`** *(Poly-Trigger (16 Kanäle = Slot 1–16))*<br>
 Adress-Speicher Recall, siehe [4.9](#sec4-9). Sitzt in Reihe 4, Spalte C/D (neben SEXT, seit der Panel-Beschriftungs-Session).
 
+**`STAGE_RANGE_POLY_INPUT`** *(Poly-CV (16 Kanäle = Stage 1–16))*<br>
+Kanalwahl per CV für den 7-Positionen-Range-Drehschalter (`STAGE_RANGE_PARAM`/`RangeKnob`, siehe [3.2](#sec3-2)). Sieben gleich große Zonen à ~1,4286V im 0–10V-Bereich (kein "Intern/Aus"-Sonderfall wie beim 5-Zonen-Schema von Volt-Ext/Time-Ext, da jede Zone einer gültigen Range-Position entspricht): Zone 0 = Full, 1 = Half, 2–6 = Limited +0/+2/+4/+6/+8V (`RANGE_ZONE_THRESHOLDS[6]`/`resolveRangeZone()` in `Marf248.hpp`). Überschreibt bei gepatchtem Kabel die Panel-Reglerposition (inklusive Pickup) komplett; nicht angesteuerte Poly-Kanäle liefern automatisch 0V = Zone 0 = Full. Sitzt in Reihe 2, Spalte E.
+
+**`STAGE_QUANTGLIDE_POLY_INPUT`** *(Poly-Gate (16 Kanäle = Stage 1–16))*<br>
+Pegel-Override für `MOD_QUANT_GLIDE` (siehe [4.4](#sec4-4)), gleiches Prinzip wie `STAGE_SLOPE_POLY_INPUT` oben (Schwelle 2V, `isConnected()`-Guard, überschreibt einen manuellen Panel-Klick). Sitzt in Reihe 3, Spalte E, direkt unterhalb von Range CV.
+
 ### Ausgänge
 
 **`START_CYCLE_A/B_OUTPUT`**<br>
@@ -1033,8 +1062,8 @@ zusammenzugruppieren. 7 Reihen (`colA`=16mm … `colE`=124mm, `y`=20mm bis
 104mm in 14mm-Schritten):
 
 - **Reihe 1** (y=20): Clear (A) / Reset Values (B) / Preset Load, Poly (C) / Run Gate A (D) / Run Gate B (E) – Run Gate sitzt seit dieser Session hier statt in einer eigenen Reihe, da es thematisch zu den übrigen globalen Housekeeping-Controls passt.
-- **Reihe 2** (y=34): Scale Major (A) / Scale Minor (B) / Scale Chromatic (C) / Key CV (D).
-- **Reihe 3** (y=48): Start of Cycle A (A) / End of Cycle A (B) / Start of Cycle B (C) / End of Cycle B (D).
+- **Reihe 2** (y=34): Scale Major (A) / Scale Minor (B) / Scale Chromatic (C) / Key CV (D) / **Stage-Range-Kanalwahl-CV (E)**.
+- **Reihe 3** (y=48): Start of Cycle A (A) / End of Cycle A (B) / Start of Cycle B (C) / End of Cycle B (D) / **Stage-Quantized-Glide-Gate (E, neu)**.
 - **Reihe 4** (y=62): Strobe A/SEXT (A) / Strobe B/SEXT (B) / Address Memory Recall A (C) / Address Memory Recall B (D) / **Voltage-External-Kanalwahl-CV (E, neu)** – Recall A/B sitzt seit dieser Session hier statt in einer eigenen Reihe (Kinovice-Wunsch: Recall neben Strobe).
 - **Reihe 5** (y=76): Advance A (A) / Advance B (B) / Stage Skip (C) / Stage First (D) / Stage Last (E).
 - **Reihe 6** (y=90): Stage Stop (A) / Stage Sustain (B) / Stage Enable (C) / Stage Pulse1 (D) / Stage Pulse2 (E).
@@ -1071,6 +1100,8 @@ sind vernachlässigbar.
 12HP-Expander (ursprünglich 6HP, für die Slew-Curve-CV-Spalte erweitert).
 Ebenfalls reiner Jack-Träger ohne eigene DSP-Logik. Unverändert gegenüber
 dem letzten Dokumentationsstand.
+
+*[Siehe [Abbildung 4](#fig4) für das vollständige Panel mit allen beschrifteten Buchsen/Reglern.]*
 
 ### Eingänge
 
@@ -1394,3 +1425,51 @@ führen:
 - **Multiplier-Sicherheitsklammern (`[1e-4, 1e4]`) sind reiner
   Rechenschutz, keine musikalische Grenze** – analog zur bestehenden
   CV-Expander-Zeit-Klammer (`[0,001s, 30s]`).
+
+---
+
+<a id="figures"></a>
+## Abbildungsverzeichnis
+*[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
+
+Die folgenden Abbildungen sind schematische Panel-Diagramme (kein
+fotorealistischer Rack-Export), erzeugt aus denselben Koordinaten-
+Konstanten, die auch in den `ModuleWidget`-Konstruktoren stehen – die
+Positionen und Farben entsprechen also dem tatsächlichen Panel. Die
+Farbgebung folgt dem fünfteiligen Farbschema des Panels: System (grau),
+Musical (violett), Section A (blau), Section B (orange), Stage-Modifier
+(türkis) – siehe [1.](#sec1). Die Dateien liegen als SVG (Vektorgrafik,
+verlustfrei skalierbar) im Ordner `docs/figures/` neben dieser Datei.
+
+<a id="fig1"></a>
+**Abbildung 1 – Marf248 Panel-Spaltenlayout (schematische Übersicht)**<br>
+![Marf248 Panel Overview](figures/Marf248_PanelOverview.svg)<br>
+Referenziert aus [3.1](#sec3-1). Zeigt die dort beschriebene Spaltenstruktur
+(External CV / Section-A-Controls-Jacks-Ausgänge / 16× Stage / Section-B-
+Ausgänge-Jacks-Controls / Preset-Spalte). Da alle 16 Stage-Spalten
+strukturell identisch sind, sind nur die ersten zwei sowie die letzte
+vollständig gezeichnet, der Rest ist zu "…" zusammengefasst – siehe
+Abbildung 2 für das detaillierte Pro-Stage-Layout.
+
+<a id="fig2"></a>
+**Abbildung 2 – Marf248 Stage-Spalten-Detail**<br>
+![Marf248 Stage Column Detail](figures/Marf248_StageColumnDetail.svg)<br>
+Referenziert aus [3.2](#sec3-2). Eine repräsentative Stage-Spalte (alle 16
+sind identisch, `xStep=36mm` Abstand), mit Voltage-/Time-Slidern, den
+beiden Stage-LEDs, allen 8 Button-Reihen (je 2 Spalten,
+`buttonRowsY`/`buttonColOffsets` in `Marf248.cpp`) inklusive dem neuen
+Quantized-Glide-Button neben Slope, sowie dem Shape/Curve/Time-Range/
+Range-Block.
+
+<a id="fig3"></a>
+**Abbildung 3 – Marf248TriggerExpander Panel (30HP)**<br>
+![Marf248TriggerExpander Panel](figures/Marf248TriggerExpander_Panel.svg)<br>
+Referenziert aus [6.](#sec6). Alle 5 Spalten × 7 Reihen plus das LINK-
+Licht, passend zur Koordinatentabelle im Panel-Layout-Unterabschnitt,
+inklusive Stage-Range-CV (Reihe 2E) und Quantized Glide (Reihe 3E).
+
+<a id="fig4"></a>
+**Abbildung 4 – Marf248CvExpander Panel (12HP)**<br>
+![Marf248CvExpander Panel](figures/Marf248CvExpander_Panel.svg)<br>
+Referenziert aus [7.](#sec7). Stage-Time-CV-/Slew-Curve-CV-Eingänge mit
+ihren Attenuvertern und Offset-/Bias-Reglern, sowie Gate-A/B-Ausgänge.

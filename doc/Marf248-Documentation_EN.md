@@ -52,6 +52,7 @@ including APOUT suppression).
 9. [Persistence (Patch Storage)](#sec9) · [[#9. Persistence (Patch Storage)|Obsidian]]
 10. [Known Pitfalls in Feature Interaction](#sec10) · [[#10. Known Pitfalls in Feature Interaction|Obsidian]]
 11. [Design Decisions & Scope Boundaries](#sec11) · [[#11. Design Decisions & Scope Boundaries|Obsidian]]
+12. [List of Figures](#figures) · [[#List of Figures|Obsidian]]
 
 ---
 
@@ -127,6 +128,7 @@ All three modules are registered in `plugin.cpp`/`plugin.hpp`
 | `MOD_SLEW_NORMALIZE` | Stretches the visibly-moving curve to fill the full stage time | **no** |
 | `MOD_TRANGE_1/2/4` | Time Range TR1/TR2/TR4 (no bit = TR3, default) | yes (TR1–4) |
 | `MOD_MUTE` | Suppresses P1OUT/P2OUT **and** APOUT for this stage, without changing `MOD_PULSE1`/`MOD_PULSE2`; voltage/slew unaffected | **no** |
+| `MOD_QUANT_GLIDE` | Quantizes the entire slew (not just the target) sample-by-sample to Scale/Key – "staircase glide"; only effective together with `MOD_SLOPED` | **no** (pure software extension) |
 
 In addition, a 3-bit field (`RANGE_OFFSET_MASK`) encodes the octave offset
 in Limited-range mode (5 steps: +0/+2/+4/+6/+8 V).
@@ -157,6 +159,8 @@ required width – see below) and organized into several vertical columns
 [External CV A–D] [Section A Controls] [Section A Jacks] [Section A Outputs] [Stage Array (16×)] [Section B Outputs] [Section B Jacks] [Section B Controls] [Preset Column]
 ```
 
+*[See [Figure 1](#fig1) for a schematic overview of this column layout.]*
+
 - **External CV column** (far left): the four module-wide shared external
   CV inputs (jacks A–D), which per-stage `MOD_VOLT_EXT`/`MOD_TIME_EXT` can
   reference.
@@ -183,6 +187,9 @@ horizontal divider lines (`HDivider`).
 ### 3.2 Per-Stage Controls
 *[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
 
+*[See [Figure 2](#fig2) for the exact position of every control described below, since all 16 stage columns share the identical layout.]*
+
+
 Each of the 16 stage columns contains, from top to bottom:
 
 **Voltage** (`STAGE_VOLTAGE_PARAM`) *(Vertical slider, 0–10V)*<br>
@@ -203,8 +210,8 @@ Row 1: `MOD_PULSE1`/`MOD_PULSE2` fire a short trigger on the section's P1OUT/P2O
 **Stop / Sustain / Enable** *(LED buttons (toggle))*<br>
 Row 2: `MOD_STOP` = programmed stop stage (pauses playback until the section is restarted). `MOD_SUSTAIN` = holds the stage while a high level (gate) is present at the start input (ADSR-like release behavior). `MOD_ENABLE` = holds the stage while **no** high level is present (release only via a gate). Both hold states pause the dwell-time counter `elapsed`. **Watch out for the pitfall with no cable patched into START_A/B – see [Section 10](#sec10).**
 
-**First / Last / Slope** *(LED buttons (toggle))*<br>
-Row 3: `MOD_FIRST`/`MOD_LAST` mark cycle start/end (wrap points for Forward/Reverse/Pendulum, and fire Start/End-of-Cycle triggers on the trigger expander; multiple First/Last pairs are possible, see [4.2](#sec4-2)). `MOD_SLOPED` switches between stepped (default) and ramped (slew) voltage change.
+**First / Last / Slope / Quantized Glide** *(LED buttons (toggle))*<br>
+Row 3: `MOD_FIRST`/`MOD_LAST` mark cycle start/end (wrap points for Forward/Reverse/Pendulum, and fire Start/End-of-Cycle triggers on the trigger expander; multiple First/Last pairs are possible, see [4.2](#sec4-2)). `MOD_SLOPED` switches between stepped (default) and ramped (slew) voltage change. `MOD_QUANT_GLIDE`, placed right next to Slope, quantizes the entire ramp sample-by-sample to the global Scale/Key grid instead of only the target value – see [4.4](#sec4-4) for the "staircase glide" effect this produces and only has an audible/visible effect while Slope is also active.
 
 **Quantize / Volt-Ext / Time-Ext** *(LED buttons (toggle))*<br>
 Row 4: `MOD_QUANT_OCT` quantizes the target voltage to the global Scale/Key grid. `MOD_VOLT_EXT`/`MOD_TIME_EXT` switch the stage's voltage/time source to external (channel selection via the respective knob).
@@ -532,6 +539,19 @@ Order of the signal path (inside `Afg::process()`), per sample:
    curve (>99.9%) only reaches the target exactly at `t=1` instead of
    getting "stuck" earlier – stretches the time axis to achieve this
    (`slewExpNormalized()`).
+5. **Quantized Glide** (`quantizeToScale()` again), if both `MOD_SLOPED`
+   and `MOD_QUANT_GLIDE` are set: unlike step 2, which only quantizes
+   the target value once, this re-quantizes the already-interpolated
+   `voltageOut` on every sample throughout the ramp. Each time the
+   moving voltage crosses a scale-grid boundary, the output snaps to it
+   and holds until the next boundary is crossed – producing an audible/
+   visible staircase *within* a single stage transition, instead of a
+   smooth ramp that only snaps at the very end (Kinovice feature, no
+   direct hardware precedent; on a real 248t/MARF the same effect is
+   achieved by patching an external quantizer after VOUT). Works
+   independently of `MOD_QUANT_OCT` – even if the endpoint itself isn't
+   separately quantized, continuous re-quantization during the ramp
+   still leaves the resting value on the scale grid.
 
 <a id="sec4-5"></a>
 ### 4.5 Time Signal Path: Time Range, External Time, Time CV, Time Multiplier
@@ -967,6 +987,8 @@ own – all processing happens in `Marf248::process()` once the module is
 recognized as a direct left or right neighbor (`LINK_LIGHT` shows the
 docking status).
 
+*[See [Figure 3](#fig3) for the full panel with every jack labeled.]*
+
 ### Inputs
 
 **`CLEAR_INPUT`** *(Trigger)*<br>
@@ -1008,6 +1030,12 @@ Address Memory Store, see [4.9](#sec4-9). Sits in row 7, column C/D.
 **`ADDR_RECALL_A_POLY_INPUT` / `ADDR_RECALL_B_POLY_INPUT`** *(poly trigger (16 channels = slot 1–16))*<br>
 Address Memory Recall, see [4.9](#sec4-9). Sits in row 4, column C/D (next to SEXT, since the panel-labeling session).
 
+**`STAGE_RANGE_POLY_INPUT`** *(poly CV (16 channels = stage 1–16))*<br>
+CV channel selection for the 7-position Range knob (`STAGE_RANGE_PARAM`/`RangeKnob`, see [3.2](#sec3-2)). Seven equal zones of ~1.4286V across the 0–10V range (no "Internal/off" special case, unlike the 5-zone Volt-Ext/Time-Ext scheme, since every zone maps to a valid Range position): zone 0 = Full, 1 = Half, 2–6 = Limited +0/+2/+4/+6/+8V (`RANGE_ZONE_THRESHOLDS[6]`/`resolveRangeZone()` in `Marf248.hpp`). Overrides the panel knob position (including Pickup) completely while patched; unpatched poly channels default to 0V = zone 0 = Full. Sits in row 2, column E.
+
+**`STAGE_QUANTGLIDE_POLY_INPUT`** *(poly gate (16 channels = stage 1–16))*<br>
+Level override for `MOD_QUANT_GLIDE` (see [4.4](#sec4-4)), same principle as `STAGE_SLOPE_POLY_INPUT` above (threshold 2V, `isConnected()` guard, overrides a manual panel click). Sits in row 3, column E, directly below Range CV.
+
 ### Outputs
 
 **`START_CYCLE_A/B_OUTPUT`**<br>
@@ -1026,8 +1054,8 @@ opportunity to regroup a few jacks more sensibly. 7 rows (`colA`=16mm …
 `colE`=124mm, `y`=20mm to 104mm in 14mm steps):
 
 - **Row 1** (y=20): Clear (A) / Reset Values (B) / Preset Load, poly (C) / Run Gate A (D) / Run Gate B (E) – Run Gate sits here since this session instead of its own row, since it fits thematically with the other global housekeeping controls.
-- **Row 2** (y=34): Scale Major (A) / Scale Minor (B) / Scale Chromatic (C) / Key CV (D).
-- **Row 3** (y=48): Start of Cycle A (A) / End of Cycle A (B) / Start of Cycle B (C) / End of Cycle B (D).
+- **Row 2** (y=34): Scale Major (A) / Scale Minor (B) / Scale Chromatic (C) / Key CV (D) / **Stage Range channel-select CV (E)**.
+- **Row 3** (y=48): Start of Cycle A (A) / End of Cycle A (B) / Start of Cycle B (C) / End of Cycle B (D) / **Stage Quantized Glide gate (E, new)**.
 - **Row 4** (y=62): Strobe A/SEXT (A) / Strobe B/SEXT (B) / Address Memory Recall A (C) / Address Memory Recall B (D) / **Voltage External channel-select CV (E, new)** – Recall A/B sits here since this session instead of its own row (Kinovice's wish: Recall next to Strobe).
 - **Row 5** (y=76): Advance A (A) / Advance B (B) / Stage Skip (C) / Stage First (D) / Stage Last (E).
 - **Row 6** (y=90): Stage Stop (A) / Stage Sustain (B) / Stage Enable (C) / Stage Pulse1 (D) / Stage Pulse2 (E).
@@ -1061,6 +1089,9 @@ CPU cost (~10 operations/sample/section) is negligible.
 *[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
 
 12HP expander (originally 6HP, widened to add the Slew Curve CV column).
+
+*[See [Figure 4](#fig4) for the full panel with every jack/knob labeled.]*
+
 Also a pure jack carrier with no DSP logic of its own. Unchanged since the
 previous documentation revision.
 
@@ -1382,3 +1413,49 @@ Three quirks of `MOD_MUTE` that are easy to trip over on first test:
 - **Multiplier safety clamps (`[1e-4, 1e4]`) are purely computational
   safeguards, not musical limits** – analogous to the existing
   CV-expander time clamp (`[0.001s, 30s]`).
+
+---
+
+<a id="figures"></a>
+## List of Figures
+*[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
+
+The figures below are schematic panel diagrams (not photorealistic Rack
+exports), generated from the same coordinate constants used in the
+`ModuleWidget` constructors, so control positions and colors match the
+actual panel. Colors follow the panel's five-category scheme: System
+(grey), Musical (purple), Section A (blue), Section B (orange), Stage
+Modifier (teal) – see [1.](#sec1). Files are SVG (vector, zoomable) and
+sit in `docs/figures/` alongside this file.
+
+<a id="fig1"></a>
+**Figure 1 – Marf248 Panel Column Layout (schematic overview)**<br>
+![Marf248 Panel Overview](figures/Marf248_PanelOverview.svg)<br>
+Referenced from [3.1](#sec3-1). Shows the column structure described
+there (External CV / Section A Controls-Jacks-Outputs / 16× Stage / Section
+B Outputs-Jacks-Controls / Preset column). Since all 16 stage columns are
+structurally identical, only the first two and the last are drawn in
+full, with the rest collapsed to "…" – see Figure 2 for the detailed
+per-stage layout.
+
+<a id="fig2"></a>
+**Figure 2 – Marf248 Stage Column Detail**<br>
+![Marf248 Stage Column Detail](figures/Marf248_StageColumnDetail.svg)<br>
+Referenced from [3.2](#sec3-2). One representative stage column (all 16
+are identical, `xStep=36mm` apart), showing the Voltage/Time sliders,
+the two Stage LEDs, all 8 button rows (2 columns each, `buttonRowsY`/
+`buttonColOffsets` in `Marf248.cpp`) including the new Quantized Glide
+button next to Slope, and the Shape/Curve/Time-Range/Range block.
+
+<a id="fig3"></a>
+**Figure 3 – Marf248TriggerExpander Panel (30HP)**<br>
+![Marf248TriggerExpander Panel](figures/Marf248TriggerExpander_Panel.svg)<br>
+Referenced from [6.](#sec6). All 5 columns × 7 rows plus the LINK light,
+matching the coordinate table in the Panel Layout subsection, including
+the Stage Range CV (row 2E) and Quantized Glide (row 3E) inputs.
+
+<a id="fig4"></a>
+**Figure 4 – Marf248CvExpander Panel (12HP)**<br>
+![Marf248CvExpander Panel](figures/Marf248CvExpander_Panel.svg)<br>
+Referenced from [7.](#sec7). Stage Time CV / Slew Curve CV inputs with
+their attenuverters and offset/bias controls, plus Gate A/B outputs.

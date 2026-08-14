@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 128.5" width="200" height="514.0" font-family="Arial, Helvetica, sans-serif">
+<rect x="0" y="0" width="50" height="128.5" fill="#e4e4e2" stroke="#333333" stroke-width="0.6"/>
+<text x="25.0" y="7" font-size="3.6" fill="#222" text-anchor="middle" font-weight="bold">Marf248 – Stage Column Detail</text>
+<text x="25.0" y="11" font-size="2.4" fill="#666" text-anchor="middle">(1 of 16 identical stage columns, xStep=36mm apart)</text>
+<rect x="4" y="14" width="32" height="114" fill="none" stroke="#999" stroke-width="0.4" stroke-dasharray="1.5,1.5"/>
+<circle cx="8.5" cy="15" r="1.1" fill="#2ecc71"/>
+<circle cx="11.5" cy="15" r="1.1" fill="#e74c3c"/>
+<text x="10" y="18.2" font-size="2.2" fill="#555" text-anchor="middle" dominant-baseline="hanging">Stage LED A/B</text>
+<rect x="7.5" y="24" width="5" height="40" fill="#555" stroke="#222" stroke-width="0.3"/>
+<rect x="6.5" y="40" width="7" height="8" fill="#c8a03c" stroke="#111" stroke-width="0.4"/>
+<text x="10" y="65.5" font-size="2.3" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">Voltage Slider</text>
+<rect x="7.5" y="80" width="5" height="40" fill="#555" stroke="#222" stroke-width="0.3"/>
+<rect x="6.5" y="96" width="7" height="8" fill="#c8a03c" stroke="#111" stroke-width="0.4"/>
+<text x="10" y="121.5" font-size="2.3" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">Time Slider</text>
+<rect x="24.8" y="20.8" width="2.4" height="2.4" fill="#4a4a4a" stroke="#1f9e8e" stroke-width="0.4"/>
+<circle cx="26" cy="22" r="0.528" fill="#1f9e8e"/>
+<text x="29.5" y="22.0" font-size="2.1" fill="#1f9e8e" text-anchor="start" dominant-baseline="middle">Pulse1</text>
+<rect x="32.8" y="20.8" width="2.4" height="2.4" fill="#4a4a4a" stroke="#1f9e8e" stroke-width="0.4"/>
+<circle cx="34" cy="22" r="0.528" fill="#1f9e8e"/>
+<text x="37.5" y="22.0" font-size="2.1" fill="#1f9e8e" text-anchor="start" dominant-baseline="middle">Pulse2</text>
+<rect x="24.8" y="28.8" width="2.4" height="2.4" fill="#4a4a4a" stroke="#1f9e8e" stroke-width="0.4"/>
+<circle cx="26" cy="30" r="0.528" fill="#1f9e8e"/>
+<text x="29.5" y="30.0" font-size="2.1" fill="#1f9e8e" text-anchor="start" dominant-baseline="middle">Skip</text>
+<rect x="32.8" y="28.8" width="2.4" height="2.4" fill="#4a4a4a" stroke="#1f9e8e" stroke-width="0.4"/>
+<circle cx="34" cy="30" r="0.528" fill="#1f9e8e"/>
+<text x="37.5" y="30.0" font-size="2.1" fill="#1f9e8e" text-anchor="start" dominant-baseline="middle">Mute</text>
+<rect x="24.8" y="36.8" width="2.4" height="2.4" fill="#4a4a4a" stroke="#1f9e8e" stroke-width="0.4"/>
+<circle cx="26" cy="38" r="0.528" fill="#1f9e8e"/>
+<text x="29.5" y="38.0" font-size="2.1" fill="#1f9e8e" text-anchor="start" dominant-baseline="middle">Stop</text>
+<rect x="32.8" y="36.8" width="2.4" height="2.4" fill="#4a4a4a" stroke="#1f9e8e" stroke-width="0.4"/>
+<circle cx="34" cy="38" r="0.528" fill="#1f9e8e"/>
+<text x="37.5" y="38.0" font-size="2.1" fill="#1f9e8e" text-anchor="start" dominant-baseline="middle">Sustain</text>
+<rect x="24.8" y="44.8" width="2.4" height="2.4" fill="#4a4a4a" stroke="#1f9e8e" stroke-width="0.4"/>
+<circle cx="26" cy="46" r="0.528" fill="#1f9e8e"/>
+<text x="29.5" y="46.0" font-size="2.1" fill="#1f9e8e" text-anchor="start" dominant-baseline="middle">Enable</text>
+<rect x="24.8" y="52.8" width="2.4" height="2.4" fill="#4a4a4a" stroke="#1f9e8e" stroke-width="0.4"/>
+<circle cx="26" cy="54" r="0.528" fill="#1f9e8e"/>
+<text x="29.5" y="54.0" font-size="2.1" fill="#1f9e8e" text-anchor="start" dominant-baseline="middle">First</text>
+<rect x="32.8" y="52.8" width="2.4" height="2.4" fill="#4a4a4a" stroke="#1f9e8e" stroke-width="0.4"/>
+<circle cx="34" cy="54" r="0.528" fill="#1f9e8e"/>
+<text x="37.5" y="54.0" font-size="2.1" fill="#1f9e8e" text-anchor="start" dominant-baseline="middle">Last</text>
+<rect x="24.8" y="60.8" width="2.4" height="2.4" fill="#4a4a4a" stroke="#1f9e8e" stroke-width="0.4"/>
+<circle cx="26" cy="62" r="0.528" fill="#1f9e8e"/>
+<text x="29.5" y="62.0" font-size="2.1" fill="#1f9e8e" text-anchor="start" dominant-baseline="middle">Slope</text>
+<rect x="32.8" y="60.8" width="2.4" height="2.4" fill="#4a4a4a" stroke="#27ae60" stroke-width="0.4"/>
+<circle cx="34" cy="62" r="0.528" fill="#27ae60"/>
+<text x="37.5" y="60.7" font-size="2.1" fill="#27ae60" text-anchor="start" dominant-baseline="middle">Quant</text>
+<text x="37.5" y="63.3" font-size="2.1" fill="#27ae60" text-anchor="start" dominant-baseline="middle">Glide</text>
+<rect x="24.8" y="68.8" width="2.4" height="2.4" fill="#4a4a4a" stroke="#1f9e8e" stroke-width="0.4"/>
+<circle cx="26" cy="70" r="0.528" fill="#1f9e8e"/>
+<text x="29.5" y="70.0" font-size="2.1" fill="#1f9e8e" text-anchor="start" dominant-baseline="middle">Quant</text>
+<rect x="32.8" y="68.8" width="2.4" height="2.4" fill="#4a4a4a" stroke="#2b6cb0" stroke-width="0.4"/>
+<circle cx="34" cy="70" r="0.528" fill="#2b6cb0"/>
+<text x="37.5" y="70.0" font-size="2.1" fill="#2b6cb0" text-anchor="start" dominant-baseline="middle">Volt-Ext</text>
+<rect x="24.8" y="76.8" width="2.4" height="2.4" fill="#4a4a4a" stroke="#2b6cb0" stroke-width="0.4"/>
+<circle cx="26" cy="78" r="0.528" fill="#2b6cb0"/>
+<text x="29.5" y="78.0" font-size="2.1" fill="#2b6cb0" text-anchor="start" dominant-baseline="middle">Time-Ext</text>
+<rect x="32.8" y="76.8" width="2.4" height="2.4" fill="#4a4a4a" stroke="#c9a227" stroke-width="0.4"/>
+<circle cx="34" cy="78" r="0.528" fill="#c9a227"/>
+<text x="37.5" y="78.0" font-size="2.1" fill="#c9a227" text-anchor="start" dominant-baseline="middle">Normalize</text>
+<rect x="27" y="88" width="6" height="4" fill="#4a4a4a" stroke="#1f9e8e" stroke-width="0.4"/>
+<text x="34.5" y="90" font-size="2.1" fill="#1f9e8e" text-anchor="start" dominant-baseline="middle">Shape (Lin/Exp/Log cycle)</text>
+<rect x="27" y="94" width="6" height="4" fill="#3a3a3a" stroke="#1f9e8e" stroke-width="0.4"/>
+<text x="34.5" y="96" font-size="2.1" fill="#1f9e8e" text-anchor="start" dominant-baseline="middle">Curve (trimmer)</text>
+<rect x="26.5" y="99.5" width="7" height="5" fill="#4a4a4a" stroke="#1f9e8e" stroke-width="0.4"/>
+<text x="30" y="102" font-size="2.3" fill="#fff" text-anchor="middle" dominant-baseline="middle">TR</text>
+<text x="35.5" y="102" font-size="2.1" fill="#1f9e8e" text-anchor="start" dominant-baseline="middle">Time Range (TR1-4 cycle)</text>
+<circle cx="30" cy="110" r="4" fill="#3a3a3a" stroke="#1f9e8e" stroke-width="0.5"/>
+<text x="30" y="110" font-size="2" fill="#eab43c" text-anchor="middle" dominant-baseline="middle">F</text>
+<text x="36" y="110" font-size="2.1" fill="#1f9e8e" text-anchor="start" dominant-baseline="middle">Range (7-pos. knob F/H/L0..L8)</text>
+</svg>
