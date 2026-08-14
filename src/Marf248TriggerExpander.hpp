@@ -182,6 +182,17 @@ struct Marf248TriggerExpander : Module {
 		// massgeblich. Nicht angesteuerte Poly-Kanaele liefern automatisch
 		// 0V = Zone 0 = Full (sicherer Default).
 		STAGE_RANGE_POLY_INPUT,
+		// Stage QUANTIZED GLIDE (Poly, Kanal i = Stage i+1): identisches
+		// Pegel-Override-Prinzip wie STAGE_SLOPE_POLY_INPUT oben, setzt aber
+		// MOD_QUANT_GLIDE statt MOD_SLOPED (siehe MOD_QUANT_GLIDE-Kommentar
+		// in Marf248.hpp - snapt den kompletten Slew-Verlauf einer Stage
+		// Sample fuer Sample auf das Scale/Key-Raster statt nur den
+		// Zielwert). Kanal-Spannung >= GATE_THRESHOLD (2V) erzwingt das Bit,
+		// darunter loescht es das Bit; nur wirksam, solange die Buchse
+		// gepatcht ist (isConnected()), sonst bleibt der zuletzt per
+		// Panel-Klick gesetzte Zustand erhalten - identisches Rueckfall-
+		// Verhalten wie alle anderen Stage-Modifier-Poly-Overrides.
+		STAGE_QUANTGLIDE_POLY_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
@@ -237,6 +248,7 @@ struct Marf248TriggerExpander : Module {
 		configInput(STAGE_VOLTEXT_CH_POLY_INPUT, "Stage Voltage External channel select CV (poly, ch. 1-16 = stage 1-16, 0-2V=Internal, 2-4V=A, 4-6V=B, 6-8V=C, 8-10V=D)");
 		configInput(STAGE_TIMEEXT_CH_POLY_INPUT, "Stage Time External channel select CV (poly, ch. 1-16 = stage 1-16, 0-2V=Internal, 2-4V=A, 4-6V=B, 6-8V=C, 8-10V=D)");
 		configInput(STAGE_RANGE_POLY_INPUT, "Stage Range CV (poly, ch. 1-16 = stage 1-16, 7 zones of ~1.43V: Full/Half/L0/L2/L4/L6/L8, overrides panel knob)");
+		configInput(STAGE_QUANTGLIDE_POLY_INPUT, "Stage Quantized Glide gate (poly, ch. 1-16 = stage 1-16, high overrides panel button)");
 
 		configOutput(START_CYCLE_A_OUTPUT, "Section A Start of Cycle trigger");
 		configOutput(END_CYCLE_A_OUTPUT, "Section A End of Cycle trigger");

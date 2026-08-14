@@ -232,6 +232,11 @@ struct Marf248 : Module {
 		// Ans Enum-Ende angehaengt statt einsortiert, um bestehende Patch-
 		// Indizes nicht zu verschieben (Standard-Prinzip in dieser Datei).
 		ENUMS(STAGE_MUTE_PARAM, NUM_STAGES),
+		// Quantized Glide (siehe MOD_QUANT_GLIDE in Marf248.hpp): eigener
+		// Toggle-Button pro Stage, gleiches Klick-Prinzip wie STAGE_QUANT_
+		// PARAM. Ans Enum-Ende angehaengt statt einsortiert (Standard-
+		// Prinzip in dieser Datei, siehe STAGE_MUTE_PARAM-Kommentar oben).
+		ENUMS(STAGE_QUANTGLIDE_PARAM, NUM_STAGES),
 		PARAMS_LEN
 	};
 	enum InputId {
@@ -375,6 +380,8 @@ struct Marf248 : Module {
 		KEY_LIGHT,
 		// Passend zu STAGE_MUTE_PARAM oben (Session "Hauptmodul-Relayout").
 		ENUMS(STAGE_MUTE_LIGHT, NUM_STAGES),
+		// Quantized Glide (siehe STAGE_QUANTGLIDE_PARAM oben).
+		ENUMS(STAGE_QUANTGLIDE_LIGHT, NUM_STAGES),
 		LIGHTS_LEN
 	};
 
@@ -542,6 +549,7 @@ struct Marf248 : Module {
 	dsp::SchmittTrigger stageSkipTrigger[NUM_STAGES];
 	dsp::SchmittTrigger stageTrangeTrigger[NUM_STAGES];
 	dsp::SchmittTrigger stageMuteTrigger[NUM_STAGES];
+	dsp::SchmittTrigger stageQuantGlideTrigger[NUM_STAGES];
 
 	// CPU-Optimierung (siehe perf-Profiling-Session): die Klick-Button-
 	// Erkennung + Light-Update fuer alle 16 Stages (weiter unten in
@@ -608,6 +616,7 @@ struct Marf248 : Module {
 			configButton(STAGE_ENABLE_PARAM + i, string::f("Stage %d Enable", i + 1));
 			configButton(STAGE_SLOPE_PARAM + i, string::f("Stage %d Slope", i + 1));
 			configButton(STAGE_QUANT_PARAM + i, string::f("Stage %d Quantize (1V/Oct)", i + 1));
+			configButton(STAGE_QUANTGLIDE_PARAM + i, string::f("Stage %d Quantized Glide", i + 1));
 			// Drehschalter mit 7 Raststufen: 0=Full, 1=Half, 2..6=Limited +0/+2/+4/+6/+8.
 			// snapEnabled sorgt dafuer, dass der Regler nur auf ganzzahligen
 			// Positionen einrastet statt stufenlos zu drehen.
@@ -1045,6 +1054,9 @@ struct Marf248 : Module {
 			if (stageQuantTrigger[i].process(params[STAGE_QUANT_PARAM + i].getValue())) {
 				stageModifier[i] ^= MOD_QUANT_OCT;
 			}
+			if (stageQuantGlideTrigger[i].process(params[STAGE_QUANTGLIDE_PARAM + i].getValue())) {
+				stageModifier[i] ^= MOD_QUANT_GLIDE;
+			}
 			// Drehschalter statt Cycle-Button: die Position (0-6) codiert den
 			// Range-Zustand direkt und wird jeden Frame in die entsprechenden
 			// stageModifier-Bits uebersetzt (0=Full, 1=Half, 2..6=Limited +0..+8).
@@ -1139,6 +1151,7 @@ struct Marf248 : Module {
 			lights[STAGE_ENABLE_LIGHT + i].setBrightness(stageModifier[i] & MOD_ENABLE ? 1.f : 0.f);
 			lights[STAGE_SLOPE_LIGHT + i].setBrightness(stageModifier[i] & MOD_SLOPED ? 1.f : 0.f);
 			lights[STAGE_QUANT_LIGHT + i].setBrightness(stageModifier[i] & MOD_QUANT_OCT ? 1.f : 0.f);
+			lights[STAGE_QUANTGLIDE_LIGHT + i].setBrightness(stageModifier[i] & MOD_QUANT_GLIDE ? 1.f : 0.f);
 			lights[STAGE_SHAPE_EXP_LIGHT + i].setBrightness(stageModifier[i] & MOD_SLEW_EXP ? 1.f : 0.f);
 			lights[STAGE_SHAPE_LOG_LIGHT + i].setBrightness(stageModifier[i] & MOD_SLEW_LOG ? 1.f : 0.f);
 			lights[STAGE_NORMALIZE_LIGHT + i].setBrightness(stageModifier[i] & MOD_SLEW_NORMALIZE ? 1.f : 0.f);
@@ -1330,6 +1343,23 @@ struct Marf248 : Module {
 					stageModifier[i] &= ~MOD_SLOPED;
 				}
 				lights[STAGE_SLOPE_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
+			}
+		}
+
+		// Stage QUANTIZED GLIDE Poly-Gate vom Trigger-Expander: identisches
+		// Prinzip wie STAGE_SLOPE_POLY_INPUT oben, setzt MOD_QUANT_GLIDE
+		// statt MOD_SLOPED (siehe MOD_QUANT_GLIDE-Kommentar in Marf248.hpp).
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_QUANTGLIDE_POLY_INPUT).isConnected()) {
+			const float GATE_THRESHOLD = 2.f;
+			for (int i = 0; i < NUM_STAGES; i++) {
+				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_QUANTGLIDE_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
+				if (gateHigh) {
+					stageModifier[i] |= MOD_QUANT_GLIDE;
+				}
+				else {
+					stageModifier[i] &= ~MOD_QUANT_GLIDE;
+				}
+				lights[STAGE_QUANTGLIDE_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
 			}
 		}
 
@@ -3294,7 +3324,11 @@ struct Marf248Widget : ModuleWidget {
 
 			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[5])), module, Marf248::STAGE_SLOPE_PARAM + i));
 			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[5])), module, Marf248::STAGE_SLOPE_LIGHT + i));
-			// buttonColOffsets[1] in dieser Reihe bewusst frei.
+			// Quantized Glide (siehe MOD_QUANT_GLIDE in Marf248.hpp): belegt
+			// den bisher freien buttonColOffsets[1]-Slot in dieser Reihe,
+			// thematisch direkt neben Slope (nur mit Slope zusammen wirksam).
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[5])), module, Marf248::STAGE_QUANTGLIDE_PARAM + i));
+			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[5])), module, Marf248::STAGE_QUANTGLIDE_LIGHT + i));
 
 			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[6])), module, Marf248::STAGE_QUANT_PARAM + i));
 			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[6])), module, Marf248::STAGE_QUANT_LIGHT + i));

@@ -93,6 +93,22 @@ enum StageModifierBits {
 	// Hauptmodul folgt erst mit dem separat geplanten Panel-Relayout
 	// (Kinovice-Entscheidung, eigene Session).
 	MOD_MUTE = 1 << 23,
+	// Quantized Glide (Kinovice-Feature, keine Buchla/Tiptop-Original-
+	// Entsprechung): im Original quantisiert MOD_QUANT_OCT nur den
+	// Zielwert (target) der Stage, der Slew-Verlauf dorthin bleibt eine
+	// glatte Kurve (siehe MOD_QUANT_OCT-Kommentar/quantizeToScale()
+	// weiter unten). Mit MOD_QUANT_GLIDE wird stattdessen der komplette
+	// interpolierte Verlauf waehrend des Slews Sample fuer Sample auf
+	// das globale Scale/Key-Raster gesnapt - dadurch entsteht die
+	// hoerbare/sichtbare Treppe *innerhalb* eines einzelnen Stage-
+	// Uebergangs (vgl. externer Quantizer im Signalweg nach einem
+	// klassischen MARF/248t). Nur wirksam in Kombination mit
+	// MOD_SLOPED (ohne Slope springt der Output ohnehin sofort auf den
+	// Zielwert, siehe process()); wirkt unabhaengig von MOD_QUANT_OCT -
+	// auch wenn der Zielwert selbst nicht separat quantisiert ist, snapt
+	// MOD_QUANT_GLIDE trotzdem kontinuierlich, wodurch der Endwert de
+	// facto ebenfalls quantisiert erreicht wird.
+	MOD_QUANT_GLIDE = 1 << 24,
 };
 
 // Sekunden-Spannen der 4 Time-Range-Bereiche, indiziert 0..3 (TR1..TR4).
@@ -1000,6 +1016,13 @@ struct Afg {
 		if (stageModifier[currentStage] & MOD_SLOPED) {
 			float shaped = applySlewCurve(phase, stageModifier[currentStage], stageCurvePower[currentStage]);
 			voltageOut = voltageFrom + (target - voltageFrom) * shaped;
+			if (stageModifier[currentStage] & MOD_QUANT_GLIDE) {
+				// Quantized Glide: snappt jeden Sample-Wert waehrend des
+				// Slews (nicht nur den bereits oben ggf. quantisierten
+				// target) auf das Scale/Key-Raster - siehe MOD_QUANT_GLIDE-
+				// Kommentar im Enum weiter oben.
+				voltageOut = quantizeToScale(voltageOut, quantKey, quantScaleMode);
+			}
 		}
 		else {
 			voltageOut = target;

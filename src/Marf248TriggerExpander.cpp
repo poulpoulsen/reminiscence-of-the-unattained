@@ -149,6 +149,12 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		addLabel(Vec(colC, y), "SOC B", COLOR_SECTION_B);
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colD, y)), module, Marf248TriggerExpander::END_CYCLE_B_OUTPUT));
 		addLabel(Vec(colD, y), "EOC B", COLOR_SECTION_B);
+		// Spalte E war in Reihe 3 bisher leer - jetzt belegt mit dem
+		// Quantized-Glide-Poly-Override (Kinovice-Wunsch, direkt unterhalb
+		// von RANGE CV in Reihe 2, thematisch verwandt: beides Stage-
+		// Modifier-CVs).
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colE, y)), module, Marf248TriggerExpander::STAGE_QUANTGLIDE_POLY_INPUT));
+		addLabel(Vec(colE, y), "QUANT GLIDE", COLOR_STAGEMOD);
 
 		// Reihe 4: SEXT (externe Strobe A/B) + Address Memory Recall A/B
 		// direkt daneben (Kinovice-Wunsch: Recall A neben Strobe B, Recall B
