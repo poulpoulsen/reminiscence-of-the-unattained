@@ -389,6 +389,22 @@ struct Marf248 : Module {
 	// (statt Rechtsklick-Menue) und per dataToJson/dataFromJson persistiert.
 	int stageModifier[NUM_STAGES] = {};
 
+	// Ergebnisse der Trigger-Expander Stage-Modifier-Poly-CV-Overrides
+	// (Session "CPU-Optimierung Stage-Modifier-Scans"): vorher lokale
+	// process()-Variablen, die JEDEN Sample frisch auf ihren Default
+	// zurueckgesetzt und bei gepatchtem Kabel neu berechnet wurden. Jetzt
+	// Member, da die zugehoerige Scan-Schleife per stageCvOverrideDivider
+	// (/8) dekimiert ist und ihren zuletzt berechneten Wert ueber die
+	// Samples zwischen zwei Divider-Ticks hinweg BEHALTEN muss (siehe
+	// process()) - sonst waere das Override 7 von 8 Samples lang
+	// wirkungslos. -1 = kein Kanal-Override, 0 = keine Ratchet-Count-CV
+	// gepatcht, 0.f = kein Ratchet-Offset (siehe jeweilige Kommentare an
+	// der Berechnungsstelle in process()).
+	int voltExtChannelOverride[NUM_STAGES];
+	int timeExtChannelOverride[NUM_STAGES];
+	int stageRatchetCount[NUM_STAGES];
+	float stageRatchetOffset[NUM_STAGES];
+
 	// Laufrichtung pro Section: zwei unabhaengige booleans statt eines
 	// einzelnen Zustands, da MODE_A/B_PARAM und PENDULUM_A/B_PARAM jetzt
 	// getrennte Toggle-Buttons sind (analog zu den Modifier-Buttons pro
@@ -563,6 +579,26 @@ struct Marf248 : Module {
 	// (14 SchmittTrigger + 14 Light-Updates x 16 Stages).
 	dsp::ClockDivider stageButtonDivider;
 
+	// CPU-Audit (Session "CPU-Optimierung Stage-Modifier-Scans", Kinovice-
+	// Befund: Hauptmodul-Last ca. 3% bei ca. 0,1% pro Expander): die 16
+	// Trigger-Expander Stage-Modifier-Poly-CV-Scans (Skip, First, Last,
+	// Stop, Sustain, Enable, Pulse1, Pulse2, Mute, Ratchet Enable, Slope,
+	// Quantized Glide, VoltExt-Kanal, TimeExt-Kanal, Ratchet Count, Ratchet
+	// Offset) liefen bisher UNDEKIMIERT jeden Sample - anders begruendet
+	// als beim Klick-Button-Block oben ("CV soll pegelgetreu reagieren"),
+	// aber diese Einzelentscheidung pro Feature-Session hat sich ueber 16
+	// Bloecke hinweg zum dominanten Kostenfaktor summiert (bis zu 16x16 =
+	// 256 getPolyVoltage()-Aufrufe/Sample plus redundante trigExp->
+	// getInput()-Lookups je Block). Kinovice-Entscheidung (Nachtrag): /8
+	// statt undekimiert - Stage-Modifier sind Kontrolldaten (Gate-
+	// Schwellen/Zonen), keine Audiosignale; bei 48kHz max. ~0,17ms, bei
+	// den vom Nutzer gefahrenen 24-32kHz Sample-Raten entsprechend mehr,
+	// aber weiterhin weit unter jeder wahrnehmbaren Schwelle. Bewusst
+	// eigener, schnellerer Divisor als stageButtonDivider (/32) - CV-
+	// Override soll trotzdem spuerbar reaktionsschneller bleiben als reine
+	// Panel-Klicks.
+	dsp::ClockDivider stageCvOverrideDivider;
+
 	// BPM-Feature: Live-Anzeigewerte fuers Panel (NVG-Text), analog zur
 	// bestehenden Time-Sekunden-Anzeige am Time-Slider. Die eigentliche
 	// BPM-Berechnung/Multiplier-Rueckrechnung laeuft jeden Sample (siehe
@@ -588,9 +624,18 @@ struct Marf248 : Module {
 		for (int i = 0; i < NUM_STAGES; i++) {
 			lastCurveKnob[i] = -1.f;
 			cachedCurvePower[i] = SLEW_CURVE_POWER;
+			// Default-Zustand der Trigger-Expander CV-Override-Arrays (siehe
+			// Member-Deklaration oben) - identisch zu den fruehreren lokalen
+			// Reset-Schleifen in process(), jetzt einmalig im Konstruktor,
+			// da die Arrays jetzt zwischen den Samples persistieren.
+			voltExtChannelOverride[i] = -1;
+			timeExtChannelOverride[i] = -1;
+			stageRatchetCount[i] = 0;
+			stageRatchetOffset[i] = 0.f;
 		}
 
 		stageButtonDivider.setDivision(32);
+		stageCvOverrideDivider.setDivision(8);
 
 		for (int i = 0; i < NUM_STAGES; i++) {
 			StageVoltageQuantity* vq = configParam<StageVoltageQuantity>(STAGE_VOLTAGE_PARAM + i, 0.f, 10.f, 0.f,
@@ -1164,310 +1209,215 @@ struct Marf248 : Module {
 		}
 		}
 
-		// Stage SKIP Poly-Gate vom Trigger-Expander: bewusst AUSSERHALB des
-		// stageButtonDivider-Blocks oben und jeden Frame verarbeitet, da CV
-		// pegelgetreu reagieren soll, statt mit dessen Dezimierungs-Latenz
-		// (anders als die reinen Klick-Buttons, wo das laut Profiling
-		// unerheblich ist). Nur wirksam, solange die Buchse gepatcht ist -
-		// dann hat das CV Vorrang und ueberschreibt einen im selben Frame
-		// verarbeiteten manuellen Klick auf STAGE_SKIP_PARAM (siehe
-		// stageSkipTrigger-Verarbeitung oben). Ohne Kabel bleibt exakt der
-		// zuletzt per Klick gesetzte Zustand erhalten. getPolyVoltage(i)
-		// liefert 0V fuer nicht gepatchte/unbenutzte Kanaele (siehe
-		// PRESET_LOAD_POLY_INPUT-Kommentar in Marf248TriggerExpander.hpp),
-		// loescht MOD_SKIP fuer die betreffende Stage also automatisch.
-		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_SKIP_POLY_INPUT).isConnected()) {
+		// Trigger-Expander Stage-Modifier-Poly-CV-Overrides (Skip, First,
+		// Last, Stop, Sustain, Enable, Pulse1, Pulse2, Mute, Ratchet Enable,
+		// Slope, Quantized Glide, VoltExt/TimeExt-Kanalwahl, Ratchet Count,
+		// Ratchet Offset) - Session "CPU-Optimierung Stage-Modifier-Scans"
+		// (CPU-Audit-Ergebnis: 16 vorher einzelne, jeweils undekimierte
+		// Bloecke waren der dominante Anteil der 3% Hauptmodul-Last, siehe
+		// stageCvOverrideDivider-Kommentar oben). Jetzt zu EINER
+		// gemeinsamen, dekimierten Schleife zusammengefasst:
+		// - Alle beteiligten Input-Referenzen werden EINMAL vor der
+		//   Schleife geholt (trigExp->getInput() ist zwar an sich billig,
+		//   wurde aber vorher pro Block bis zu 17x/Sample erneut
+		//   aufgerufen statt gecacht - gleiches Muster wie beim CV-
+		//   Expander weiter unten, siehe cvExp/cvTimeInput etc.).
+		// - isConnected() wird ebenfalls einmal pro Divider-Tick gecacht
+		//   statt pro Stage-Iteration erneut abgefragt.
+		// - Fuer die reinen Bit-Toggle-Modifier (Skip...QuantGlide) gilt
+		//   weiterhin: ohne Kabel bleibt der zuletzt per Klick gesetzte
+		//   Zustand erhalten (kein else-Zweig - stageModifier[i] wird nur
+		//   bei gepatchtem Kabel angefasst, identisches Verhalten wie
+		//   vorher).
+		// - Fuer die vier reinen CV-Ableitungen ohne "letzten Panel-
+		//   Klick"-Fallback (voltExtChannelOverride/timeExtChannelOverride/
+		//   stageRatchetCount/stageRatchetOffset) gilt weiterhin: ohne
+		//   Kabel Default (-1/-1/0/0.f) - dafuer jetzt ein expliziter
+		//   else-Zweig, da diese Arrays seit dieser Session Member sind
+		//   (siehe dortiger Kommentar) und sich sonst nicht mehr von
+		//   selbst zuruecksetzen wuerden.
+		if (stageCvOverrideDivider.process()) {
+			Input* skipIn = nullptr;
+			Input* firstIn = nullptr;
+			Input* lastIn = nullptr;
+			Input* stopIn = nullptr;
+			Input* sustainIn = nullptr;
+			Input* enableIn = nullptr;
+			Input* pulse1In = nullptr;
+			Input* pulse2In = nullptr;
+			Input* muteIn = nullptr;
+			Input* ratchetIn = nullptr;
+			Input* slopeIn = nullptr;
+			Input* quantGlideIn = nullptr;
+			Input* voltExtChIn = nullptr;
+			Input* timeExtChIn = nullptr;
+			Input* ratchetCountIn = nullptr;
+			Input* ratchetOffsetIn = nullptr;
+
+			bool skipConn = false, firstConn = false, lastConn = false, stopConn = false;
+			bool sustainConn = false, enableConn = false, pulse1Conn = false, pulse2Conn = false;
+			bool muteConn = false, ratchetConn = false, slopeConn = false, quantGlideConn = false;
+			bool voltExtChConn = false, timeExtChConn = false, ratchetCountConn = false, ratchetOffsetConn = false;
+
+			if (trigExp) {
+				skipIn = &trigExp->getInput(Marf248TriggerExpander::STAGE_SKIP_POLY_INPUT);
+				firstIn = &trigExp->getInput(Marf248TriggerExpander::STAGE_FIRST_POLY_INPUT);
+				lastIn = &trigExp->getInput(Marf248TriggerExpander::STAGE_LAST_POLY_INPUT);
+				stopIn = &trigExp->getInput(Marf248TriggerExpander::STAGE_STOP_POLY_INPUT);
+				sustainIn = &trigExp->getInput(Marf248TriggerExpander::STAGE_SUSTAIN_POLY_INPUT);
+				enableIn = &trigExp->getInput(Marf248TriggerExpander::STAGE_ENABLE_POLY_INPUT);
+				pulse1In = &trigExp->getInput(Marf248TriggerExpander::STAGE_PULSE1_POLY_INPUT);
+				pulse2In = &trigExp->getInput(Marf248TriggerExpander::STAGE_PULSE2_POLY_INPUT);
+				muteIn = &trigExp->getInput(Marf248TriggerExpander::STAGE_MUTE_POLY_INPUT);
+				ratchetIn = &trigExp->getInput(Marf248TriggerExpander::STAGE_RATCHET_POLY_INPUT);
+				slopeIn = &trigExp->getInput(Marf248TriggerExpander::STAGE_SLOPE_POLY_INPUT);
+				quantGlideIn = &trigExp->getInput(Marf248TriggerExpander::STAGE_QUANTGLIDE_POLY_INPUT);
+				voltExtChIn = &trigExp->getInput(Marf248TriggerExpander::STAGE_VOLTEXT_CH_POLY_INPUT);
+				timeExtChIn = &trigExp->getInput(Marf248TriggerExpander::STAGE_TIMEEXT_CH_POLY_INPUT);
+				ratchetCountIn = &trigExp->getInput(Marf248TriggerExpander::STAGE_RATCHET_COUNT_POLY_INPUT);
+				ratchetOffsetIn = &trigExp->getInput(Marf248TriggerExpander::STAGE_RATCHET_OFFSET_POLY_INPUT);
+
+				skipConn = skipIn->isConnected();
+				firstConn = firstIn->isConnected();
+				lastConn = lastIn->isConnected();
+				stopConn = stopIn->isConnected();
+				sustainConn = sustainIn->isConnected();
+				enableConn = enableIn->isConnected();
+				pulse1Conn = pulse1In->isConnected();
+				pulse2Conn = pulse2In->isConnected();
+				muteConn = muteIn->isConnected();
+				ratchetConn = ratchetIn->isConnected();
+				slopeConn = slopeIn->isConnected();
+				quantGlideConn = quantGlideIn->isConnected();
+				voltExtChConn = voltExtChIn->isConnected();
+				timeExtChConn = timeExtChIn->isConnected();
+				ratchetCountConn = ratchetCountIn->isConnected();
+				ratchetOffsetConn = ratchetOffsetIn->isConnected();
+			}
+
 			const float GATE_THRESHOLD = 2.f;
+
 			for (int i = 0; i < NUM_STAGES; i++) {
-				bool skipGateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_SKIP_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
-				if (skipGateHigh) {
-					stageModifier[i] |= MOD_SKIP;
+				if (skipConn) {
+					bool g = skipIn->getPolyVoltage(i) >= GATE_THRESHOLD;
+					if (g) stageModifier[i] |= MOD_SKIP; else stageModifier[i] &= ~MOD_SKIP;
+					lights[STAGE_SKIP_LIGHT + i].setBrightness(g ? 1.f : 0.f);
+				}
+				if (firstConn) {
+					bool g = firstIn->getPolyVoltage(i) >= GATE_THRESHOLD;
+					if (g) stageModifier[i] |= MOD_FIRST; else stageModifier[i] &= ~MOD_FIRST;
+					lights[STAGE_FIRST_LIGHT + i].setBrightness(g ? 1.f : 0.f);
+				}
+				if (lastConn) {
+					bool g = lastIn->getPolyVoltage(i) >= GATE_THRESHOLD;
+					if (g) stageModifier[i] |= MOD_LAST; else stageModifier[i] &= ~MOD_LAST;
+					lights[STAGE_LAST_LIGHT + i].setBrightness(g ? 1.f : 0.f);
+				}
+				if (stopConn) {
+					bool g = stopIn->getPolyVoltage(i) >= GATE_THRESHOLD;
+					if (g) stageModifier[i] |= MOD_STOP; else stageModifier[i] &= ~MOD_STOP;
+					lights[STAGE_STOP_LIGHT + i].setBrightness(g ? 1.f : 0.f);
+				}
+				if (sustainConn) {
+					bool g = sustainIn->getPolyVoltage(i) >= GATE_THRESHOLD;
+					if (g) stageModifier[i] |= MOD_SUSTAIN; else stageModifier[i] &= ~MOD_SUSTAIN;
+					lights[STAGE_SUSTAIN_LIGHT + i].setBrightness(g ? 1.f : 0.f);
+				}
+				if (enableConn) {
+					bool g = enableIn->getPolyVoltage(i) >= GATE_THRESHOLD;
+					if (g) stageModifier[i] |= MOD_ENABLE; else stageModifier[i] &= ~MOD_ENABLE;
+					lights[STAGE_ENABLE_LIGHT + i].setBrightness(g ? 1.f : 0.f);
+				}
+				if (pulse1Conn) {
+					bool g = pulse1In->getPolyVoltage(i) >= GATE_THRESHOLD;
+					if (g) stageModifier[i] |= MOD_PULSE1; else stageModifier[i] &= ~MOD_PULSE1;
+					lights[STAGE_PULSE1_LIGHT + i].setBrightness(g ? 1.f : 0.f);
+				}
+				if (pulse2Conn) {
+					bool g = pulse2In->getPolyVoltage(i) >= GATE_THRESHOLD;
+					if (g) stageModifier[i] |= MOD_PULSE2; else stageModifier[i] &= ~MOD_PULSE2;
+					lights[STAGE_PULSE2_LIGHT + i].setBrightness(g ? 1.f : 0.f);
+				}
+				if (muteConn) {
+					bool g = muteIn->getPolyVoltage(i) >= GATE_THRESHOLD;
+					if (g) stageModifier[i] |= MOD_MUTE; else stageModifier[i] &= ~MOD_MUTE;
+					lights[STAGE_MUTE_LIGHT + i].setBrightness(g ? 1.f : 0.f);
+				}
+				if (ratchetConn) {
+					// Kein Light-Update (keine STAGE_RATCHET_LIGHT vorhanden,
+					// siehe urspruenglicher Kommentar).
+					bool g = ratchetIn->getPolyVoltage(i) >= GATE_THRESHOLD;
+					if (g) stageModifier[i] |= MOD_RATCHET; else stageModifier[i] &= ~MOD_RATCHET;
+				}
+				if (slopeConn) {
+					bool g = slopeIn->getPolyVoltage(i) >= GATE_THRESHOLD;
+					if (g) stageModifier[i] |= MOD_SLOPED; else stageModifier[i] &= ~MOD_SLOPED;
+					lights[STAGE_SLOPE_LIGHT + i].setBrightness(g ? 1.f : 0.f);
+				}
+				if (quantGlideConn) {
+					bool g = quantGlideIn->getPolyVoltage(i) >= GATE_THRESHOLD;
+					if (g) stageModifier[i] |= MOD_QUANT_GLIDE; else stageModifier[i] &= ~MOD_QUANT_GLIDE;
+					lights[STAGE_QUANTGLIDE_LIGHT + i].setBrightness(g ? 1.f : 0.f);
+				}
+
+				// VOLT_EXT/TIME_EXT-Kanalwahl (5 Zonen a 2V, siehe
+				// urspruenglicher Kommentar): reine CV-Ableitung ohne
+				// "letzten Klick"-Fallback, daher explizites Zuruecksetzen
+				// im else-Zweig (Arrays sind jetzt Member, siehe dortiger
+				// Kommentar).
+				if (voltExtChConn) {
+					float v = rack::clamp(voltExtChIn->getPolyVoltage(i), 0.f, 10.f);
+					int zone = (int) rack::clamp(v / 2.f, 0.f, 4.f);
+					if (zone == 0) {
+						stageModifier[i] &= ~MOD_VOLT_EXT;
+						voltExtChannelOverride[i] = -1;
+					}
+					else {
+						stageModifier[i] |= MOD_VOLT_EXT;
+						voltExtChannelOverride[i] = zone - 1;
+					}
+					lights[STAGE_VOLTEXT_LIGHT + i].setBrightness(stageModifier[i] & MOD_VOLT_EXT ? 1.f : 0.f);
 				}
 				else {
-					stageModifier[i] &= ~MOD_SKIP;
+					// Kein Kabel (mehr) gepatcht: nur der Kanal-Override
+					// faellt zurueck auf -1 (kein Override) - das MOD_VOLT_EXT-
+					// Bit selbst bleibt unberuehrt und folgt weiterhin dem
+					// zuletzt per Klick gesetzten Zustand, exakt wie vorher
+					// (siehe Kommentar an urspruenglicher Stelle).
+					voltExtChannelOverride[i] = -1;
 				}
-				// Eigenstaendiges Licht-Update statt auf den naechsten
-				// stageButtonDivider-Zyklus zu warten - CV-Override soll
-				// optisch ohne Dezimierungs-Latenz sichtbar sein.
-				lights[STAGE_SKIP_LIGHT + i].setBrightness(skipGateHigh ? 1.f : 0.f);
-			}
-		}
-
-		// Stage FIRST Poly-Gate vom Trigger-Expander: identisches Prinzip wie
-		// STAGE_SKIP_POLY_INPUT oben (siehe dortigen Kommentar fuer Details).
-		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_FIRST_POLY_INPUT).isConnected()) {
-			const float GATE_THRESHOLD = 2.f;
-			for (int i = 0; i < NUM_STAGES; i++) {
-				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_FIRST_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
-				if (gateHigh) {
-					stageModifier[i] |= MOD_FIRST;
-				}
-				else {
-					stageModifier[i] &= ~MOD_FIRST;
-				}
-				lights[STAGE_FIRST_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
-			}
-		}
-
-		// Stage LAST Poly-Gate vom Trigger-Expander: identisches Prinzip wie
-		// STAGE_SKIP_POLY_INPUT oben.
-		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_LAST_POLY_INPUT).isConnected()) {
-			const float GATE_THRESHOLD = 2.f;
-			for (int i = 0; i < NUM_STAGES; i++) {
-				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_LAST_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
-				if (gateHigh) {
-					stageModifier[i] |= MOD_LAST;
+				if (timeExtChConn) {
+					float v = rack::clamp(timeExtChIn->getPolyVoltage(i), 0.f, 10.f);
+					int zone = (int) rack::clamp(v / 2.f, 0.f, 4.f);
+					if (zone == 0) {
+						stageModifier[i] &= ~MOD_TIME_EXT;
+						timeExtChannelOverride[i] = -1;
+					}
+					else {
+						stageModifier[i] |= MOD_TIME_EXT;
+						timeExtChannelOverride[i] = zone - 1;
+					}
+					lights[STAGE_TIMEEXT_LIGHT + i].setBrightness(stageModifier[i] & MOD_TIME_EXT ? 1.f : 0.f);
 				}
 				else {
-					stageModifier[i] &= ~MOD_LAST;
+					timeExtChannelOverride[i] = -1;
 				}
-				lights[STAGE_LAST_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
-			}
-		}
 
-		// Stage STOP Poly-Gate vom Trigger-Expander: identisches Prinzip wie
-		// STAGE_SKIP_POLY_INPUT oben.
-		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_STOP_POLY_INPUT).isConnected()) {
-			const float GATE_THRESHOLD = 2.f;
-			for (int i = 0; i < NUM_STAGES; i++) {
-				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_STOP_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
-				if (gateHigh) {
-					stageModifier[i] |= MOD_STOP;
+				// Ratchet-Count/-Offset (siehe urspruenglicher Kommentar):
+				// ebenfalls reine CV-Ableitungen, Default 0 bzw. 0.f ohne
+				// gepatchtes Kabel.
+				if (ratchetCountConn) {
+					stageRatchetCount[i] = resolveRatchetCount(ratchetCountIn->getPolyVoltage(i));
 				}
 				else {
-					stageModifier[i] &= ~MOD_STOP;
+					stageRatchetCount[i] = 0;
 				}
-				lights[STAGE_STOP_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
-			}
-		}
-
-		// Stage SUSTAIN Poly-Gate vom Trigger-Expander: identisches Prinzip
-		// wie STAGE_SKIP_POLY_INPUT oben.
-		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_SUSTAIN_POLY_INPUT).isConnected()) {
-			const float GATE_THRESHOLD = 2.f;
-			for (int i = 0; i < NUM_STAGES; i++) {
-				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_SUSTAIN_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
-				if (gateHigh) {
-					stageModifier[i] |= MOD_SUSTAIN;
+				if (ratchetOffsetConn) {
+					stageRatchetOffset[i] = rack::clamp(ratchetOffsetIn->getPolyVoltage(i), 0.f, 10.f) / 10.f;
 				}
 				else {
-					stageModifier[i] &= ~MOD_SUSTAIN;
+					stageRatchetOffset[i] = 0.f;
 				}
-				lights[STAGE_SUSTAIN_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
-			}
-		}
-
-		// Stage ENABLE Poly-Gate vom Trigger-Expander: identisches Prinzip
-		// wie STAGE_SKIP_POLY_INPUT oben.
-		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_ENABLE_POLY_INPUT).isConnected()) {
-			const float GATE_THRESHOLD = 2.f;
-			for (int i = 0; i < NUM_STAGES; i++) {
-				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_ENABLE_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
-				if (gateHigh) {
-					stageModifier[i] |= MOD_ENABLE;
-				}
-				else {
-					stageModifier[i] &= ~MOD_ENABLE;
-				}
-				lights[STAGE_ENABLE_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
-			}
-		}
-
-		// Stage PULSE1 Poly-Gate vom Trigger-Expander: identisches Prinzip
-		// wie STAGE_SKIP_POLY_INPUT oben.
-		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_PULSE1_POLY_INPUT).isConnected()) {
-			const float GATE_THRESHOLD = 2.f;
-			for (int i = 0; i < NUM_STAGES; i++) {
-				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_PULSE1_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
-				if (gateHigh) {
-					stageModifier[i] |= MOD_PULSE1;
-				}
-				else {
-					stageModifier[i] &= ~MOD_PULSE1;
-				}
-				lights[STAGE_PULSE1_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
-			}
-		}
-
-		// Stage PULSE2 Poly-Gate vom Trigger-Expander: identisches Prinzip
-		// wie STAGE_SKIP_POLY_INPUT oben.
-		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_PULSE2_POLY_INPUT).isConnected()) {
-			const float GATE_THRESHOLD = 2.f;
-			for (int i = 0; i < NUM_STAGES; i++) {
-				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_PULSE2_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
-				if (gateHigh) {
-					stageModifier[i] |= MOD_PULSE2;
-				}
-				else {
-					stageModifier[i] &= ~MOD_PULSE2;
-				}
-				lights[STAGE_PULSE2_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
-			}
-		}
-
-		// Stage MUTE Poly-Gate vom Trigger-Expander: identisches Prinzip wie
-		// STAGE_PULSE1/2_POLY_INPUT oben, setzt aber MOD_MUTE statt
-		// MOD_PULSE1/2 - unterdrueckt nur die Trigger-Erzeugung (siehe
-		// Afg::process()), die Pulse1/2-Programmierung selbst bleibt
-		// unangetastet. Seit Session "Hauptmodul-Relayout" gibt es einen
-		// eigenen Panel-Button/Light (STAGE_MUTE_PARAM/LIGHT) - CV hat wie
-		// bei allen anderen Stage-Modifiern Vorrang vor dem manuellen Klick,
-		// solange die Buchse gepatcht ist (siehe STAGE_SKIP_POLY_INPUT-
-		// Kommentar oben fuer das allgemeine Rueckfall-Prinzip).
-		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_MUTE_POLY_INPUT).isConnected()) {
-			const float GATE_THRESHOLD = 2.f;
-			for (int i = 0; i < NUM_STAGES; i++) {
-				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_MUTE_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
-				if (gateHigh) {
-					stageModifier[i] |= MOD_MUTE;
-				}
-				else {
-					stageModifier[i] &= ~MOD_MUTE;
-				}
-				lights[STAGE_MUTE_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
-			}
-		}
-
-		// Stage RATCHET Enable-Gate vom Trigger-Expander (Session
-		// "Ratcheting", siehe MOD_RATCHET-Kommentar in Marf248.hpp):
-		// identisches isConnected()-Guard-Prinzip wie STAGE_MUTE_POLY_INPUT
-		// oben - KEIN Hauptpanel-Pendant in dieser Session, daher auch kein
-		// Light-Update hier (es gibt keine STAGE_RATCHET_LIGHT). Ohne
-		// gepatchtes Kabel bleibt das Bit dauerhaft geloescht, da es keinen
-		// "letzten Panel-Klick"-Zustand gibt, auf den zurueckgefallen werden
-		// koennte.
-		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_RATCHET_POLY_INPUT).isConnected()) {
-			const float GATE_THRESHOLD = 2.f;
-			for (int i = 0; i < NUM_STAGES; i++) {
-				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_RATCHET_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
-				if (gateHigh) {
-					stageModifier[i] |= MOD_RATCHET;
-				}
-				else {
-					stageModifier[i] &= ~MOD_RATCHET;
-				}
-			}
-		}
-
-		// Stage SLOPE Poly-Gate vom Trigger-Expander: identisches Prinzip
-		// wie STAGE_SKIP_POLY_INPUT oben. MOD_SLOPED ist ein einfaches
-		// Ein/Aus-Bit (rampt vs. springt) - nicht zu verwechseln mit Shape
-		// (Lin/Exp/Log-Zyklus), das bewusst ohne CV-Override bleibt.
-		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_SLOPE_POLY_INPUT).isConnected()) {
-			const float GATE_THRESHOLD = 2.f;
-			for (int i = 0; i < NUM_STAGES; i++) {
-				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_SLOPE_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
-				if (gateHigh) {
-					stageModifier[i] |= MOD_SLOPED;
-				}
-				else {
-					stageModifier[i] &= ~MOD_SLOPED;
-				}
-				lights[STAGE_SLOPE_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
-			}
-		}
-
-		// Stage QUANTIZED GLIDE Poly-Gate vom Trigger-Expander: identisches
-		// Prinzip wie STAGE_SLOPE_POLY_INPUT oben, setzt MOD_QUANT_GLIDE
-		// statt MOD_SLOPED (siehe MOD_QUANT_GLIDE-Kommentar in Marf248.hpp).
-		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_QUANTGLIDE_POLY_INPUT).isConnected()) {
-			const float GATE_THRESHOLD = 2.f;
-			for (int i = 0; i < NUM_STAGES; i++) {
-				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_QUANTGLIDE_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
-				if (gateHigh) {
-					stageModifier[i] |= MOD_QUANT_GLIDE;
-				}
-				else {
-					stageModifier[i] &= ~MOD_QUANT_GLIDE;
-				}
-				lights[STAGE_QUANTGLIDE_LIGHT + i].setBrightness(gateHigh ? 1.f : 0.f);
-			}
-		}
-
-		// Stage VOLT_EXT/TIME_EXT Kanalwahl per CV (Poly, Kanal i = Stage
-		// i+1), zwei getrennte Eingaenge auf dem Trigger-Expander. 5 Zonen a
-		// 2V im 0-10V-Bereich: 0-2V = Intern (Bit wird geloescht, kein
-		// Kanal-Override), 2-4V = Kanal A, 4-6V = B, 6-8V = C, 8-10V = D
-		// (Bit wird gesetzt UND der Kanal erzwungen). Wirkt nur bei
-		// gepatchtem Kabel (isConnected()-Guard, identisches Prinzip wie
-		// alle bisherigen Stage-Modifier-Poly-Overrides oben), ueberschreibt
-		// dann sowohl den Panel-Button als auch die bisherige Slider-
-		// Kanalwahl-Doppelbelegung weiter unten (siehe MOD_VOLT_EXT/
-		// MOD_TIME_EXT-Aufloesung). Ohne Kabel bleibt das bestehende
-		// Verhalten (Button-Klick + Slider-Position als Kanalwahl)
-		// unveraendert - die Override-Arrays bleiben dann auf -1 (kein
-		// Override). Nicht angesteuerte Poly-Kanaele liefern automatisch 0V
-		// = Intern-Zone (sicherer Default). Bewusst NICHT fuer Shape (Lin/
-		// Exp/Log) - siehe STAGE_SLOPE_POLY_INPUT-Kommentar oben.
-		int voltExtChannelOverride[NUM_STAGES];
-		int timeExtChannelOverride[NUM_STAGES];
-		for (int i = 0; i < NUM_STAGES; i++) {
-			voltExtChannelOverride[i] = -1;
-			timeExtChannelOverride[i] = -1;
-		}
-		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_VOLTEXT_CH_POLY_INPUT).isConnected()) {
-			for (int i = 0; i < NUM_STAGES; i++) {
-				float v = rack::clamp(trigExp->getInput(Marf248TriggerExpander::STAGE_VOLTEXT_CH_POLY_INPUT).getPolyVoltage(i), 0.f, 10.f);
-				int zone = (int) rack::clamp(v / 2.f, 0.f, 4.f);
-				if (zone == 0) {
-					stageModifier[i] &= ~MOD_VOLT_EXT;
-				}
-				else {
-					stageModifier[i] |= MOD_VOLT_EXT;
-					voltExtChannelOverride[i] = zone - 1;
-				}
-				// Eigenstaendiges Licht-Update, gleiches Prinzip wie bei
-				// STAGE_SKIP_POLY_INPUT oben - CV-Override soll ohne
-				// Dezimierungs-Latenz sichtbar sein.
-				lights[STAGE_VOLTEXT_LIGHT + i].setBrightness(stageModifier[i] & MOD_VOLT_EXT ? 1.f : 0.f);
-			}
-		}
-		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_TIMEEXT_CH_POLY_INPUT).isConnected()) {
-			for (int i = 0; i < NUM_STAGES; i++) {
-				float v = rack::clamp(trigExp->getInput(Marf248TriggerExpander::STAGE_TIMEEXT_CH_POLY_INPUT).getPolyVoltage(i), 0.f, 10.f);
-				int zone = (int) rack::clamp(v / 2.f, 0.f, 4.f);
-				if (zone == 0) {
-					stageModifier[i] &= ~MOD_TIME_EXT;
-				}
-				else {
-					stageModifier[i] |= MOD_TIME_EXT;
-					timeExtChannelOverride[i] = zone - 1;
-				}
-				lights[STAGE_TIMEEXT_LIGHT + i].setBrightness(stageModifier[i] & MOD_TIME_EXT ? 1.f : 0.f);
-			}
-		}
-
-		// Ratchet-Count (Session "Ratcheting", siehe MOD_RATCHET-Kommentar in
-		// Marf248.hpp): 0 = "keine gueltige Count-CV gepatcht" (Default,
-		// Ratchet bleibt fuer diese Stage wirkungslos, auch wenn das Enable-
-		// Bit oben gesetzt wurde - Kinovice-Entscheidung, kein Panel-
-		// Fallback vorhanden). Erst bei gepatchtem STAGE_RATCHET_COUNT_
-		// POLY_INPUT wird pro Kanal auf 1..8 aufgeloest (resolveRatchetCount()
-		// in Marf248.hpp, 8 Zonen a 1.25V).
-		int stageRatchetCount[NUM_STAGES];
-		for (int i = 0; i < NUM_STAGES; i++) {
-			stageRatchetCount[i] = 0;
-		}
-		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_RATCHET_COUNT_POLY_INPUT).isConnected()) {
-			for (int i = 0; i < NUM_STAGES; i++) {
-				float v = trigExp->getInput(Marf248TriggerExpander::STAGE_RATCHET_COUNT_POLY_INPUT).getPolyVoltage(i);
-				stageRatchetCount[i] = resolveRatchetCount(v);
-			}
-		}
-
-		// Ratchet-Offset (Session "Ratcheting", Nachtrag, siehe
-		// ratchetTargetPhase() in Marf248.hpp): direkte lineare 0-10V ->
-		// 0..1-Zuordnung (kein Zonen-Raster wie Count, da hier ein
-		// stufenloser Wert gebraucht wird). Default 0 (keine Verschiebung),
-		// wenn STAGE_RATCHET_OFFSET_POLY_INPUT nicht gepatcht ist.
-		float stageRatchetOffset[NUM_STAGES];
-		for (int i = 0; i < NUM_STAGES; i++) {
-			stageRatchetOffset[i] = 0.f;
-		}
-		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_RATCHET_OFFSET_POLY_INPUT).isConnected()) {
-			for (int i = 0; i < NUM_STAGES; i++) {
-				float v = trigExp->getInput(Marf248TriggerExpander::STAGE_RATCHET_OFFSET_POLY_INPUT).getPolyVoltage(i);
-				stageRatchetOffset[i] = rack::clamp(v, 0.f, 10.f) / 10.f;
 			}
 		}
 
@@ -1483,6 +1433,14 @@ struct Marf248 : Module {
 		// weiter unten in der Stage-Schleife.
 		float stageWarpBlend[NUM_STAGES];
 		float stageCurvePower[NUM_STAGES];
+		// Aufgeloester Curve-Knob (Trimpot + CV + globaler Bias, siehe
+		// Stage-Schleife unten) - Session "CPU-Optimierung Stage-Resolution
+		// (SIMD)": war vorher eine rein lokale Scope-Variable INNERHALB der
+		// Schleife, muss jetzt als Array ueberleben, da die eigentliche
+		// pow()-Berechnung (stageCurvePower) in einem SEPARATEN, der
+		// Schleife nachgelagerten SIMD-Batch-Durchgang passiert (siehe dort)
+		// statt wie bisher direkt inline pro Stage.
+		float effectiveKnob[NUM_STAGES];
 
 		// Vier externe CV-Eingaenge, einmal pro Frame gelesen (modulweit
 		// geteilt, siehe InputId-Kommentar). isConnected() wird separat
@@ -1686,28 +1644,13 @@ struct Marf248 : Module {
 			if (cvExp && i < curveCvChannels) {
 				curveCvAdd = cvAttenCurve * (curveCvInput->getVoltage(i) / CURVE_CV_SPAN_VOLTS);
 			}
-			float effectiveKnob = rack::clamp(knob + curveCvAdd + curveGlobalBias, 0.f, 1.f);
-
-			// std::pow() ist teuer und wurde bisher bei JEDEM Sample fuer
-			// alle 16 Stages neu berechnet (16x pro Sample bei 48kHz =
-			// ~768000 Aufrufe/Sekunde), unabhaengig davon, ob sich der Knob
-			// seit dem letzten Sample ueberhaupt bewegt hat. Jetzt: nur bei
-			// tatsaechlicher Aenderung neu rechnen, sonst gecachten Wert
-			// wiederverwenden (siehe cachedCurvePower/lastCurveKnob oben).
-			// Der Cache-Vergleich laeuft jetzt gegen effectiveKnob statt den
-			// rohen Trimpot-Wert, da sich sonst eine anliegende CV nicht
-			// mehr auswirken wuerde (Cache wuerde faelschlich "unveraendert"
-			// erkennen, obwohl sich effectiveKnob durch die CV laufend
-			// aendert) - bei aktiver CV wird dadurch effektiv jeden Sample
-			// neu gerechnet, was beabsichtigt und noetig ist.
-			if (effectiveKnob != lastCurveKnob[i]) {
-				float bipolar = 2.f * effectiveKnob - 1.f; // -1 links .. 0 Mitte .. +1 rechts
-				float factor = CURVE_FACTOR_CENTER
-					+ (CURVE_FACTOR_EXTREME - CURVE_FACTOR_CENTER) * (bipolar * bipolar);
-				cachedCurvePower[i] = std::pow(SLEW_CURVE_POWER, factor * effectiveKnob);
-				lastCurveKnob[i] = effectiveKnob;
-			}
-			stageCurvePower[i] = cachedCurvePower[i];
+			// Nur noch Aufloesung + Ablage im Array - die eigentliche, teure
+			// pow()-Berechnung (inkl. Cache-Vergleich) passiert jetzt NICHT
+			// mehr hier inline pro Stage, sondern gebuendelt in einem
+			// separaten SIMD-Batch-Durchgang direkt nach dieser Schleife
+			// (Session "CPU-Optimierung Stage-Resolution (SIMD)", siehe
+			// dort fuer die Begruendung/Batch-Level-Cache-Logik).
+			effectiveKnob[i] = rack::clamp(knob + curveCvAdd + curveGlobalBias, 0.f, 1.f);
 
 			// Ratchet-Warp-Blend (Session "Ratcheting", Nachtrag: bipolar
 			// -1..+1, siehe ratchetWarpPhase() in Marf248.hpp): additive CV +
@@ -1725,6 +1668,62 @@ struct Marf248 : Module {
 				warpCvAdd = cvAttenWarp * (warpCvInput->getVoltage(i) / WARP_CV_SPAN_VOLTS);
 			}
 			stageWarpBlend[i] = rack::clamp(warpGlobalBias + warpCvAdd, -1.f, 1.f);
+		}
+
+		// Curve-Power-Batch-Vorberechnung (Session "CPU-Optimierung Stage-
+		// Resolution (SIMD)"): std::pow() ist teuer (vorherige Session-Notiz:
+		// 16x pro Sample bei 48kHz = ~768000 Aufrufe/Sekunde unskaliert).
+		// Statt wie bisher pro Stage einzeln skalar zu pruefen/rechnen,
+		// werden jetzt 4 benachbarte Stages gemeinsam per rack::simd::
+		// float_4 batchweise verarbeitet (4 Iterationen fuer NUM_STAGES=16).
+		//
+		// Batch-Level-Cache (Kinovice-Entscheidung, Session-Design): der
+		// bisherige Pro-Stage-Cache (lastCurveKnob/cachedCurvePower, siehe
+		// Member-Deklaration oben) bleibt inhaltlich erhalten, die "hat sich
+		// etwas geaendert"-Entscheidung wird aber nur noch PRO 4er-BATCH
+		// getroffen (ODER ueber die 4 Einzel-Stage-Aenderungen) - aendert
+		// sich mindestens eine der 4 Lanes, wird der komplette Batch per
+		// SIMD neu gerechnet (bis zu 3 unveraenderte Lanes "umsonst" mit-
+		// gerechnet), bleiben alle 4 unveraendert, wird der Batch komplett
+		// uebersprungen - identisches Ruhezustand-Verhalten wie bisher, nur
+		// auf 4er- statt Einzelstage-Granularitaet. Der Sentinel -1.f in
+		// lastCurveKnob (siehe Konstruktor) erzwingt dadurch weiterhin ganz
+		// von selbst eine initiale Berechnung im allerersten Sample (jeder
+		// Batch ist dann per Definition dirty), ohne Sonderfall-Code.
+		//
+		// Bewusst in Kauf genommener Trade-off: im haeufigen Fall (mehrere/
+		// alle Stages gleichzeitig moduliert, z.B. LFO auf mehrkanaliger
+		// Curve-CV) gewinnt SIMD klar; im seltenen Einzelfall (genau eine
+		// von vier Nachbar-Stages moduliert) wird geringfuegig mehr
+		// gerechnet als beim reinen Pro-Stage-Cache noetig gewesen waere -
+		// siehe Design-Diskussion dieser Session.
+		//
+		// rack::simd::pow(float, float_4) (Basis skalar, Exponent
+		// vektoriell) ist in der Rack-SDK-simd-Bibliothek als
+		// exp(b * log(a)) implementiert - guenstiger als der allgemeine
+		// float_4/float_4-Fall, da log(a) nur einmal skalar (nicht pro
+		// Lane) berechnet wird. SLEW_CURVE_POWER ist bei uns ein fixer
+		// Compile-Time-Skalar (2.5f), genau dieser Fall.
+		for (int b = 0; b < NUM_STAGES; b += 4) {
+			bool batchDirty =
+				(effectiveKnob[b]     != lastCurveKnob[b])
+				|| (effectiveKnob[b + 1] != lastCurveKnob[b + 1])
+				|| (effectiveKnob[b + 2] != lastCurveKnob[b + 2])
+				|| (effectiveKnob[b + 3] != lastCurveKnob[b + 3]);
+			if (batchDirty) {
+				rack::simd::float_4 knob4 = rack::simd::float_4::load(&effectiveKnob[b]);
+				// -1 links .. 0 Mitte .. +1 rechts, analog zur vorherigen
+				// skalaren Fassung (siehe Git-Historie).
+				rack::simd::float_4 bipolar4 = 2.f * knob4 - 1.f;
+				rack::simd::float_4 factor4 = CURVE_FACTOR_CENTER
+					+ (CURVE_FACTOR_EXTREME - CURVE_FACTOR_CENTER) * (bipolar4 * bipolar4);
+				rack::simd::float_4 power4 = rack::simd::pow(SLEW_CURVE_POWER, factor4 * knob4);
+				power4.store(&cachedCurvePower[b]);
+				knob4.store(&lastCurveKnob[b]);
+			}
+		}
+		for (int i = 0; i < NUM_STAGES; i++) {
+			stageCurvePower[i] = cachedCurvePower[i];
 		}
 
 		// Time Multiplier / BPM-Feature (Manual-Grundlage "TIME MULTIPLIER",

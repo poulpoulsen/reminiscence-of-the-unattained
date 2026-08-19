@@ -2,6 +2,13 @@
 #include "plugin.hpp"
 #include <cmath>
 #include <string>
+// SIMD-Batch-Vorberechnung fuer stageCurvePower (Session "CPU-Optimierung
+// Stage-Resolution (SIMD)", siehe Marf248::process()). Vermutlich bereits
+// transitiv ueber plugin.hpp/rack.hpp eingebunden - falls nicht, hier der
+// explizite Pfad. Include-Guards machen ein Doppel-Include harmlos, aber
+// bitte lokal gegenchecken, ob der Pfad in eurer SDK-Version so stimmt.
+#include <simd/Vector.hpp>
+#include <simd/functions.hpp>
 
 static const int NUM_STAGES = 16;
 
@@ -555,6 +562,32 @@ struct Afg {
 	// den Zielwert (Stepped-Verhalten, wie bisher).
 	float voltageFrom = 0.f;
 	float voltageOut = 0.f;
+
+	// Cache fuer quantizeToScale() im MOD_QUANT_OCT-Zweig (Session "CPU-
+	// Optimierung Quantize-Cache", Fortsetzung von "CPU-Optimierung Stage-
+	// Modifier-Scans"): target bleibt waehrend des gesamten Stage-
+	// Aufenthalts meist konstant (aendert sich nur bei Stage-Wechsel oder
+	// wenn die Stage-Spannung selbst laufend moduliert wird, z.B. externe
+	// Voltage Source per Audio-Rate-CV) - quantizeToScale() ist mit bis zu
+	// 175 Iterationen (verschachtelte 25x7-Suche inkl. Modulo, siehe
+	// dortiger Kommentar in Marf248.hpp) deutlich teurer als der triviale
+	// Vergleich hier. Nur bei tatsaechlicher Aenderung von target/Key/Scale
+	// neu berechnen, sonst gecachtes Ergebnis wiederverwenden - analoges
+	// Muster zu cachedCurvePower/lastCurveKnob in Marf248.cpp. Sentinel-
+	// Startwerte (-1e9f/-1/-1) erzwingen im allerersten process()-Aufruf
+	// eine einmalige Berechnung, analog zur cachedCurvePower-Initialisierung
+	// im Marf248-Konstruktor.
+	//
+	// Bewusst NICHT fuer den MOD_QUANT_GLIDE-Zweig (quantisiert den
+	// kontinuierlich laufenden Slew-Wert voltageOut jeden Sample neu, dort
+	// waere ein simpler Wert-Cache wirkungslos, da sich voltageOut waehrend
+	// des Slews fast immer aendert) - das bleibt bewusst unveraendert teuer.
+	// Laut Kinovice-Entscheidung eigene Session (O(1)-Lookup-Tabelle statt
+	// linearer Suche, siehe Session-Notiz).
+	float lastQuantTargetIn = -1e9f;
+	int lastQuantKey = -1;
+	int lastQuantScaleMode = -1;
+	float cachedQuantTargetOut = 0.f;
 
 	dsp::SchmittTrigger startTrigger;
 	dsp::SchmittTrigger stopTrigger;
@@ -1276,7 +1309,17 @@ struct Afg {
 			// Raster (Default Chromatic + C entspricht dem bisherigen reinen
 			// Halbton-Raster); bei aktivem Slope laeuft die Rampe weiterhin
 			// sanft, aber zum quantisierten statt zum rohen Slider-Wert.
-			target = quantizeToScale(target, quantKey, quantScaleMode);
+			// Gecacht (siehe lastQuantTargetIn/cachedQuantTargetOut oben) -
+			// target aendert sich normalerweise nur bei Stage-Wechsel, die
+			// teure verschachtelte Suche in quantizeToScale() muss daher
+			// nicht jeden Sample neu laufen.
+			if (target != lastQuantTargetIn || quantKey != lastQuantKey || quantScaleMode != lastQuantScaleMode) {
+				cachedQuantTargetOut = quantizeToScale(target, quantKey, quantScaleMode);
+				lastQuantTargetIn = target;
+				lastQuantKey = quantKey;
+				lastQuantScaleMode = quantScaleMode;
+			}
+			target = cachedQuantTargetOut;
 		}
 		if (stageModifier[currentStage] & MOD_SLOPED) {
 			float shaped = applySlewCurve(phase, stageModifier[currentStage], stageCurvePower[currentStage]);

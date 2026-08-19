@@ -1529,6 +1529,33 @@ Three quirks of `MOD_MUTE` that are easy to trip over on first test:
   clear a stuck Mute is **Global Clear** (`performGlobalClear()` sets
   `stageModifier[i] = 0` for all stages).
 
+### 10.12 Curve only has an effect with Slope active AND Shape ≠ Linear
+
+A stage's Curve trimpot (`STAGE_CURVE_PARAM`) always computes a `power`
+value, but it only actually affects the output when two conditions are
+met at the same time (see [4.4](#sec4-4)):
+
+- **`MOD_SLOPED` must be set** (Slope button on). Without Slope,
+  `voltageOut` jumps straight to the target value – there's no ramp for
+  a curve shape to appear on.
+- **Shape must not be Linear** (`STAGE_SHAPE_PARAM`, click cycle Linear →
+  Exponential → Logarithmic → Linear). At Linear, `applySlewCurve()`
+  returns `t` unchanged – `power` is passed in but ignored.
+
+On the panel: turn Slope on, then click Shape until the Exp or Log LED
+lights up – only then does the Curve trimpot actually do anything. It
+also needs an actual voltage jump between the previous and target stage,
+otherwise the ramp is active but has no audible/visible amplitude. At
+very extreme Curve settings, `MOD_SLEW_NORMALIZE` (point 4 in
+[4.4](#sec4-4)) helps against the curve being squeezed into a tiny
+fraction of the stage time – pure fine-tuning, not a prerequisite.
+
+To test this (including the CV side, `CURVE_CV_INPUT`/`WARP_CV_INPUT` on
+the CV Expander, see [7](#sec7)): a proven setup is a SurgeXT QuadLFO
+(unipolar 0–10V) as the CV source patched across several poly channels,
+several stages set to Slope + Exp/Log at once, watching the curve shapes
+live.
+
 ---
 
 <a id="sec11"></a>

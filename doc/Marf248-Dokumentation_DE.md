@@ -1544,6 +1544,35 @@ führen:
   **Global Clear** (`performGlobalClear()` setzt `stageModifier[i] = 0`
   für alle Stages).
 
+### 10.12 Curve wirkt nur bei aktivem Slope UND Shape ≠ Linear
+
+Der Curve-Trimpot (`STAGE_CURVE_PARAM`) einer Stage berechnet zwar immer
+eine `power`, die sich aber nur unter zwei gleichzeitig erfüllten
+Bedingungen überhaupt auswirkt (siehe [4.4](#sec4-4)):
+
+- **`MOD_SLOPED` muss gesetzt sein** (Slope-Button an). Ohne Slope springt
+  `voltageOut` sofort auf den Zielwert – es gibt keine Rampe, auf der
+  eine Kurvenform sichtbar werden könnte.
+- **Shape darf nicht Linear stehen** (`STAGE_SHAPE_PARAM`, Klick-Zyklus
+  Linear → Exponentiell → Logarithmisch → Linear). Bei Linear gibt
+  `applySlewCurve()` `t` unverändert zurück – `power` wird zwar
+  mitgegeben, aber ignoriert.
+
+Am Panel also: Slope-Button an, danach Shape-Button klicken, bis die Exp-
+oder Log-LED leuchtet – erst dann bewegt der Curve-Trimpot überhaupt
+etwas. Zusätzlich braucht es einen tatsächlichen Spannungssprung zwischen
+Vorgänger- und Ziel-Stage, sonst ist die Rampe zwar aktiv, aber ohne
+hör-/sichtbare Amplitude. Bei sehr extremer Curve-Stellung hilft
+`MOD_SLEW_NORMALIZE` (Punkt 4 in [4.4](#sec4-4)) gegen eine in einen
+winzigen Zeitbruchteil gequetschte Kurve – reine Feinjustage, keine
+Voraussetzung.
+
+Zum Testen (auch der CV-Seite, `CURVE_CV_INPUT`/`WARP_CV_INPUT` am
+CV-Expander, siehe [7](#sec7)): bewährt hat sich ein SurgeXT QuadLFO
+(unipolar 0–10V) als CV-Quelle auf mehrere Poly-Kanäle gepatcht, mehrere
+Stages gleichzeitig auf Slope + Exp/Log gestellt, Kurvenform live
+beobachtet.
+
 ---
 
 <a id="sec11"></a>
