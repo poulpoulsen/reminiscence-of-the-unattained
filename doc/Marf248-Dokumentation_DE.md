@@ -20,6 +20,7 @@ APOUT-Unterdrückung).
 ---
 
 <a id="toc"></a>
+
 ## Inhaltsverzeichnis
 
 *Jeder Eintrag hat zwei Links: den ersten (Standard-Markdown-Anker) nutzt du in GitHub, Codeberg, VSCodium-Preview & den meisten anderen Viewern; "Obsidian" ist der Wikilink speziell für Obsidian. In Obsidian selbst kannst du auch den ersten Link nutzen - er wird dort nur nicht immer zuverlässig aufgelöst, daher die zweite Variante als Ergänzung.*
@@ -45,6 +46,7 @@ APOUT-Unterdrückung).
    - [Clock-quantisiertes Advance](#sec4-10) · [[#4.10 Clock-quantisiertes Advance|Obsidian]]
    - [Scale/Key-Quantisierung](#sec4-11) · [[#4.11 Scale/Key-Quantisierung|Obsidian]]
    - [Tempo/BPM-Steuerung (V/Oct, BEATS_FACTOR)](#sec4-12) · [[#4.12 Tempo/BPM-Steuerung (V/Oct, BEATS_FACTOR)|Obsidian]]
+   - [Ratcheting](#sec4-13) · [[#4.13 Ratcheting|Obsidian]]
 5. [Marf248 – Funktionsreferenz (C++)](#sec5) · [[#5. Marf248 – Funktionsreferenz (C++)|Obsidian]]
 6. [Marf248TriggerExpander](#sec6) · [[#6. Marf248TriggerExpander|Obsidian]]
 7. [Marf248CvExpander](#sec7) · [[#7. Marf248CvExpander|Obsidian]]
@@ -57,6 +59,7 @@ APOUT-Unterdrückung).
 ---
 
 <a id="sec1"></a>
+
 ## 1. Architektur-Überblick
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -94,6 +97,7 @@ Alle drei Module werden in `plugin.cpp`/`plugin.hpp` registriert
 ---
 
 <a id="sec2"></a>
+
 ## 2. Grundbegriffe: Stage, Section, Modifier-Bits
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -129,6 +133,7 @@ Alle drei Module werden in `plugin.cpp`/`plugin.hpp` registriert
 | `MOD_TRANGE_1/2/4` | Time Range TR1/TR2/TR4 (kein Bit = TR3, Default) | ja (TR1–4) |
 | `MOD_MUTE` | Unterdrückt P1OUT/P2OUT **und** APOUT für diese Stage, ohne `MOD_PULSE1`/`MOD_PULSE2` zu verändern; Voltage/Slew unbeeinflusst | **nein** |
 | `MOD_QUANT_GLIDE` | Quantisiert den kompletten Slew (nicht nur den Zielwert) Sample für Sample auf Scale/Key – "Treppen-Glide"; nur wirksam zusammen mit `MOD_SLOPED` | **nein** (reine Software-Erweiterung) |
+| `MOD_RATCHET` | Ratcheting: N rhythmische Sub-Trigger auf P1OUT/P2OUT statt einmaligem Trigger pro Stage (nur wirksam mit gepatchter Count-CV am Trigger-Expander) | **nein** (reine Software-Erweiterung) |
 
 Zusätzlich kodiert ein 3-Bit-Feld (`RANGE_OFFSET_MASK`) den Oktav-Offset im
 Limited-Range-Modus (5 Stufen: +0/+2/+4/+6/+8 V).
@@ -143,10 +148,12 @@ voneinander getrennt und dürfen nicht verwechselt werden.
 ---
 
 <a id="sec3"></a>
+
 ## 3. Marf248 – Hauptmodul
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
 <a id="sec3-1"></a>
+
 ### 3.1 Panel-Layout
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -159,7 +166,7 @@ geworden, siehe unten) und in mehrere senkrechte Spalten gegliedert
 [External CV A–D] [Section-A-Controls] [Section-A-Jacks] [Section-A-Ausgänge] [Stage-Array (16×)] [Section-B-Ausgänge] [Section-B-Jacks] [Section-B-Controls] [Preset-Spalte]
 ```
 
-*[Siehe [Abbildung 1](#fig1) für eine schematische Übersicht dieser Spaltenstruktur.]*
+*[Siehe [Abbildung 1](#fig1) für eine schematische Übersicht dieser Spaltenstruktur · [[#Abbildung 1 – Marf248 Panel-Spaltenlayout (schematische Übersicht)|Obsidian]]]*
 
 - **External-CV-Spalte** (ganz links): die vier modulweit geteilten
   externen CV-Eingänge (Buchsen A–D), die von `MOD_VOLT_EXT`/`MOD_TIME_EXT`
@@ -186,10 +193,11 @@ Jede Spalte ist zur optischen Gliederung von einem dünnen Rahmen
 werden zusätzlich durch dünne horizontale Trennlinien (`HDivider`) abgesetzt.
 
 <a id="sec3-2"></a>
+
 ### 3.2 Bedienelemente pro Stage
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
-*[Siehe [Abbildung 2](#fig2) für die exakte Position jedes unten beschriebenen Bedienelements, da alle 16 Stage-Spalten identisch aufgebaut sind.]*
+*[Siehe [Abbildung 2](#fig2) für die exakte Position jedes unten beschriebenen Bedienelements, da alle 16 Stage-Spalten identisch aufgebaut sind · [[#Abbildung 2 – Marf248 Stage-Spalten-Detail|Obsidian]]]*
 
 Jede der 16 Stage-Spalten enthält von oben nach unten:
 
@@ -233,6 +241,7 @@ Wählt TR1 (0,002–0,03s) bis TR4 (2–30s); zeigt die aktuelle Ziffer 1–4 di
 Full (0–10V unverändert) → Half (0–5V gestaucht) → Limited +0/+2/+4/+6/+8V (2V-Spanne, entspricht 2 Oktaven 1V/Okt., um den gewählten Offset verschoben). Zeigt Kürzel ("F"/"H"/"L0"…"L8") direkt auf dem Regler sowie einen farbigen Zeiger. Rechtsklick öffnet Checklisten-Kontextmenü (zuverlässiger als Texteingabe bei diesem snap-Regler).
 
 <a id="sec3-3"></a>
+
 ### 3.3 Bedienelemente pro Section (A/B)
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -300,6 +309,7 @@ dort Platz für die größere BPM-Anzeige zu schaffen.
   Stop-Stage, oder Continuous-Adressierung aktiv).
 
 <a id="sec3-4"></a>
+
 ### 3.4 Modulweit geteilte Elemente
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -338,6 +348,7 @@ dort Platz für die größere BPM-Anzeige zu schaffen.
   gültig (C…B). Siehe [4.11](#sec4-11).
 
 <a id="sec3-5"></a>
+
 ### 3.5 Ein-/Ausgänge im Überblick
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -354,10 +365,12 @@ dort Platz für die größere BPM-Anzeige zu schaffen.
 ---
 
 <a id="sec4"></a>
+
 ## 4. Interne Signalverarbeitung
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
 <a id="sec4-1"></a>
+
 ### 4.1 Der Afg-Kern (Ablaufsteuerung einer Section)
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -389,6 +402,7 @@ Wichtige Zustandsfelder:
   `runGateTrigger` (reine Pegel-Erkennung mit Schmitt-Hysterese).
 
 <a id="sec4-2"></a>
+
 ### 4.2 Stage-Advance-Logik: Forward / Reverse / Pendulum / Skip
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -460,6 +474,7 @@ der Fall gewesen und hätte je nach `currentStage` ein anderes Segment
 getroffen).
 
 <a id="sec4-3"></a>
+
 ### 4.3 Stage Address: Reset / Continuous / Strobe / Kanalwahl
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -507,6 +522,7 @@ Zusätzlich kann ein externer Strobe-Puls ("SEXT", vom Trigger-Expander) den
 Panel-Strobe-Taster ODER-verknüpft auslösen.
 
 <a id="sec4-4"></a>
+
 ### 4.4 Voltage-Signalpfad: Range, Quantize, Slew
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -557,6 +573,7 @@ Reihenfolge im Signalpfad (in `Afg::process()`), pro Sample:
    Neuquantisierung während der Rampe trotzdem auf dem Raster.
 
 <a id="sec4-5"></a>
+
 ### 4.5 Time-Signalpfad: Time Range, External Time, Time-CV, Time Multiplier
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -587,6 +604,7 @@ Sekundenzeit kennt):
    0,5×–4,0×-Faktor-Semantik – volle Herleitung in [4.12](#sec4-12).
 
 <a id="sec4-6"></a>
+
 ### 4.6 Sustain / Enable / Stop
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -624,6 +642,7 @@ wird schlicht nicht ausgewertet – keine Warteschlange, kein nachträgliches
 Nachholen nach Ende der Haltung.
 
 <a id="sec4-7"></a>
+
 ### 4.7 Pulse-Ausgänge: APOUT, P1/P2OUT, Start-/End-of-Cycle
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -663,6 +682,7 @@ Nachholen nach Ende der Haltung.
   erst mit der separat geplanten Panel-Relayout-Session.
 
 <a id="sec4-8"></a>
+
 ### 4.8 Preset-System (Pickup/Catch)
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -693,6 +713,7 @@ Adress-Speicher merkt sich **nur** einen Stage-Index als Sprungziel. Beide
 Systeme sind unabhängig voneinander nutzbar.
 
 <a id="sec4-9"></a>
+
 ### 4.9 Adress-Speicher (Address Memory)
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -730,6 +751,7 @@ Bedienelemente; es wird zwingend ein echtes Kabel von einer Trigger-/
 Gate-Quelle benötigt (siehe [Fallstricke](#sec10)).
 
 <a id="sec4-10"></a>
+
 ### 4.10 Clock-quantisiertes Advance
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -764,6 +786,7 @@ Trigger-Expander in der bestehenden Run-Gate-Reihe (Spalte C/D), da dort
 noch Platz frei war (siehe [Abschnitt 6](#sec6)).
 
 <a id="sec4-11"></a>
+
 ### 4.11 Scale/Key-Quantisierung
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -781,6 +804,7 @@ Bedienung: Scale/Key-Taster "scharf schalten" (Arm), danach wählt der
 nächste Druck auf einen der 12 Preset-Taster den Wert (siehe [3.4](#sec3-4)).
 
 <a id="sec4-12"></a>
+
 ### 4.12 Tempo/BPM-Steuerung (V/Oct, BEATS_FACTOR)
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -860,7 +884,115 @@ besser zu klassischen Cookbook-Patches.
 
 ---
 
+<a id="sec4-13"></a>
+
+### 4.13 Ratcheting
+*[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
+
+Kinovice-Feature (Tangerine-Dream-Style rhythmische Sub-Trigger pro Stage),
+keine Buchla/Tiptop-Hardware-Entsprechung. Ersetzt, solange aktiv, die in
+[4.7](#sec4-7) beschriebene kontinuierliche P1/P2-Flankenerkennung durch N
+gleichmäßig (oder per Warp/Offset verzerrt) über die Stage-Zeit verteilte
+Sub-Trigger. Die Hüllkurve/Slew (`voltageOut`) bleibt davon **vollständig
+unbeeinflusst** – Ratcheting betrifft ausschließlich die Trigger-Ausgänge.
+
+**Aktivierung und Bit (`MOD_RATCHET`)**: wie `MOD_MUTE` gibt es in dieser
+Session **kein Panel-Gegenstück** – das Bit wird ausschließlich über
+`STAGE_RATCHET_POLY_INPUT` am Trigger-Expander gesetzt/gelöscht (Pegel-
+Override, Schwelle 2V). Ohne gepatchtes Kabel bleibt das Bit dauerhaft
+gelöscht, da es keinen "letzten Panel-Klick"-Zustand gibt, auf den
+zurückgefallen werden könnte.
+
+**Sub-Trigger-Count (1–8, `STAGE_RATCHET_COUNT_POLY_INPUT`)**: acht gleich
+große Zonen à 1,25V im 0–10V-Bereich (`resolveRatchetCount()` in
+`Marf248.hpp`). **Wichtig:** Ratcheting bleibt trotz gesetztem
+`MOD_RATCHET`-Bit vollständig **wirkungslos**, solange diese Buchse nicht
+gepatcht ist – die Stage fällt dann automatisch auf das normale P1/P2-
+Verhalten zurück (bewusste Design-Entscheidung, kein Panel-Default
+vorhanden). Bei Count=0 (unpatched) verhält sich eine Stage mit aktivem
+Enable-Gate exakt so, als gäbe es kein Ratcheting.
+
+**Timing-Formel**: Sub-Trigger i (i=0…N−1) feuert bei
+`rawPhase = i / N`, optional verzerrt durch Warp und Offset (siehe unten):
+
+```
+targetTime = ratchetTargetPhase(rawPhase, blend, offset) × stageTime
+```
+
+Da `rawPhase < 1` für alle i<N, ist der letzte Sub-Trigger **garantiert
+vor** Ablauf der Stage-Zeit platziert – anders als z.B. bei Befaco Burst,
+wo der letzte Trigger nicht zwingend synchron zum Stage-Ende liegt.
+
+**Ziel-Ausgänge – P1OUT/P2OUT, nicht bedingungslos**: Ratcheting ersetzt
+nur die *Art* des Triggers auf einem ohnehin per `MOD_PULSE1`/`MOD_PULSE2`
+aktivierten Ausgang. Sind beide Bits gesetzt, feuern P1OUT und P2OUT
+synchron; ist nur eines gesetzt, feuert nur dieses; sind beide gelöscht,
+läuft der interne Sub-Trigger-Zähler trotzdem mit (für den Fall, dass die
+Bits während des Stage-Aufenthalts per CV nachträglich gesetzt werden),
+aber es wird nichts ausgegeben. `MOD_MUTE` unterdrückt Ratcheting genauso
+wie die normalen Pulse-Trigger (siehe [4.7](#sec4-7)).
+
+**Warp-Blend (Marf248CvExpander, `WARP_CV_INPUT`/`WARP_CV_ATTEN_PARAM`/
+`WARP_GLOBAL_PARAM`)**: blendet die lineare Sub-Trigger-Verteilung
+kontinuierlich zu einer Smootherstep-verzerrten Verteilung über
+(`smootherstep01()`/`ratchetWarpPhase()` in `Marf248.hpp`), 0–100%
+(`WARP_GLOBAL_PARAM`, wirkt immer, auch ohne gepatchtes CV-Kabel – analog
+zu `CURVE_GLOBAL_PARAM`). Smootherstep hat bei `rawPhase=0` und `rawPhase=1`
+Fixpunkte (Ableitung 0 an beiden Enden) – **bei Ratchet-Count 1 und 2 hat
+Warp deshalb keine hörbare Wirkung**: bei Count=1 gibt es nur `rawPhase=0`
+(Fixpunkt), bei Count=2 zusätzlich `rawPhase=0,5`, was unter Smootherstep
+ebenfalls ein Fixpunkt ist (`smootherstep01(0,5)=0,5`). Warp wird erst ab
+Count≥3 hörbar, wo echte Zwischen-Phasen (nicht 0, nicht 1, nicht 0,5)
+durch die S-Kurve spürbar Richtung Rand oder Mitte gezogen werden.
+
+**Phasen-Offset (`STAGE_RATCHET_OFFSET_POLY_INPUT`, Trigger-Expander)**:
+direkte lineare 0–10V → 0–100%-Zuordnung (kein Zonen-Raster wie beim
+Count), additive Verschiebung der bereits warp-verzerrten Phase Richtung
+Stage-Ende, hart gedeckelt bei `RATCHET_OFFSET_PHASE_CEILING = 0,9995`
+(`ratchetTargetPhase()` in `Marf248.hpp`). **Bewusst kein Wraparound**
+zurück auf Phase 0: ein Wraparound würde bei mehreren Sub-Triggern (N>1)
+deren zeitliche Reihenfolge durcheinanderbringen, da die Zielzeiten dann
+nicht mehr monoton mit dem Index steigen – das würde die inkrementelle
+"while (elapsed ≥ target) feuern"-Logik in `Afg::process()` voraussetzungs-
+widrig brechen. Stattdessen stauchen sich bei hohem Offset und N>1 die
+späteren Sub-Trigger Richtung Stage-Ende zusammen, statt an den Anfang
+zurückzuspringen. Bei Count=1 verschiebt der Offset den einzelnen Puls
+dagegen sauber und stufenlos vom Stage-Anfang bis kurz vor das Stage-Ende.
+
+**Aktivierung mitten im Stage-Aufenthalt: verpassen statt nachholen**
+(`ratchetWasActive`-Flankenerkennung): wird das Enable-Gate erst *nach*
+Stage-Beginn scharf geschaltet (z.B. per CV), holt Ratcheting bereits
+verstrichene Sub-Trigger-Zeitpunkte **nicht** nachträglich als Burst nach
+(Kinovice-Entscheidung: "lieber einfach verpassen und beim nächsten
+Durchlauf starten"). Technisch: bei der Aktivierungsflanke (inaktiv→aktiv)
+wird der Sub-Trigger-Zähler einmalig auf die aktuelle Position vorgespult
+(strikter `>`-Vergleich `elapsed > targetTime`, ohne dabei zu feuern);
+danach läuft der reguläre Feuer-Loop (`>=`-Vergleich) unverändert weiter.
+Bei einem regulären, unmittelbaren Stage-Eintritt (`elapsed==0`) greift
+dieser Überspring-Effekt nicht – der erste Sub-Trigger feuert dort weiter
+ganz normal am Stage-Anfang, auch bei aktivem Offset.
+
+**Bugfix – Pulsdauer statt fest 1ms an den Sub-Trigger-Abstand angepasst**:
+`dsp::PulseGenerator::trigger()` (Rack-SDK) *verlängert* die verbleibende
+High-Zeit nur, wenn die neue angeforderte Dauer länger ist als das noch
+Verbleibende, verkürzt sie aber nie. Bei kurzer Stage-Zeit und/oder hohem
+Ratchet-Count kann der Sub-Trigger-Abstand unter die (ursprünglich feste)
+1ms-Pulsdauer fallen – der nächste Trigger landete dann noch im
+vorherigen High-Pegel und beide verschmolzen zu einem einzigen, länger
+anhaltenden Puls statt zweier sauberer Blips. Fix: die Pulsdauer wird pro
+Sub-Trigger dynamisch auf den Abstand zum nächsten Sub-Trigger (bzw. zum
+Stage-Ende beim letzten) geklemmt, `[0,1ms, 1ms]`
+(`rack::clamp(nextTargetTime - targetTime, 1e-4f, 1e-3f)`).
+
+**Beispiel Count=2** (Warp-Blend=0, linear): Sub-Trigger bei `rawPhase=0`
+(Stage-Anfang) und `rawPhase=0,5` (exakt Stage-Mitte) – der dritte
+theoretische Slot bei Phase 1,0 existiert nicht, da nur zwei Sub-Trigger
+programmiert sind.
+
+---
+
 <a id="sec5"></a>
+
 ## 5. Marf248 – Funktionsreferenz (C++)
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -891,7 +1023,19 @@ Löst die exklusiven `MOD_TRANGE_*`-Bits zu einem Index 0–3 auf (TR3 = Default
 Lesen/Schreiben des 3-Bit-Oktav-Offset-Felds im Limited-Range-Modus.
 
 **`tempoVoltsToBpm(volts)`**<br>
-**Neu**: rechnet eine V/Oct-Tempo-Spannung nach `BPM = 120 × 2^Volt` in eine BPM-Zahl um, siehe [4.12](#sec4-12).
+Rechnet eine V/Oct-Tempo-Spannung nach `BPM = 120 × 2^Volt` in eine BPM-Zahl um, siehe [4.12](#sec4-12).
+
+**`resolveRatchetCount(voltage)`**<br>
+**Neu**: löst eine 0–10V-CV in acht gleich großen Zonen (1,25V/Zone) auf einen Ratchet-Count 1–8 auf, siehe [4.13](#sec4-13).
+
+**`smootherstep01(x)`**<br>
+**Neu**: Ken-Perlin-Smootherstep (`x³(x(6x−15)+10)`), Ableitung 0 an beiden Enden – Basis für den Ratchet-Warp, siehe [4.13](#sec4-13).
+
+**`ratchetWarpPhase(rawPhase, blendAmount)`**<br>
+**Neu**: blendet zwischen linearer (`rawPhase`) und Smootherstep-verzerrter Phase, `blendAmount` 0–1.
+
+**`ratchetTargetPhase(rawPhase, blendAmount, offset)`**<br>
+**Neu**: kombiniert `ratchetWarpPhase()` mit additivem Phasen-Offset, hart gedeckelt bei `RATCHET_OFFSET_PHASE_CEILING` (0,9995) statt Wraparound – liefert die finale Zielphase für einen Ratchet-Sub-Trigger, siehe [4.13](#sec4-13).
 
 **`PickupState::arm(target, currentRaw)`**<br>
 Aktiviert Pickup für einen neuen Zielwert (Preset-Load).
@@ -915,10 +1059,10 @@ Ring-Suche nach der nächsten `MOD_FIRST`- bzw. `MOD_LAST`-Stage für den automa
 Kernlogik für den nächsten Stage-Schritt (Forward/Reverse/Pendulum, Skip-Behandlung), siehe [4.2](#sec4-2).
 
 **`Afg::resetPulseEdgeState()`**<br>
-Setzt die Flanken-Vorwerte für P1/P2/First/Last zurück (bei jedem Stage-(Wieder-)Eintritt).
+Setzt die Flanken-Vorwerte für P1/P2/First/Last zurück (bei jedem Stage-(Wieder-)Eintritt). **Erweitert**: setzt zusätzlich `ratchetIndex` und `ratchetWasActive` zurück, siehe [4.13](#sec4-13).
 
 **`Afg::process(...)`**<br>
-Hauptverarbeitung einer Section pro Sample: Start/Stop, Run-Gate, Advance, Sustain/Enable/Stop-Logik, automatischer Zeitablauf, Voltage-/Zeit-Ausgabe, alle Puls-Ausgänge. Nimmt die bereits aufgelösten Stage-Arrays (Spannung, Zeit, Modifier, Curve-Power) sowie Key/Scale und Start/Stop/Run-Gate/Advance-Eingaben entgegen.
+Hauptverarbeitung einer Section pro Sample: Start/Stop, Run-Gate, Advance, Sustain/Enable/Stop-Logik, automatischer Zeitablauf, Voltage-/Zeit-Ausgabe, alle Puls-Ausgänge inkl. Ratcheting (siehe [4.13](#sec4-13)). Nimmt die bereits aufgelösten Stage-Arrays (Spannung, Zeit, Modifier, Curve-Power, **Ratchet-Count, Warp-Blend, Ratchet-Offset**) sowie Key/Scale und Start/Stop/Run-Gate/Advance-Eingaben entgegen.
 
 ### `Marf248.cpp`
 
@@ -982,19 +1126,21 @@ Baut das komplette 146HP-Panel auf: Rahmen, Spalten-Geometrie (inkl. VOUT/TOUT-A
 ---
 
 <a id="sec6"></a>
+
 ## 6. Marf248TriggerExpander
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
-30HP-Expander (Entwicklungsverlauf: 12HP → 18HP für die Stage-Modifier-
+36HP-Expander (Entwicklungsverlauf: 12HP → 18HP für die Stage-Modifier-
 Poly-CVs → 24HP für Advance → 30HP für die Panel-Beschriftungs-Session,
-die eine 5. Spalte sowie größere, besser lesbare Schrift brauchte und dabei
-auch mehrere Buchsen neu angeordnet hat, siehe Panel-Layout unten). Reiner
+die eine 5. Spalte sowie größere, besser lesbare Schrift brauchte → 36HP
+für die Ratcheting-Session, die eine 6. Spalte für die drei neuen
+Ratchet-Eingänge brauchte, siehe Panel-Layout unten). Reiner
 Jack-Träger ohne eigene DSP-Logik –
 die gesamte Verarbeitung findet in `Marf248::process()` statt, sobald das
 Modul als linker oder rechter Nachbar erkannt wird (`LINK_LIGHT` zeigt den
 Andock-Status).
 
-*[Siehe [Abbildung 3](#fig3) für das vollständige Panel mit allen beschrifteten Buchsen.]*
+*[Siehe [Abbildung 3](#fig3) für das vollständige Panel mit allen beschrifteten Buchsen · [[#Abbildung 3 – Marf248TriggerExpander Panel (36HP)|Obsidian]]]*
 
 ### Eingänge
 
@@ -1043,6 +1189,15 @@ Kanalwahl per CV für den 7-Positionen-Range-Drehschalter (`STAGE_RANGE_PARAM`/`
 **`STAGE_QUANTGLIDE_POLY_INPUT`** *(Poly-Gate (16 Kanäle = Stage 1–16))*<br>
 Pegel-Override für `MOD_QUANT_GLIDE` (siehe [4.4](#sec4-4)), gleiches Prinzip wie `STAGE_SLOPE_POLY_INPUT` oben (Schwelle 2V, `isConnected()`-Guard, überschreibt einen manuellen Panel-Klick). Sitzt in Reihe 3, Spalte E, direkt unterhalb von Range CV.
 
+**`STAGE_RATCHET_POLY_INPUT`** *(**Neu**, Poly-Gate (16 Kanäle = Stage 1–16))*<br>
+Ratcheting-Enable, siehe [4.13](#sec4-13). Identisches Pegel-Override-Prinzip wie oben (Schwelle 2V), setzt `MOD_RATCHET`. **Kein Panel-Button/Light am Hauptmodul** – wie bei Mute die einzige Bedienmöglichkeit in dieser Session. Sitzt in Reihe 6, Spalte F.
+
+**`STAGE_RATCHET_COUNT_POLY_INPUT`** *(**Neu**, Poly-CV (16 Kanäle = Stage 1–16))*<br>
+Ratchet-Sub-Trigger-Count, siehe [4.13](#sec4-13). Acht Zonen à 1,25V im 0–10V-Bereich = Count 1–8 (`resolveRatchetCount()`). Nicht gepatcht = Ratcheting bleibt wirkungslos, auch bei aktivem Enable-Gate. Sitzt in Reihe 7, Spalte F, direkt unterhalb von Ratchet Enable.
+
+**`STAGE_RATCHET_OFFSET_POLY_INPUT`** *(**Neu**, Poly-CV (16 Kanäle = Stage 1–16))*<br>
+Ratchet-Phasen-Offset, siehe [4.13](#sec4-13). Direkte lineare 0–10V → 0–100%-Zuordnung (kein Zonen-Raster wie Count), verschiebt die Sub-Trigger-Phase additiv Richtung Stage-Ende (gedeckelt, kein Wraparound). Nicht gepatcht = 0% (keine Verschiebung). Sitzt in Reihe 5, Spalte F.
+
 ### Ausgänge
 
 **`START_CYCLE_A/B_OUTPUT`**<br>
@@ -1051,28 +1206,33 @@ Feuert (1ms-Trigger), wenn Section A/B eine `MOD_FIRST`-markierte Stage erreicht
 **`END_CYCLE_A/B_OUTPUT`**<br>
 Analog für `MOD_LAST`.
 
-### Panel-Layout (30HP, 5 Spalten à 27mm Abstand, 14mm-Zeilenraster)
+### Panel-Layout (36HP, 6 Spalten à 27mm Abstand, 14mm-Zeilenraster)
 
 Seit der Panel-Beschriftungs-Session (reine Code/NanoVG-Labels statt
 SVG-Artwork, siehe [1.](#sec1)) hat das Panel eine 5. Spalte und ein
 neues, großzügigeres Zeilenraster bekommen – die größere, besser lesbare
 Schrift (9pt statt der anfänglich zu kleinen 6pt) brauchte mehr Platz, was
 Kinovice zum Anlass nahm, gleichzeitig einige Buchsen sinnvoller
-zusammenzugruppieren. 7 Reihen (`colA`=16mm … `colE`=124mm, `y`=20mm bis
+zusammenzugruppieren. Die Ratcheting-Session hat eine 6. Spalte (`colF`)
+ergänzt, da die 5-Spalten-Version zu diesem Zeitpunkt bereits vollständig
+belegt war und für die drei neuen Ratchet-Eingänge kein Platz mehr übrig
+ließ. 7 Reihen (`colA`=16mm … `colF`=151mm, `y`=20mm bis
 104mm in 14mm-Schritten):
 
 - **Reihe 1** (y=20): Clear (A) / Reset Values (B) / Preset Load, Poly (C) / Run Gate A (D) / Run Gate B (E) – Run Gate sitzt seit dieser Session hier statt in einer eigenen Reihe, da es thematisch zu den übrigen globalen Housekeeping-Controls passt.
 - **Reihe 2** (y=34): Scale Major (A) / Scale Minor (B) / Scale Chromatic (C) / Key CV (D) / **Stage-Range-Kanalwahl-CV (E)**.
-- **Reihe 3** (y=48): Start of Cycle A (A) / End of Cycle A (B) / Start of Cycle B (C) / End of Cycle B (D) / **Stage-Quantized-Glide-Gate (E, neu)**.
-- **Reihe 4** (y=62): Strobe A/SEXT (A) / Strobe B/SEXT (B) / Address Memory Recall A (C) / Address Memory Recall B (D) / **Voltage-External-Kanalwahl-CV (E, neu)** – Recall A/B sitzt seit dieser Session hier statt in einer eigenen Reihe (Kinovice-Wunsch: Recall neben Strobe).
-- **Reihe 5** (y=76): Advance A (A) / Advance B (B) / Stage Skip (C) / Stage First (D) / Stage Last (E).
-- **Reihe 6** (y=90): Stage Stop (A) / Stage Sustain (B) / Stage Enable (C) / Stage Pulse1 (D) / Stage Pulse2 (E).
-- **Reihe 7** (y=104): Stage Slope (A) / Stage Mute (B) / Address Memory Store A (C) / Address Memory Store B (D) / **Time-External-Kanalwahl-CV (E, neu)**.
+- **Reihe 3** (y=48): Start of Cycle A (A) / End of Cycle A (B) / Start of Cycle B (C) / End of Cycle B (D) / **Stage-Quantized-Glide-Gate (E)**.
+- **Reihe 4** (y=62): Strobe A/SEXT (A) / Strobe B/SEXT (B) / Address Memory Recall A (C) / Address Memory Recall B (D) / **Voltage-External-Kanalwahl-CV (E)** – Recall A/B sitzt seit der Panel-Beschriftungs-Session hier statt in einer eigenen Reihe (Kinovice-Wunsch: Recall neben Strobe).
+- **Reihe 5** (y=76): Advance A (A) / Advance B (B) / Stage Skip (C) / Stage First (D) / Stage Last (E) / **Ratchet-Phasen-Offset (F, neu)**.
+- **Reihe 6** (y=90): Stage Stop (A) / Stage Sustain (B) / Stage Enable (C) / Stage Pulse1 (D) / Stage Pulse2 (E) / **Ratchet Enable (F, neu)**.
+- **Reihe 7** (y=104): Stage Slope (A) / Stage Mute (B) / Address Memory Store A (C) / Address Memory Store B (D) / Time-External-Kanalwahl-CV (E) / **Ratchet Count (F, neu)**.
 
-Beide neuen Kanalwahl-CV-Eingänge (`STAGE_VOLTEXT_CH_POLY_INPUT` in Reihe
-4, `STAGE_TIMEEXT_CH_POLY_INPUT` in Reihe 7) belegen die einzigen beiden
-bis dahin leeren Spalte-E-Plätze im 30HP-Panel – keine weitere
-Panel-Verbreiterung nötig. Farbcodierung nach Funktion: System (Grau) /
+Beide Kanalwahl-CV-Eingänge (`STAGE_VOLTEXT_CH_POLY_INPUT` in Reihe
+4, `STAGE_TIMEEXT_CH_POLY_INPUT` in Reihe 7) belegen seit der Panel-
+Beschriftungs-Session die einzigen beiden bis dahin leeren Spalte-E-Plätze
+im 30HP-Panel. Die drei neuen Ratchet-Eingänge belegen die neu geschaffene
+Spalte F in den Reihen 5–7 (Reihen 1–4 lassen Spalte F bewusst leer statt
+krampfhaft aufzufüllen). Farbcodierung nach Funktion: System (Grau) /
 Musical (Violett) / Section A (Blau) / Section B (Orange) / Stage-Modifier
 (Türkis), durchgängig über alle Reihen. Noch offen: visuelle
 Kollisionsprüfung der Labels direkt in Rack (die Positionierung wurde
@@ -1094,14 +1254,16 @@ sind vernachlässigbar.
 ---
 
 <a id="sec7"></a>
+
 ## 7. Marf248CvExpander
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
-12HP-Expander (ursprünglich 6HP, für die Slew-Curve-CV-Spalte erweitert).
-Ebenfalls reiner Jack-Träger ohne eigene DSP-Logik. Unverändert gegenüber
-dem letzten Dokumentationsstand.
+12HP-Expander (ursprünglich 6HP, für die Slew-Curve-CV-Spalte erweitert;
+Höhe blieb auch in der Ratcheting-Session bei 12HP – die neue Warp-Blend-
+Zeile wurde vertikal ergänzt statt einer weiteren Spalte, siehe unten).
+Ebenfalls reiner Jack-Träger ohne eigene DSP-Logik.
 
-*[Siehe [Abbildung 4](#fig4) für das vollständige Panel mit allen beschrifteten Buchsen/Reglern.]*
+*[Siehe [Abbildung 4](#fig4) für das vollständige Panel mit allen beschrifteten Buchsen/Reglern · [[#Abbildung 4 – Marf248CvExpander Panel (12HP)|Obsidian]]]*
 
 ### Eingänge
 
@@ -1110,6 +1272,9 @@ Additive CV pro Stage auf die aufgelöste Stage-Zeit, **nach** External/Internal
 
 **`CURVE_CV_INPUT` (Poly, 16 Kanäle)**<br>
 Additive CV pro Stage auf die Curve-Knob-Position (Kruemmung der Slew-Kurve), vor der Power-Berechnung aufaddiert. Eigener Attenuverter (`CURVE_CV_ATTEN_PARAM`), ±5V-Referenzspanne.
+
+**`WARP_CV_INPUT` (**Neu**, Poly, 16 Kanäle)**<br>
+Ratchet-Warp-Blend-CV, siehe [4.13](#sec4-13). Additiv auf `WARP_GLOBAL_PARAM` aufaddiert, vor dem Clamp auf 0–1. Eigener Attenuverter (`WARP_CV_ATTEN_PARAM`), ±5V-Referenzspanne (analog zu Curve-CV, aber unipolare 0–100%-Zielsemantik statt bipolarer Kruemmungsrichtung).
 
 ### Parameter
 
@@ -1125,19 +1290,38 @@ Attenuverter für Slew-Curve-CV (−1..+1).
 **`CURVE_GLOBAL_PARAM`**<br>
 Globaler Bias-Knob (−1..+1): wirkt **immer** auf alle 16 Stages, auch ohne gepatchtes Kabel am `CURVE_CV_INPUT` – im Unterschied zu `TIME_CV_OFFSET_PARAM`, der ohne Kabel wirkungslos bleibt.
 
+**`WARP_CV_ATTEN_PARAM`** *(**Neu**)*<br>
+Attenuverter für Ratchet-Warp-Blend-CV (−1..+1).
+
+**`WARP_GLOBAL_PARAM`** *(**Neu**)*<br>
+Globaler Blend-Bias (0..1, Anzeige in %): wirkt **immer** auf alle 16 Stages, auch ohne gepatchtes Kabel am `WARP_CV_INPUT` – analog zu `CURVE_GLOBAL_PARAM`, aber unipolar statt bipolar (0% = rein linear, 100% = volle Smootherstep-Verzerrung), da Blend-Menge kein bipolares Konzept ist wie die Curve-Kruemmungsrichtung.
+
 ### Ausgänge
 
 **`GATE_A_OUTPUT` / `GATE_B_OUTPUT` (Poly, 16 Kanäle)**<br>
-Kanal i ist high (10V), sobald Section A/B aktuell Stage i adressiert – unabhängig vom Run-Zustand. Optionale Retrigger-Lücke (Kontextmenü, `regateGapEnabled`, Default an): zieht das Gate der aktuell adressierten Stage kurz auf 0V (~5ms), wenn ein Wiedereintritt ohne Indexwechsel erkannt wird (Pendulum-Wendepunkt, Strobe auf dieselbe Adresse, Sustain/Enable-Freigabe), damit nachgeschaltete Hüllkurvengeneratoren zuverlässig neu triggern. **Fallstrick:** Poly-zu-Mono-Konvertierung dieser Gates erzeugt aufgrund nahtloser Kanalübergänge einen durchgehend hohen Pegel (verifiziert per Bogaudio MONO auf dem Scope) – für Trigger-Zwecke daher besser APOUT verwenden, siehe [Abschnitt 10](#sec10).
+Kanal i ist high (10V), sobald Section A/B aktuell Stage i adressiert – unabhängig vom Run-Zustand. Optionale Retrigger-Lücke (Kontextmenü, `regateGapEnabled`, Default an): zieht das Gate der aktuell adressierten Stage kurz auf 0V (~5ms), wenn ein Wiedereintritt ohne Indexwechsel erkannt wird (Pendulum-Wendepunkt, Strobe auf dieselbe Adresse, Sustain/Enable-Freigabe), damit nachgeschaltete Hüllkurvengeneratoren zuverlässig neu triggern. **Bleibt von Ratcheting unberührt** – auch bei aktivem Ratcheting bleibt das Gate für die volle Stage-Dauer high, es pulst nicht mit den Sub-Triggern mit (bewusste Design-Entscheidung, damit das Stage-Gate unabhängig vom Ratcheting extern nutzbar bleibt; die eigentlichen Ratchet-Sub-Trigger liegen an P1OUT/P2OUT des Hauptmoduls, siehe [4.13](#sec4-13)). **Fallstrick:** Poly-zu-Mono-Konvertierung dieser Gates erzeugt aufgrund nahtloser Kanalübergänge einen durchgehend hohen Pegel (verifiziert per Bogaudio MONO auf dem Scope) – für Trigger-Zwecke daher besser APOUT verwenden, siehe [Abschnitt 10](#sec10).
 
 ### Kontextmenü
 
 Rechtsklick auf das Panel: „Retrigger-Lücke bei Stage-Wiedereintritt
 (~5ms)" (Checkbox, `regateGapEnabled`, persistiert per JSON).
 
+### Panel-Layout (Nachtrag Ratcheting-Session)
+
+Die Warp-Blend-Zeile (`WARP_CV_INPUT` links, `WARP_CV_ATTEN_PARAM` rechts)
+sowie darunter `WARP_GLOBAL_PARAM` (rechte Spalte) wurden **unterhalb**
+der bestehenden Time-/Curve-Reihen eingefügt, statt einer dritten Spalte
+– bei nur 12HP war dafür kein horizontaler Platz, wohl aber der vom
+ursprünglichen Autor bereits vermerkte vertikale Puffer. `GATE_A_OUTPUT`/
+`GATE_B_OUTPUT` rücken dadurch zwei Zeilen (28mm) weiter nach unten.
+Numerisch geprüft (Label der letzten Zeile endet knapp vor den unteren
+Befestigungsschrauben), aber wie immer im Sandbox ohne Rack-SDK nicht
+visuell am Bildschirm bestätigt.
+
 ---
 
 <a id="sec8"></a>
+
 ## 8. Expander-Mechanismus (Kommunikation zwischen den Modulen)
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -1167,6 +1351,7 @@ Key CV oder die neue Stage-Address-Kanalwahl-CV).
 ---
 
 <a id="sec9"></a>
+
 ## 9. Persistenz (Patch-Speicherung)
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -1196,6 +1381,7 @@ Einfluss, da nur Darstellung, nicht Speicherung betroffen ist.
 ---
 
 <a id="sec10"></a>
+
 ## 10. Bekannte Fallstricke im Zusammenspiel
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -1361,6 +1547,7 @@ führen:
 ---
 
 <a id="sec11"></a>
+
 ## 11. Design-Entscheidungen & Abgrenzungen
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -1425,10 +1612,36 @@ führen:
 - **Multiplier-Sicherheitsklammern (`[1e-4, 1e4]`) sind reiner
   Rechenschutz, keine musikalische Grenze** – analog zur bestehenden
   CV-Expander-Zeit-Klammer (`[0,001s, 30s]`).
+- **Ratcheting hat wie Mute kein Panel-Gegenstück in dieser Session** –
+  Enable, Count und Offset sind ausschließlich per CV am Trigger-Expander
+  steuerbar, siehe [4.13](#sec4-13). Panel-Regler folgen frühestens mit
+  der separat geplanten Panel-Relayout-Session.
+- **Ratchet-Count ohne gepatchte CV ist bewusst wirkungslos, kein
+  Default-Wert** – anders als z.B. Range (Default „Full") gibt es hier
+  keinen sinnvollen impliziten Standard, da ein Panel-Regler dafür fehlt;
+  eine Stage mit aktivem Enable-Bit aber ohne Count-CV verhält sich daher
+  exakt wie eine Stage ohne Ratcheting.
+- **Ratchet-Sub-Trigger feuern nur auf P1OUT/P2OUT, wenn das jeweilige
+  `MOD_PULSE1`/`MOD_PULSE2`-Bit gesetzt ist** – Ratcheting ersetzt nur die
+  Trigger-*Art* auf einem bereits aktivierten Ausgang, aktiviert aber
+  keinen Ausgang selbstständig. Bewusste Entscheidung, um nicht implizit
+  einen zusätzlichen, separaten "Ratchet-Out"-Jack einführen zu müssen.
+- **Ratchet-Offset nutzt additive Verschiebung mit Deckel statt
+  Wraparound** – ein Wraparound würde bei mehreren Sub-Triggern die
+  zeitliche Reihenfolge durcheinanderbringen (Zielzeiten müssen für die
+  inkrementelle Feuer-Logik monoton steigen), siehe [4.13](#sec4-13).
+- **Aktivierung von Ratcheting mitten im Stage-Aufenthalt holt keinen
+  Trigger-Burst nach** – bereits verstrichene Sub-Trigger-Zeitpunkte werden
+  stillschweigend übersprungen statt nachträglich alle auf einmal zu
+  feuern (Kinovice-Entscheidung, siehe [4.13](#sec4-13)).
+- **CvExpander-Gate A/B bleibt von Ratcheting unberührt** – bewusst
+  getrennt vom Ratchet-Sub-Trigger-Mechanismus auf P1OUT/P2OUT, damit das
+  Stage-Gate weiterhin unabhängig extern nutzbar bleibt.
 
 ---
 
 <a id="figures"></a>
+
 ## Abbildungsverzeichnis
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
@@ -1442,9 +1655,12 @@ Musical (violett), Section A (blau), Section B (orange), Stage-Modifier
 verlustfrei skalierbar) im Ordner `docs/figures/` neben dieser Datei.
 
 <a id="fig1"></a>
-**Abbildung 1 – Marf248 Panel-Spaltenlayout (schematische Übersicht)**<br>
+
+#### Abbildung 1 – Marf248 Panel-Spaltenlayout (schematische Übersicht)
+*[[#Abbildung 1 – Marf248 Panel-Spaltenlayout (schematische Übersicht)|Obsidian]]*
+
 ![Marf248 Panel Overview](figures/Marf248_PanelOverview.svg)<br>
-Referenziert aus [3.1](#sec3-1). Zeigt die dort beschriebene Spaltenstruktur
+Referenziert aus [3.1](#sec3-1) · [[#3.1 Panel-Layout|Obsidian]]. Zeigt die dort beschriebene Spaltenstruktur
 (External CV / Section-A-Controls-Jacks-Ausgänge / 16× Stage / Section-B-
 Ausgänge-Jacks-Controls / Preset-Spalte). Da alle 16 Stage-Spalten
 strukturell identisch sind, sind nur die ersten zwei sowie die letzte
@@ -1452,9 +1668,12 @@ vollständig gezeichnet, der Rest ist zu "…" zusammengefasst – siehe
 Abbildung 2 für das detaillierte Pro-Stage-Layout.
 
 <a id="fig2"></a>
-**Abbildung 2 – Marf248 Stage-Spalten-Detail**<br>
+
+#### Abbildung 2 – Marf248 Stage-Spalten-Detail
+*[[#Abbildung 2 – Marf248 Stage-Spalten-Detail|Obsidian]]*
+
 ![Marf248 Stage Column Detail](figures/Marf248_StageColumnDetail.svg)<br>
-Referenziert aus [3.2](#sec3-2). Eine repräsentative Stage-Spalte (alle 16
+Referenziert aus [3.2](#sec3-2) · [[#3.2 Bedienelemente pro Stage|Obsidian]]. Eine repräsentative Stage-Spalte (alle 16
 sind identisch, `xStep=36mm` Abstand), mit Voltage-/Time-Slidern, den
 beiden Stage-LEDs, allen 8 Button-Reihen (je 2 Spalten,
 `buttonRowsY`/`buttonColOffsets` in `Marf248.cpp`) inklusive dem neuen
@@ -1462,14 +1681,24 @@ Quantized-Glide-Button neben Slope, sowie dem Shape/Curve/Time-Range/
 Range-Block.
 
 <a id="fig3"></a>
-**Abbildung 3 – Marf248TriggerExpander Panel (30HP)**<br>
+
+#### Abbildung 3 – Marf248TriggerExpander Panel (36HP)
+*[[#Abbildung 3 – Marf248TriggerExpander Panel (36HP)|Obsidian]]*
+
 ![Marf248TriggerExpander Panel](figures/Marf248TriggerExpander_Panel.svg)<br>
-Referenziert aus [6.](#sec6). Alle 5 Spalten × 7 Reihen plus das LINK-
+Referenziert aus [6.](#sec6) · [[#6. Marf248TriggerExpander|Obsidian]]. Alle 6 Spalten × 7 Reihen plus das LINK-
 Licht, passend zur Koordinatentabelle im Panel-Layout-Unterabschnitt,
-inklusive Stage-Range-CV (Reihe 2E) und Quantized Glide (Reihe 3E).
+inklusive Stage-Range-CV (Reihe 2E), Quantized Glide (Reihe 3E) sowie den
+drei neuen Ratchet-Eingängen in Spalte F (Offset Reihe 5, Enable Reihe 6,
+Count Reihe 7).
 
 <a id="fig4"></a>
-**Abbildung 4 – Marf248CvExpander Panel (12HP)**<br>
+
+#### Abbildung 4 – Marf248CvExpander Panel (12HP)
+*[[#Abbildung 4 – Marf248CvExpander Panel (12HP)|Obsidian]]*
+
 ![Marf248CvExpander Panel](figures/Marf248CvExpander_Panel.svg)<br>
-Referenziert aus [7.](#sec7). Stage-Time-CV-/Slew-Curve-CV-Eingänge mit
-ihren Attenuvertern und Offset-/Bias-Reglern, sowie Gate-A/B-Ausgänge.
+Referenziert aus [7.](#sec7) · [[#7. Marf248CvExpander|Obsidian]]. Stage-Time-CV-/Slew-Curve-CV-Eingänge mit
+ihren Attenuvertern und Offset-/Bias-Reglern, die neue Ratchet-Warp-Blend-
+Zeile (CV, Attenuverter, globaler Bias) darunter, sowie Gate-A/B-Ausgänge
+(um zwei Zeilen nach unten verschoben).

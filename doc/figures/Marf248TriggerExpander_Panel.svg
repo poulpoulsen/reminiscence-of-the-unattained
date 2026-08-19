@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 152.4 128.5" width="609.6" height="514.0" font-family="Arial, Helvetica, sans-serif">
-<rect x="0" y="0" width="152.4" height="128.5" fill="#e4e4e2" stroke="#333333" stroke-width="0.6"/>
-<text x="76.2" y="10" font-size="4.5" fill="#222" text-anchor="middle" font-weight="bold">Marf248 TriggerExpander (30HP)</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 182.88 128.5" width="731.5" height="514.0" font-family="Arial, Helvetica, sans-serif">
+<rect x="0" y="0" width="182.88" height="128.5" fill="#e4e4e2" stroke="#333333" stroke-width="0.6"/>
+<text x="91.4" y="10" font-size="4.5" fill="#222" text-anchor="middle" font-weight="bold">Marf248 TriggerExpander (36HP)</text>
 <circle cx="5" cy="4.5" r="1.6" fill="#999" stroke="#555" stroke-width="0.2"/>
-<circle cx="147.4" cy="4.5" r="1.6" fill="#999" stroke="#555" stroke-width="0.2"/>
+<circle cx="177.88" cy="4.5" r="1.6" fill="#999" stroke="#555" stroke-width="0.2"/>
 <circle cx="5" cy="124.0" r="1.6" fill="#999" stroke="#555" stroke-width="0.2"/>
-<circle cx="147.4" cy="124.0" r="1.6" fill="#999" stroke="#555" stroke-width="0.2"/>
+<circle cx="177.88" cy="124.0" r="1.6" fill="#999" stroke="#555" stroke-width="0.2"/>
 <circle cx="70" cy="22" r="1.3" fill="#2ecc71" stroke="#1a1a1a" stroke-width="0.3"/>
 <text x="73.5" y="22" font-size="2.6" fill="#8a8a8a" text-anchor="start" dominant-baseline="middle">LINK</text>
 <circle cx="16" cy="32" r="2.6" fill="#2b2b2b" stroke="#8a8a8a" stroke-width="0.5"/>
@@ -82,6 +82,9 @@
 <circle cx="124" cy="88" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
 <circle cx="124" cy="88" r="1.04" fill="#111"/>
 <text x="124" y="93.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">LAST (poly)</text>
+<circle cx="151" cy="88" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
+<circle cx="151" cy="88" r="1.04" fill="#111"/>
+<text x="151" y="93.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">RATCHET OFS (poly)</text>
 <circle cx="16" cy="102" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
 <circle cx="16" cy="102" r="1.04" fill="#111"/>
 <text x="16" y="107.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">STOP (poly)</text>
@@ -97,6 +100,9 @@
 <circle cx="124" cy="102" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
 <circle cx="124" cy="102" r="1.04" fill="#111"/>
 <text x="124" y="107.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">PULSE2 (poly)</text>
+<circle cx="151" cy="102" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
+<circle cx="151" cy="102" r="1.04" fill="#111"/>
+<text x="151" y="107.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">RATCHET (poly)</text>
 <circle cx="16" cy="116" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
 <circle cx="16" cy="116" r="1.04" fill="#111"/>
 <text x="16" y="121.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">SLOPE (poly)</text>
@@ -112,4 +118,7 @@
 <circle cx="124" cy="116" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
 <circle cx="124" cy="116" r="1.04" fill="#111"/>
 <text x="124" y="121.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">TIME EXT CH (poly)</text>
+<circle cx="151" cy="116" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
+<circle cx="151" cy="116" r="1.04" fill="#111"/>
+<text x="151" y="121.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">RATCHET CT (poly)</text>
 </svg>

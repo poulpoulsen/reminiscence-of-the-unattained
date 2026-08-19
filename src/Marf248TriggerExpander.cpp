@@ -41,18 +41,18 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 	Marf248TriggerExpanderWidget(Marf248TriggerExpander* module) {
 		setModule(module);
 
-		// 12HP -> 18HP -> 24HP -> 30HP (diese Session, "Panel Labeling",
-		// zweiter Anlauf nach zu kleiner Schrift): die groessere,
-		// lesbarere Schrift (siehe PanelLabel-Kommentar oben) braucht mehr
-		// Platz - sowohl in der Hoehe (weniger, dafuer hoehere Reihen) als
-		// auch in der Breite (5. Spalte, da bei nur 4 Spalten die
-		// Zeilenzahl trotz hoeherer Reihen nicht ausgereicht haette, um
-		// alle 31 Ein-/Ausgaenge unterzubringen - siehe Rechnung unten).
-		// Hoehe ist bei Rack-Modulen fix (RACK_GRID_HEIGHT), also bleibt
-		// nur die Breite als Stellschraube. FALLS diese Verbreiterung im
-		// Case zu eng wird: Alternative waere zweizeilige Labels bei 24HP
-		// belassen - dann bitte Rueckmeldung, das ist ein separater Umbau.
-		const float HP = 30.f;
+		// 12HP -> 18HP -> 24HP -> 30HP -> 36HP (diese Session, "Ratcheting"):
+		// die groessere, lesbarere Schrift (siehe PanelLabel-Kommentar oben)
+		// braucht mehr Platz - sowohl in der Hoehe (weniger, dafuer hoehere
+		// Reihen) als auch in der Breite (jetzt 6. Spalte, da 30HP/5 Spalten
+		// bereits vollstaendig belegt war und fuer die zwei neuen Ratchet-
+		// Eingaenge (STAGE_RATCHET_POLY_INPUT/STAGE_RATCHET_COUNT_POLY_INPUT)
+		// kein Platz mehr uebrig liess). Hoehe ist bei Rack-Modulen fix
+		// (RACK_GRID_HEIGHT), also bleibt weiterhin nur die Breite als
+		// Stellschraube. FALLS diese Verbreiterung im Case zu eng wird:
+		// Alternative waere zweizeilige Labels bei 24HP belassen - dann
+		// bitte Rueckmeldung, das ist ein separater Umbau.
+		const float HP = 36.f;
 		box.size = Vec(HP * RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
 
 		PanelBackground* panelBg = new PanelBackground;
@@ -77,6 +77,10 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		float colC = 70.f;
 		float colD = 97.f;
 		float colE = 124.f;
+		// 6. Spalte (Session "Ratcheting"), gleicher 27mm-Pitch wie A-E.
+		// Belegt in Reihe 5/6/7 (siehe dort), Reihen 1-4 lassen colF
+		// bewusst leer statt krampfhaft aufzufuellen.
+		float colF = 151.f;
 
 		// Link-Licht mittig ueber allen 5 Spalten, Label daneben statt
 		// darunter (spart die Zeile, die sonst mit Reihe 1 kollidieren
@@ -187,6 +191,12 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		addLabel(Vec(colD, y), "FIRST", COLOR_STAGEMOD);
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colE, y)), module, Marf248TriggerExpander::STAGE_LAST_POLY_INPUT));
 		addLabel(Vec(colE, y), "LAST", COLOR_STAGEMOD);
+		// Spalte F (Session "Ratcheting", Nachtrag): Ratchet Phasen-Offset,
+		// thematisch hier untergebracht statt bei Enable/Count (Reihe 6/7),
+		// da colF dort bereits belegt ist und Reihe 5 (Stage-Adress-
+		// Modifier) noch Platz hatte.
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colF, y)), module, Marf248TriggerExpander::STAGE_RATCHET_OFFSET_POLY_INPUT));
+		addLabel(Vec(colF, y), "RATCHET OFS", COLOR_STAGEMOD);
 
 		// Reihe 6: Stop/Sustain/Enable/Pulse1/Pulse2 (Stage-Zustands- und
 		// Puls-Modifier).
@@ -201,6 +211,13 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		addLabel(Vec(colD, y), "PULSE1", COLOR_STAGEMOD);
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colE, y)), module, Marf248TriggerExpander::STAGE_PULSE2_POLY_INPUT));
 		addLabel(Vec(colE, y), "PULSE2", COLOR_STAGEMOD);
+		// Spalte F (Session "Ratcheting"): Ratchet Enable-Gate, thematisch
+		// hier eingeordnet (Pulse-verwandt, da Ratchet die P1/P2-Ausgaenge
+		// als "Ratchet-Out" nutzt, siehe MOD_RATCHET-Kommentar in
+		// Marf248.hpp). Der zugehoerige Count-CV-Eingang sitzt eine Reihe
+		// tiefer (Reihe 7, gleiche Spalte).
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colF, y)), module, Marf248TriggerExpander::STAGE_RATCHET_POLY_INPUT));
+		addLabel(Vec(colF, y), "RATCHET", COLOR_STAGEMOD);
 
 		// Reihe 7: Slope/Mute (Stage-Modifier) + Adress-Speicher Store A/B.
 		// Recall A/B sitzt seit Kinovice-Wunsch jetzt in Reihe 4 neben den
@@ -218,6 +235,10 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		addLabel(Vec(colD, y), "ADDR STORE B", COLOR_SECTION_B);
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colE, y)), module, Marf248TriggerExpander::STAGE_TIMEEXT_CH_POLY_INPUT));
 		addLabel(Vec(colE, y), "TIME EXT CH", COLOR_STAGEMOD);
+		// Spalte F (Session "Ratcheting"): Ratchet Count-CV, direkt unter
+		// dem Enable-Gate aus Reihe 6 (gleiche Spalte F).
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colF, y)), module, Marf248TriggerExpander::STAGE_RATCHET_COUNT_POLY_INPUT));
+		addLabel(Vec(colF, y), "RATCHET CT", COLOR_STAGEMOD);
 	}
 };
 

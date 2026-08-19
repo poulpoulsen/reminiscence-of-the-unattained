@@ -52,6 +52,23 @@ struct Marf248CvExpander : Module {
 		// wirkungslos bleibt). Kinovice-Entscheidung: echter unabhaengiger
 		// globaler Versatz statt eines reinen CV-Offsets.
 		CURVE_GLOBAL_PARAM,
+		// Ratchet-Warp-Blend (Session "Ratcheting", siehe MOD_RATCHET/
+		// ratchetWarpPhase() in Marf248.hpp): analoges Muster zu
+		// CURVE_CV_ATTEN_PARAM/CURVE_GLOBAL_PARAM oben, aber fuer die
+		// Verzerrung der Ratchet-Sub-Trigger-Verteilung statt der Slew-
+		// Kurve. Attenuverter skaliert die eingehende Poly-CV (siehe
+		// WARP_CV_INPUT unten).
+		WARP_CV_ATTEN_PARAM,
+		// Globaler Blend-Bias, wirkt IMMER auf alle 16 Stages (auch ohne
+		// gepatchtes Kabel an WARP_CV_INPUT) - analog zu CURVE_GLOBAL_PARAM
+		// oben, JETZT bipolar -1..+1 (Nachtrag, Praezisierung nach erster
+		// Ratcheting-Session): positiv = "bauchig" (Sub-Trigger dicht am
+		// Stage-Anfang, Luecken wachsen zum Ende hin), negativ =
+		// "durchhaengend" (Sub-Trigger dicht am Stage-Ende, Luecken am
+		// Anfang), 0 = linear/gleichmaessig. Siehe ratchetWarpPhase() in
+		// Marf248.hpp fuer die Potenz-Abbildung (ersetzt die anfaengliche,
+		// symmetrische Smootherstep-Fassung).
+		WARP_GLOBAL_PARAM,
 		PARAMS_LEN
 	};
 	enum InputId {
@@ -64,6 +81,11 @@ struct Marf248CvExpander : Module {
 		// hoerbar, da applySlewCurve() bei Linear/Stepped ohnehin nicht
 		// auf die Power zugreift).
 		CURVE_CV_INPUT,
+		// Ratchet-Warp-Blend-CV (Session "Ratcheting"): Poly (16 = Stage
+		// 1-16), additiv auf WARP_GLOBAL_PARAM aufaddiert, VOR dem Clamp auf
+		// -1..+1 in Marf248::process() - analog zum Curve-CV-Muster oben,
+		// jetzt mit derselben bipolaren -1..+1-Semantik wie Curve.
+		WARP_CV_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
@@ -90,8 +112,14 @@ struct Marf248CvExpander : Module {
 		configParam(TIME_CV_OFFSET_PARAM, -10.f, 10.f, 0.f, "Stage Time CV Offset", "V");
 		configParam(CURVE_CV_ATTEN_PARAM, -1.f, 1.f, 0.f, "Slew Curve CV Attenuverter");
 		configParam(CURVE_GLOBAL_PARAM, -1.f, 1.f, 0.f, "Slew Curve globaler Bias");
+		configParam(WARP_CV_ATTEN_PARAM, -1.f, 1.f, 0.f, "Ratchet Warp Blend CV Attenuverter");
+		// Bipolar -1..+1 (Nachtrag), Prozent-Anzeige weiterhin ueber
+		// displayMultiplier=100 (jetzt -100%..+100%, positiv="bauchig",
+		// negativ="durchhaengend", siehe Enum-Kommentar oben).
+		configParam(WARP_GLOBAL_PARAM, -1.f, 1.f, 0.f, "Ratchet Warp Blend globaler Bias", "%", 0.f, 100.f);
 		configInput(STAGE_TIME_CV_INPUT, "Stage Time CV (poly, 16 = Stage 1-16)");
 		configInput(CURVE_CV_INPUT, "Slew Curve CV (poly, 16 = Stage 1-16)");
+		configInput(WARP_CV_INPUT, "Ratchet Warp Blend CV (poly, 16 = Stage 1-16)");
 		configOutput(GATE_A_OUTPUT, "Section A Gate (poly, 16 = Stage 1-16)");
 		configOutput(GATE_B_OUTPUT, "Section B Gate (poly, 16 = Stage 1-16)");
 	}

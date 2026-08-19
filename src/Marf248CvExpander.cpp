@@ -91,6 +91,37 @@ struct Marf248CvExpanderWidget : ModuleWidget {
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(colCurve, y)), module, Marf248CvExpander::CURVE_GLOBAL_PARAM));
 		addLabel(Vec(colCurve, y), "CURVE BIAS", COLOR_STAGEMOD);
 
+		// Ratchet-Warp-Blend (Session "Ratcheting", siehe MOD_RATCHET/
+		// ratchetWarpPhase() in Marf248.hpp): analoge 2-Zeilen-Anordnung wie
+		// Time/Curve oben, aber auf EINE Spalte verdichtet (colTime fuer den
+		// CV-Eingang, colCurve fuer Attenuverter+Bias darunter), da bei nur
+		// 12HP kein Platz fuer eine dritte Spalte bleibt - horizontal bleibt
+		// dieses Modul unveraendert 12HP, die vom urspruenglichen Autor
+		// erwaehnte "reichlich Puffer nach unten" wird stattdessen fuer die
+		// beiden zusaetzlichen Zeilen genutzt (siehe Screw-Abstand unten).
+		// Gate A/B ruecken dadurch zwei Zeilen tiefer.
+		y += stepY;
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colTime, y)), module, Marf248CvExpander::WARP_CV_INPUT));
+		addLabel(Vec(colTime, y), "WARP CV", COLOR_STAGEMOD);
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(colCurve, y)), module, Marf248CvExpander::WARP_CV_ATTEN_PARAM));
+		addLabel(Vec(colCurve, y), "WARP ATTEN", COLOR_STAGEMOD);
+
+		// colTime bleibt in dieser Zeile bewusst leer (kein zweiter Regler
+		// noetig, siehe Kommentar oben) - der globale Bias sitzt weiterhin
+		// in Spalte colCurve, direkt unter dem Attenuverter.
+		y += stepY;
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(colCurve, y)), module, Marf248CvExpander::WARP_GLOBAL_PARAM));
+		addLabel(Vec(colCurve, y), "WARP BLEND", COLOR_STAGEMOD);
+
+		// Zeilen-y ab hier: WARP CV=68, WARP BLEND=82, GATE A=96, GATE B=110
+		// (stepY=14mm ab y=26 Startzeile). Label der letzten Zeile (GATE B)
+		// endet bei ca. 115.5mm - numerisch
+		// analog zur Trigger-Expander-Rechnung (siehe dortiger Kommentar:
+		// stepY=14mm, unterste Buchsen-Schrauben bei RACK_GRID_HEIGHT-
+		// RACK_GRID_WIDTH, identisch fuer jede HP-Breite) knapper Puffer zu
+		// den Befestigungsschrauben als vorher, aber im selben Rahmen wie
+		// beim Trigger-Expander bei 30HP - wie immer im Sandbox ohne
+		// Rack-SDK nicht visuell bestaetigt, bitte lokal gegenchecken.
 		y += stepY;
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colCenter, y)), module, Marf248CvExpander::GATE_A_OUTPUT));
 		addLabel(Vec(colCenter, y), "GATE A", COLOR_SECTION_A);

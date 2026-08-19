@@ -193,6 +193,34 @@ struct Marf248TriggerExpander : Module {
 		// Panel-Klick gesetzte Zustand erhalten - identisches Rueckfall-
 		// Verhalten wie alle anderen Stage-Modifier-Poly-Overrides.
 		STAGE_QUANTGLIDE_POLY_INPUT,
+		// Ratcheting (Poly, Kanal i = Stage i+1, siehe MOD_RATCHET-Kommentar
+		// in Marf248.hpp): zwei getrennte Eingaenge statt einem, da hier -
+		// anders als bei den bisherigen reinen Ein/Aus-Overrides - sowohl ein
+		// Enable-Gate ALS AUCH ein Wertumfang (Count 1-8) noetig sind.
+		// STAGE_RATCHET_POLY_INPUT: identisches Pegel-Override-Prinzip wie
+		// STAGE_MUTE_POLY_INPUT oben (>= GATE_THRESHOLD setzt MOD_RATCHET,
+		// darunter loescht es das Bit) - KEIN Hauptpanel-Pendant in dieser
+		// Session (Hauptpanel bleibt bis zum separat geplanten Relayout
+		// gesperrt), daher bleibt das Bit bei nicht gepatchtem Kabel
+		// dauerhaft geloescht (kein "letzter Panel-Klick"-Fallback, den es
+		// schlicht nicht gibt).
+		STAGE_RATCHET_POLY_INPUT,
+		// STAGE_RATCHET_COUNT_POLY_INPUT: 8 gleich grosse Zonen a 1.25V im
+		// 0-10V-Bereich kodieren den Ratchet-Count 1-8 (siehe
+		// resolveRatchetCount() in Marf248.hpp). Nicht gepatcht = Ratchet
+		// bleibt wirkungslos, auch wenn STAGE_RATCHET_POLY_INPUT das Bit
+		// gesetzt hat (Kinovice-Entscheidung, kein Panel-Default vorhanden).
+		STAGE_RATCHET_COUNT_POLY_INPUT,
+		// Ratchet-Offset (Poly, Kanal i = Stage i+1): additive Phasen-
+		// Verschiebung der Sub-Trigger Richtung Stage-Ende, siehe
+		// ratchetTargetPhase() in Marf248.hpp. Direkte lineare 0-10V ->
+		// 0..1-Zuordnung (kein Zonen-Raster wie bei Range/VoltExt-Kanalwahl,
+		// da hier ein stufenloser Wert statt eines diskreten Zustands
+		// gebraucht wird) - analog zu KEY_CV_INPUT oben. Nicht gepatcht =
+		// Offset 0 (keine Verschiebung, bisheriges Verhalten unveraendert).
+		// Kein Panel-Gegenstueck in dieser Session, gleiches Muster wie die
+		// beiden anderen Ratchet-Eingaenge oben.
+		STAGE_RATCHET_OFFSET_POLY_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
@@ -249,6 +277,9 @@ struct Marf248TriggerExpander : Module {
 		configInput(STAGE_TIMEEXT_CH_POLY_INPUT, "Stage Time External channel select CV (poly, ch. 1-16 = stage 1-16, 0-2V=Internal, 2-4V=A, 4-6V=B, 6-8V=C, 8-10V=D)");
 		configInput(STAGE_RANGE_POLY_INPUT, "Stage Range CV (poly, ch. 1-16 = stage 1-16, 7 zones of ~1.43V: Full/Half/L0/L2/L4/L6/L8, overrides panel knob)");
 		configInput(STAGE_QUANTGLIDE_POLY_INPUT, "Stage Quantized Glide gate (poly, ch. 1-16 = stage 1-16, high overrides panel button)");
+		configInput(STAGE_RATCHET_POLY_INPUT, "Stage Ratchet enable gate (poly, ch. 1-16 = stage 1-16, no panel counterpart)");
+		configInput(STAGE_RATCHET_COUNT_POLY_INPUT, "Stage Ratchet count CV (poly, ch. 1-16 = stage 1-16, 8 zones of 1.25V = count 1-8, unpatched = ratchet has no effect)");
+		configInput(STAGE_RATCHET_OFFSET_POLY_INPUT, "Stage Ratchet phase offset CV (poly, ch. 1-16 = stage 1-16, 0-10V = 0-100% shift toward stage end, unpatched = 0%)");
 
 		configOutput(START_CYCLE_A_OUTPUT, "Section A Start of Cycle trigger");
 		configOutput(END_CYCLE_A_OUTPUT, "Section A End of Cycle trigger");

@@ -1328,6 +1328,27 @@ struct Marf248 : Module {
 			}
 		}
 
+		// Stage RATCHET Enable-Gate vom Trigger-Expander (Session
+		// "Ratcheting", siehe MOD_RATCHET-Kommentar in Marf248.hpp):
+		// identisches isConnected()-Guard-Prinzip wie STAGE_MUTE_POLY_INPUT
+		// oben - KEIN Hauptpanel-Pendant in dieser Session, daher auch kein
+		// Light-Update hier (es gibt keine STAGE_RATCHET_LIGHT). Ohne
+		// gepatchtes Kabel bleibt das Bit dauerhaft geloescht, da es keinen
+		// "letzten Panel-Klick"-Zustand gibt, auf den zurueckgefallen werden
+		// koennte.
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_RATCHET_POLY_INPUT).isConnected()) {
+			const float GATE_THRESHOLD = 2.f;
+			for (int i = 0; i < NUM_STAGES; i++) {
+				bool gateHigh = trigExp->getInput(Marf248TriggerExpander::STAGE_RATCHET_POLY_INPUT).getPolyVoltage(i) >= GATE_THRESHOLD;
+				if (gateHigh) {
+					stageModifier[i] |= MOD_RATCHET;
+				}
+				else {
+					stageModifier[i] &= ~MOD_RATCHET;
+				}
+			}
+		}
+
 		// Stage SLOPE Poly-Gate vom Trigger-Expander: identisches Prinzip
 		// wie STAGE_SKIP_POLY_INPUT oben. MOD_SLOPED ist ein einfaches
 		// Ein/Aus-Bit (rampt vs. springt) - nicht zu verwechseln mit Shape
@@ -1416,12 +1437,51 @@ struct Marf248 : Module {
 			}
 		}
 
+		// Ratchet-Count (Session "Ratcheting", siehe MOD_RATCHET-Kommentar in
+		// Marf248.hpp): 0 = "keine gueltige Count-CV gepatcht" (Default,
+		// Ratchet bleibt fuer diese Stage wirkungslos, auch wenn das Enable-
+		// Bit oben gesetzt wurde - Kinovice-Entscheidung, kein Panel-
+		// Fallback vorhanden). Erst bei gepatchtem STAGE_RATCHET_COUNT_
+		// POLY_INPUT wird pro Kanal auf 1..8 aufgeloest (resolveRatchetCount()
+		// in Marf248.hpp, 8 Zonen a 1.25V).
+		int stageRatchetCount[NUM_STAGES];
+		for (int i = 0; i < NUM_STAGES; i++) {
+			stageRatchetCount[i] = 0;
+		}
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_RATCHET_COUNT_POLY_INPUT).isConnected()) {
+			for (int i = 0; i < NUM_STAGES; i++) {
+				float v = trigExp->getInput(Marf248TriggerExpander::STAGE_RATCHET_COUNT_POLY_INPUT).getPolyVoltage(i);
+				stageRatchetCount[i] = resolveRatchetCount(v);
+			}
+		}
+
+		// Ratchet-Offset (Session "Ratcheting", Nachtrag, siehe
+		// ratchetTargetPhase() in Marf248.hpp): direkte lineare 0-10V ->
+		// 0..1-Zuordnung (kein Zonen-Raster wie Count, da hier ein
+		// stufenloser Wert gebraucht wird). Default 0 (keine Verschiebung),
+		// wenn STAGE_RATCHET_OFFSET_POLY_INPUT nicht gepatcht ist.
+		float stageRatchetOffset[NUM_STAGES];
+		for (int i = 0; i < NUM_STAGES; i++) {
+			stageRatchetOffset[i] = 0.f;
+		}
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_RATCHET_OFFSET_POLY_INPUT).isConnected()) {
+			for (int i = 0; i < NUM_STAGES; i++) {
+				float v = trigExp->getInput(Marf248TriggerExpander::STAGE_RATCHET_OFFSET_POLY_INPUT).getPolyVoltage(i);
+				stageRatchetOffset[i] = rack::clamp(v, 0.f, 10.f) / 10.f;
+			}
+		}
+
 		float stageVoltage[NUM_STAGES];
 		float stageTime[NUM_STAGES];
 		float resolvedVoltage[NUM_STAGES];
 		float resolvedTime[NUM_STAGES];
 		float resolvedTimeA[NUM_STAGES];
 		float resolvedTimeB[NUM_STAGES];
+		// Ratchet-Warp-Blend (Session "Ratcheting"): 0..1, immer gueltig
+		// (unabhaengig davon, ob Ratchet fuer eine Stage ueberhaupt aktiv
+		// ist) - analoges Muster zu stageCurvePower, siehe Berechnung
+		// weiter unten in der Stage-Schleife.
+		float stageWarpBlend[NUM_STAGES];
 		float stageCurvePower[NUM_STAGES];
 
 		// Vier externe CV-Eingaenge, einmal pro Frame gelesen (modulweit
@@ -1494,6 +1554,23 @@ struct Marf248 : Module {
 		// Attenuverter-Ausschlag deckt die komplette Curve-Knob-Spanne (0..1)
 		// ab (Kinovice-Entscheidung, siehe Sessionverlauf).
 		const float CURVE_CV_SPAN_VOLTS = 5.f;
+
+		// Ratchet-Warp-Blend-CV (Session "Ratcheting", Nachtrag: jetzt
+		// bipolar -1..+1 statt unipolar 0..1, siehe ratchetWarpPhase() in
+		// Marf248.hpp): identisches Scan-Muster wie Curve-CV oben, WARP_
+		// GLOBAL_PARAM ist jetzt genauso bipolar wie CURVE_GLOBAL_PARAM.
+		float cvAttenWarp = 0.f, warpGlobalBias = 0.f;
+		int warpCvChannels = 0;
+		Input* warpCvInput = nullptr;
+		if (cvExp) {
+			cvAttenWarp = cvExp->getParam(Marf248CvExpander::WARP_CV_ATTEN_PARAM).getValue();
+			warpGlobalBias = cvExp->getParam(Marf248CvExpander::WARP_GLOBAL_PARAM).getValue();
+			warpCvInput = &cvExp->getInput(Marf248CvExpander::WARP_CV_INPUT);
+			warpCvChannels = warpCvInput->getChannels();
+		}
+		// Gleiche Konvention wie CURVE_CV_SPAN_VOLTS: +-5V CV bei vollem
+		// Attenuverter-Ausschlag deckt die komplette Blend-Spanne (-1..+1) ab.
+		const float WARP_CV_SPAN_VOLTS = 5.f;
 
 		for (int i = 0; i < NUM_STAGES; i++) {
 			// Pickup: siehe loadPreset()/PickupState. Ausserhalb eines
@@ -1631,6 +1708,23 @@ struct Marf248 : Module {
 				lastCurveKnob[i] = effectiveKnob;
 			}
 			stageCurvePower[i] = cachedCurvePower[i];
+
+			// Ratchet-Warp-Blend (Session "Ratcheting", Nachtrag: bipolar
+			// -1..+1, siehe ratchetWarpPhase() in Marf248.hpp): additive CV +
+			// globaler Bias, auf -1..+1 geklemmt. Bewusst KEIN Cache wie bei
+			// stageCurvePower - hier wuerde ein Cache ohnehin nicht helfen:
+			// ratchetTargetPhase() (inkl. zweier std::pow()-Aufrufe) wird
+			// erst unten in Afg::process() aufgerufen, dort jeden Sample neu
+			// (nicht nur bei den maximal 8 tatsaechlichen Feuer-Events pro
+			// Stage-Aufenthalt), da rawPhase sich pro Sub-Trigger-Index
+			// aendert. Zwei std::pow()-Aufrufe/Sample/Section bei aktivem
+			// Ratchet sind aber vernachlaessigbar (vgl. bereits bestehende
+			// Pro-Sample-Kosten wie applyRange()/quantizeToScale()).
+			float warpCvAdd = 0.f;
+			if (cvExp && i < warpCvChannels) {
+				warpCvAdd = cvAttenWarp * (warpCvInput->getVoltage(i) / WARP_CV_SPAN_VOLTS);
+			}
+			stageWarpBlend[i] = rack::clamp(warpGlobalBias + warpCvAdd, -1.f, 1.f);
 		}
 
 		// Time Multiplier / BPM-Feature (Manual-Grundlage "TIME MULTIPLIER",
@@ -1826,6 +1920,7 @@ struct Marf248 : Module {
 
 		float vA, tA, apA, p1A, p2A, scA, ecA, rgA;
 		afgA.process(args.sampleTime, resolvedVoltage, resolvedTimeA, stageModifier, stageCurvePower,
+			stageRatchetCount, stageWarpBlend, stageRatchetOffset,
 			currentKey, currentScale,
 			params[RUN_A_PARAM].getValue(),
 			inputs[START_A_INPUT].isConnected(), inputs[START_A_INPUT].getVoltage(),
@@ -1849,6 +1944,7 @@ struct Marf248 : Module {
 
 		float vB, tB, apB, p1B, p2B, scB, ecB, rgB;
 		afgB.process(args.sampleTime, resolvedVoltage, resolvedTimeB, stageModifier, stageCurvePower,
+			stageRatchetCount, stageWarpBlend, stageRatchetOffset,
 			currentKey, currentScale,
 			params[RUN_B_PARAM].getValue(),
 			inputs[START_B_INPUT].isConnected(), inputs[START_B_INPUT].getVoltage(),

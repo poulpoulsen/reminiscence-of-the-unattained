@@ -109,7 +109,109 @@ enum StageModifierBits {
 	// MOD_QUANT_GLIDE trotzdem kontinuierlich, wodurch der Endwert de
 	// facto ebenfalls quantisiert erreicht wird.
 	MOD_QUANT_GLIDE = 1 << 24,
+	// Ratcheting (Kinovice-Feature, Tangerine-Dream-Style rhythmische Sub-
+	// Trigger pro Stage, keine Buchla/Tiptop-Original-Entsprechung): ersetzt,
+	// solange aktiv, die normale kontinuierliche P1/P2-Flankenerkennung
+	// (siehe Afg::process()) durch N gleichmaessig (oder per Warp-Blend
+	// ungleichmaessig) ueber die Stage-Zeit verteilte Sub-Trigger. Anders als
+	// zunaechst angenommen feuert Ratchet NICHT bedingungslos auf BEIDE
+	// P1OUT/P2OUT: die Sub-Trigger-Zeitpunkte (Zaehler/Timing) werden zwar
+	// gemeinsam berechnet, aber pro Ausgang nur dann tatsaechlich ausgegeben,
+	// wenn das jeweilige MOD_PULSE1/MOD_PULSE2-Bit fuer die Stage gesetzt ist
+	// (Kinovice-Entscheidung) - Ratchet ersetzt also nur die ART des Triggers
+	// auf einem ohnehin per MOD_PULSE1/2 aktivierten Ausgang, aktiviert aber
+	// keinen Ausgang, dessen Bit gar nicht gesetzt ist. Sind beide Bits
+	// gesetzt, feuern beide Ausgaenge synchron; ist nur eines gesetzt, feuert
+	// nur dieses; sind beide geloescht, laeuft der Zaehler trotzdem mit
+	// (fuer den Fall, dass MOD_PULSE1/2 waehrend des Stage-Aufenthalts per CV
+	// gesetzt werden), aber es wird nichts hoerbar/sichtbar ausgegeben.
+	// Huellkurve/Slew (voltageOut) bleibt davon vollstaendig unberuehrt und
+	// laeuft weiterhin unveraendert ueber die volle stageTime. N (Ratchet-
+	// Count, 1-8) kommt NICHT aus einem Panel-Regler (Hauptpanel bleibt bis
+	// zum separat geplanten Relayout gesperrt, analog zu MOD_MUTE), sondern
+	// ausschliesslich aus der Trigger-Expander-CV STAGE_RATCHET_COUNT_POLY_
+	// INPUT - ist diese nicht gepatcht, bleibt Ratcheting trotz gesetztem
+	// Bit wirkungslos (Kinovice-Entscheidung), siehe stageRatchetCount-
+	// Parameter in Afg::process() und resolveRatchetCount() unten. Ebenso
+	// wird das Bit selbst ausschliesslich ueber STAGE_RATCHET_POLY_INPUT
+	// gesetzt/geloescht (Marf248TriggerExpander) - kein Panel-Gegenstueck in
+	// dieser Session, exaktes Muster wie MOD_MUTE.
+	MOD_RATCHET = 1 << 25,
 };
+
+// Zonen-Aufloesung fuer den Ratchet-Count (STAGE_RATCHET_COUNT_POLY_INPUT,
+// Trigger-Expander): 8 gleich grosse Zonen im 0-10V-Bereich (10V/8 = 1.25V
+// pro Zone), Zone 0 = Count 1 .. Zone 7 = Count 8 - analog zum RANGE_ZONE_
+// THRESHOLDS/resolveRangeZone()-Muster oben, aber ohne Schwellwert-Array, da
+// alle Zonen gleich breit sind (einfache Division genuegt hier im Gegensatz
+// zum Range-Fall, wo Hot-Path-Nachvollziehbarkeit den Threshold-Array-Stil
+// nahelegte). Spannung wird vorab auf 0-10V geklemmt, daher immer ein
+// gueltiger Rueckgabewert (1..8).
+inline int resolveRatchetCount(float voltage) {
+	float v = rack::clamp(voltage, 0.f, 10.f);
+	int zone = (int) std::floor(v / 1.25f);
+	zone = rack::clamp(zone, 0, 7);
+	return zone + 1;
+}
+
+// Ratchet-Warp (Kinovice-Praezisierung): Phasor-Ramp-Prinzip statt
+// symmetrischer Smootherstep-Verzerrung (fruehere Fassung, siehe Git-
+// Historie) - eine reine Potenzfunktion `rawPhase^power` bildet die
+// gleichmaessig verteilten Sub-Trigger-Indizes (rawPhase = i/N) auf eine
+// EINSEITIG verdichtete Verteilung ab, exakt nach demselben Prinzip wie der
+// bestehende Slew-Curve-Regler (siehe applySlewCurve()/LOG-Zweig weiter
+// oben: `pow(t, power)`), nur hier auf die Trigger-Phase statt auf die
+// Huellkurven-Spannung angewendet:
+// - power > 1 ("bauchig"): Ableitung nahe rawPhase=0 ist flach (0^power=0
+//   fuer jede Potenz, aber die Steigung dort ist ~power*x^(power-1) -> 0
+//   fuer power>1) -> Sub-Trigger dicht am Stage-Anfang, die Luecken werden
+//   zum Stage-Ende hin immer groesser.
+// - power < 1, gebrochen (z.B. 0,2) ("durchhaengend"): Ableitung nahe
+//   rawPhase=0 ist steil (x^(power-1) -> unendlich fuer power<1) -> Sub-
+//   Trigger dicht am Stage-Ende, die Luecken sind am Stage-Anfang am
+//   groessten.
+// - power = 1: linear, gleichmaessige Verteilung (Warp-Regler auf 0%).
+// Bei Ratchet-Count=1 bleibt Warp weiterhin wirkungslos (0^power=0 fuer
+// jede Potenz>0, der einzige Sub-Trigger bleibt exakt auf Phase 0 - nur per
+// Offset verschiebbar). ANDERS als bei der fruoheren Smootherstep-Fassung
+// hat Warp bei Count=2 nun aber sehr wohl einen Effekt: rawPhase=0,5 ist
+// fuer eine reine Potenzfunktion (im Unterschied zu Smootherstep) KEIN
+// Fixpunkt mehr.
+static const float RATCHET_WARP_POWER_RANGE = 8.f;
+
+// Bipolarer Blend-Regler (-1..+1) wird exponentiell auf einen Potenz-
+// Exponenten 1/8..8 abgebildet (Basis RATCHET_WARP_POWER_RANGE, symmetrisch
+// um power=1 bei blendAmount=0) - dieselbe "gefuehlt gleichmaessige"
+// Drehreglercharakteristik wie bei anderen nichtlinear gemappten Reglern
+// im Projekt (siehe Curve-Trimpot-Kommentar), statt einer linearen
+// Potenz-Skala, bei der die Haelfte des Drehwegs kaum hoerbar waere.
+inline float ratchetWarpPhase(float rawPhase, float blendAmount) {
+	float blend = rack::clamp(blendAmount, -1.f, 1.f);
+	float power = std::pow(RATCHET_WARP_POWER_RANGE, blend);
+	return std::pow(rack::clamp(rawPhase, 0.f, 1.f), power);
+}
+
+// Ratchet-Offset (Kinovice-Feature): additive Verschiebung der (bereits
+// warp-verzerrten) Sub-Trigger-Phase Richtung Stage-Ende, statt eines
+// Wraparounds zurueck auf 0 - ein Wraparound wuerde bei mehreren Sub-
+// Triggern (N>1) deren Reihenfolge durcheinanderbringen (die Zielzeiten
+// muessten dann nicht mehr monoton mit dem Index steigen), was die
+// inkrementelle "while (elapsed >= target) feuern"-Logik in Afg::process()
+// voraussetzt. Stattdessen: additiver Offset, hart gedeckelt knapp unter 1
+// (RATCHET_OFFSET_PHASE_CEILING) - bei Ratchet-Count=1 verschiebt das den
+// einzigen Puls stufenlos vom Stage-Anfang bis kurz vor das Stage-Ende; bei
+// hoeheren Counts stauchen sich bei grossem Offset die spaeteren Sub-
+// Trigger Richtung Stage-Ende zusammen, statt an den Anfang zurueckzuspringen
+// - bewusst simpler und ohne Reihenfolge-Risiko, auch wenn dadurch beim
+// Wraparound-Fall (N>1, hoher Offset) einige Sub-Trigger sehr dicht
+// zusammenruecken statt gleichmaessig verteilt zu bleiben.
+static const float RATCHET_OFFSET_PHASE_CEILING = 0.9995f;
+
+inline float ratchetTargetPhase(float rawPhase, float blendAmount, float offset) {
+	float warpedPhase = ratchetWarpPhase(rawPhase, blendAmount);
+	float shifted = warpedPhase + rack::clamp(offset, 0.f, 1.f);
+	return rack::clamp(shifted, 0.f, RATCHET_OFFSET_PHASE_CEILING);
+}
 
 // Sekunden-Spannen der 4 Time-Range-Bereiche, indiziert 0..3 (TR1..TR4).
 // getTimeRangeIndex() loest die exklusiven MOD_TRANGE_*-Bits zu diesem Index
@@ -508,6 +610,26 @@ struct Afg {
 	bool firstPrevActive = false;
 	bool lastPrevActive = false;
 
+	// Ratcheting (siehe MOD_RATCHET in Marf248.hpp): Anzahl der innerhalb des
+	// AKTUELLEN Stage-Aufenthalts bereits gefeuerten Sub-Trigger (0..N).
+	// Zaehler-Reset bei jedem (Wieder-)Eintritt in resetPulseEdgeState()
+	// (analog zu pulse1PrevActive etc. oben), damit ein wiederholter Sprung
+	// auf dieselbe Stage (Strobe, Pendulum-Wendepunkt) das Ratchet-Muster
+	// jedesmal von vorn beginnt.
+	int ratchetIndex = 0;
+	// Merkt den Ratchet-Aktivierungszustand des VORHERIGEN Samples (siehe
+	// Ratchet-Block in process()): wird gebraucht, um eine steigende Flanke
+	// von "Ratchet inaktiv" -> "Ratchet aktiv" zu erkennen (Enable-Gate wird
+	// mitten im Stage-Aufenthalt scharf geschaltet, z.B. per CV) - nur bei
+	// dieser Flanke werden bereits verstrichene Sub-Trigger-Zeitpunkte
+	// stillschweigend uebersprungen statt nachgeholt (Kinovice-Entscheidung:
+	// "lieber einfach verpassen und beim naechsten Durchlauf starten" statt
+	// eines Bursts nachtraeglicher Trigger). Reset in resetPulseEdgeState(),
+	// damit jeder neue Stage-Eintritt wieder als "frisch" behandelt wird
+	// (elapsed=0 dort sorgt ohnehin dafuer, dass die Uebersprung-Logik
+	// nichts tut, siehe process()).
+	bool ratchetWasActive = false;
+
 	// Setzt die Flanken-Vorwerte fuer P1/P2/First/Last zurueck auf false -
 	// wird von advanceStage() und jumpToStage() nach dem Setzen von
 	// currentStage aufgerufen (gleiche Stelle wie allPulseGen), IMMER bei
@@ -526,6 +648,8 @@ struct Afg {
 		pulse2PrevActive = false;
 		firstPrevActive = false;
 		lastPrevActive = false;
+		ratchetIndex = 0;
+		ratchetWasActive = false;
 	}
 
 	// Status-Flags fuer die dreifarbige Stage-Address-LED (gruen/gelb/rot),
@@ -780,6 +904,19 @@ struct Afg {
 	             const float stageTime[NUM_STAGES],
 	             const int stageModifier[NUM_STAGES],
 	             const float stageCurvePower[NUM_STAGES],
+	             // Ratcheting (siehe MOD_RATCHET oben): stageRatchetCount[i]==0
+	             // bedeutet "keine gueltige Count-CV gepatcht" (Ratchet bleibt
+	             // dann wirkungslos, siehe MOD_RATCHET-Kommentar), 1..8 ist der
+	             // tatsaechliche Sub-Trigger-Count. stageWarpBlend[i] ist immer
+	             // gueltig (-1..+1, Default 0 = rein linear/power=1), unabhaengig
+	             // davon, ob Ratchet fuer diese Stage ueberhaupt aktiv ist -
+	             // siehe ratchetWarpPhase() fuer die Potenz-Abbildung.
+	             const int stageRatchetCount[NUM_STAGES],
+	             const float stageWarpBlend[NUM_STAGES],
+	             // Ratchet-Offset (siehe ratchetTargetPhase() oben): 0..1,
+	             // immer gueltig (Default 0 = keine Verschiebung), analog zu
+	             // stageWarpBlend.
+	             const float stageRatchetOffset[NUM_STAGES],
 	             int quantKey, int quantScaleMode,
 	             float runButtonValue, bool startConnected, float startVoltage,
 	             bool stopConnected, float stopVoltage,
@@ -977,30 +1114,158 @@ struct Afg {
 		// Bit selbst bleibt in stageModifier[] unangetastet) - First/Last
 		// bleiben von Mute bewusst unberuehrt, da sie Zyklus-Marker sind,
 		// keine "Output Pulses" im Sinne des Manuals.
+		// t/phase werden jetzt VOR der Pulse-Erzeugung berechnet (statt wie
+		// bisher danach), da Ratcheting unten den bereits aufgeloesten
+		// elapsed/t-Bezug braucht, um die Sub-Trigger-Zeitpunkte zu bestimmen.
+		float t = stageTime[currentStage];
+		float phase = t > 0.f ? rack::clamp(elapsed / t, 0.f, 1.f) : 0.f;
+
 		bool muteActive = stageModifier[currentStage] & MOD_MUTE;
-		bool pulse1Active = !muteActive && (stageModifier[currentStage] & MOD_PULSE1);
-		bool pulse2Active = !muteActive && (stageModifier[currentStage] & MOD_PULSE2);
-		bool firstActive  = stageModifier[currentStage] & MOD_FIRST;
-		bool lastActive   = stageModifier[currentStage] & MOD_LAST;
-		if (pulse1Active && !pulse1PrevActive) {
-			p1Gen.trigger(1e-3f);
+		// Ratcheting (siehe MOD_RATCHET-Kommentar in Marf248.hpp): nur aktiv,
+		// wenn sowohl das Enable-Bit gesetzt ALS AUCH eine gueltige Count-CV
+		// anliegt (stageRatchetCount > 0) - ohne gepatchte Count-CV bleibt
+		// Ratchet trotz gesetztem Bit wirkungslos (Kinovice-Entscheidung),
+		// die Stage faellt dann auf die normale P1/P2-Flankenerkennung
+		// darunter zurueck. MOD_MUTE unterdrueckt Ratchet genauso wie die
+		// normalen Pulse-Trigger.
+		int ratchetCount = stageRatchetCount[currentStage];
+		bool ratchetActive = !muteActive && (stageModifier[currentStage] & MOD_RATCHET) && ratchetCount >= 1;
+
+		if (ratchetActive) {
+			// Ersetzt komplett die kontinuierliche P1/P2-Flankenerkennung
+			// unten fuer diese Stage: N Sub-Trigger, verteilt ueber
+			// rawPhase = i/N (i=0..N-1), optional per Warp-Blend verzerrt
+			// (siehe ratchetWarpPhase()) - garantiert per Konstruktion, dass
+			// der letzte Sub-Trigger VOR elapsed>=stageTime feuert (rawPhase
+			// < 1 fuer i<N, ratchetWarpPhase() bleibt dadurch ebenfalls < 1).
+			// while (statt if) im eigentlichen Feuer-Loop unten faengt den
+			// Fall ab, dass innerhalb EINES Samples waehrend laufenden
+			// Betriebs mehrere Schwellen ueberschritten werden (z.B. sehr
+			// kurze Stage-Zeit bei niedriger Samplerate) - das ist etwas
+			// anderes als die Aktivierungsflanke weiter unten, die
+			// bewusst NICHTS nachholt (siehe dortiger Kommentar).
+			// Ausgabe pro Ausgang bewusst NICHT bedingungslos (Kinovice-
+			// Entscheidung, siehe MOD_RATCHET-Kommentar in Marf248.hpp):
+			// Ratchet ersetzt nur die ART des Triggers auf einem ohnehin per
+			// MOD_PULSE1/MOD_PULSE2 aktivierten Ausgang - der Zaehler
+			// (ratchetIndex) laeuft trotzdem immer mit, auch wenn gerade
+			// keines der beiden Bits gesetzt ist (z.B. waehrend beide per CV
+			// kurzzeitig geloescht sind), damit das Timing bei einem spaeter
+			// wieder gesetzten Bit weiterhin synchron zur Stage-Phase bleibt.
+			float blend = stageWarpBlend[currentStage];
+			float offset = stageRatchetOffset[currentStage];
+			bool pulse1Bit = stageModifier[currentStage] & MOD_PULSE1;
+			bool pulse2Bit = stageModifier[currentStage] & MOD_PULSE2;
+
+			// Aktivierungsflanke (Ratchet war im vorherigen Sample noch
+			// inaktiv): bereits verstrichene Sub-Trigger-Zeitpunkte werden
+			// stillschweigend uebersprungen statt nachgeholt (Kinovice-
+			// Entscheidung, siehe ratchetWasActive-Kommentar oben) - der
+			// Zaehler wird einmalig auf die aktuelle Position vorgespult,
+			// OHNE dabei zu feuern. Strikt ">" (nicht ">=") ist hier
+			// entscheidend: bei einem regulaeren Stage-Eintritt ist
+			// elapsed==0. Ohne Offset ist dann auch targetTime(0)==0, die
+			// Bedingung "elapsed > targetTime" also FALSCH - nichts wird
+			// uebersprungen, der erste Sub-Trigger feuert weiterhin ganz
+			// normal unten im eigentlichen Feuer-Loop (dort mit ">=").
+			// MIT Offset ist targetTime(0) bereits > 0 (siehe
+			// ratchetTargetPhase()) - auch dann bleibt "elapsed > targetTime"
+			// bei elapsed==0 falsch, das Verhalten bleibt also konsistent:
+			// der erste (verschobene) Sub-Trigger wartet regulaer im
+			// Feuer-Loop, bis elapsed ihn erreicht. Nur bei einer echten
+			// Aktivierung MITTEN im Stage-Aufenthalt (elapsed > 0) greift
+			// der Ueberspring-Effekt.
+			if (!ratchetWasActive) {
+				while (ratchetIndex < ratchetCount) {
+					float rawPhase = (float) ratchetIndex / (float) ratchetCount;
+					float targetTime = ratchetTargetPhase(rawPhase, blend, offset) * t;
+					if (elapsed > targetTime) {
+						ratchetIndex++;
+					}
+					else {
+						break;
+					}
+				}
+			}
+
+			while (ratchetIndex < ratchetCount) {
+				float rawPhase = (float) ratchetIndex / (float) ratchetCount;
+				float targetTime = ratchetTargetPhase(rawPhase, blend, offset) * t;
+				if (elapsed >= targetTime) {
+					// Trigger-Dauer an den Abstand zum naechsten Sub-Trigger
+					// (bzw. zum Stage-Ende beim letzten) anpassen, statt fest
+					// 1ms zu verwenden - BUGFIX (Kinovice-Report: "Zeit
+					// zwischen den Pulsen nicht gleichmaessig, bleibt an
+					// manchen Stages laenger high"). Ursache: dsp::
+					// PulseGenerator::trigger() VERLAENGERT die verbleibende
+					// High-Zeit nur, wenn die neue Dauer laenger ist als das
+					// noch Verbleibende, verkuerzt sie aber nie - bei kurzer
+					// Stage-Zeit/hohem Ratchet-Count faellt der Sub-Trigger-
+					// Abstand leicht unter die feste 1ms-Dauer, wodurch der
+					// naechste Trigger noch im vorherigen High-Pegel landet
+					// und beide zu einem einzigen, laengeren Puls
+					// verschmelzen. Untere Klemme 1e-4s (0.1ms) verhindert
+					// einen zu kurzen, ggf. nicht mehr sicher erkennbaren
+					// Trigger bei extrem engem Ratchet; obere Klemme 1e-3s
+					// (1ms) haelt das bisherige Verhalten bei ausreichend
+					// Abstand unveraendert bei.
+					float nextTargetTime;
+					if (ratchetIndex + 1 < ratchetCount) {
+						float nextRawPhase = (float) (ratchetIndex + 1) / (float) ratchetCount;
+						nextTargetTime = ratchetTargetPhase(nextRawPhase, blend, offset) * t;
+					}
+					else {
+						nextTargetTime = t;
+					}
+					float pulseDuration = rack::clamp(nextTargetTime - targetTime, 1e-4f, 1e-3f);
+					if (pulse1Bit) {
+						p1Gen.trigger(pulseDuration);
+					}
+					if (pulse2Bit) {
+						p2Gen.trigger(pulseDuration);
+					}
+					ratchetIndex++;
+				}
+				else {
+					break;
+				}
+			}
+			// Vorwerte der normalen Flankenerkennung bewusst auf false
+			// gehalten, solange Ratchet aktiv ist - faellt Ratchet waehrend
+			// des Stage-Aufenthalts per CV wieder aus (Enable-Gate oder
+			// Count-CV geht weg), zaehlt ein zu diesem Zeitpunkt bereits
+			// gesetztes MOD_PULSE1/2-Bit unten sofort wieder als steigende
+			// Flanke - exakt dasselbe "bereits gesetztes Bit feuert erneut"-
+			// Prinzip wie bei resetPulseEdgeState() nach einem Stage-
+			// Wechsel.
+			pulse1PrevActive = false;
+			pulse2PrevActive = false;
+			ratchetWasActive = true;
 		}
-		if (pulse2Active && !pulse2PrevActive) {
-			p2Gen.trigger(1e-3f);
+		else {
+			ratchetWasActive = false;
+			bool pulse1Active = !muteActive && (stageModifier[currentStage] & MOD_PULSE1);
+			bool pulse2Active = !muteActive && (stageModifier[currentStage] & MOD_PULSE2);
+			if (pulse1Active && !pulse1PrevActive) {
+				p1Gen.trigger(1e-3f);
+			}
+			if (pulse2Active && !pulse2PrevActive) {
+				p2Gen.trigger(1e-3f);
+			}
+			pulse1PrevActive = pulse1Active;
+			pulse2PrevActive = pulse2Active;
 		}
+
+		bool firstActive = stageModifier[currentStage] & MOD_FIRST;
+		bool lastActive  = stageModifier[currentStage] & MOD_LAST;
 		if (firstActive && !firstPrevActive) {
 			startCycleGen.trigger(1e-3f);
 		}
 		if (lastActive && !lastPrevActive) {
 			endCycleGen.trigger(1e-3f);
 		}
-		pulse1PrevActive = pulse1Active;
-		pulse2PrevActive = pulse2Active;
 		firstPrevActive = firstActive;
 		lastPrevActive = lastActive;
-
-		float t = stageTime[currentStage];
-		float phase = t > 0.f ? rack::clamp(elapsed / t, 0.f, 1.f) : 0.f;
 
 		// Range skaliert/verschiebt zuerst die rohe Slider-Spannung
 		// (Full/Half/Limited), erst danach greift ggf. Quantize auf das
