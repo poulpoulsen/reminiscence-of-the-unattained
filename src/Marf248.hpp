@@ -1,6 +1,7 @@
 #pragma once
 #include "plugin.hpp"
 #include <cmath>
+#include <cctype>
 #include <string>
 // SIMD-Batch-Vorberechnung fuer stageCurvePower (Session "CPU-Optimierung
 // Stage-Resolution (SIMD)", siehe Marf248::process()). Vermutlich bereits
@@ -424,6 +425,76 @@ inline std::string voltageToNoteName(float v) {
 	int octave = 4 + (int) std::floor(semitoneOffset / 12.0);
 	int noteIndex = ((semitoneOffset % 12) + 12) % 12;
 	return std::string(names[noteIndex]) + std::to_string(octave);
+}
+
+// Kehrfunktion zu voltageToNoteName(): wandelt einen per Rechtsklick
+// eingegebenen Notennamen (z.B. "C4", "C#4", "Db4" - Notenbuchstabe
+// case-insensitiv, Oktavzahl Pflicht) in eine 1V/Oct-Spannung um.
+// Kinovice-Bugreport: die Voltage-Slider akzeptierten bisher NUR Zahlen,
+// da StageVoltageQuantity::setDisplayValueString() die Eingabe unveraendert
+// (bis auf Komma->Punkt) an Racks std::stof-basiertes Basis-Parsing
+// durchreichte - Notennamen fielen dort einfach durch. Gibt bei Erfolg
+// true zurueck und schreibt das Ergebnis nach 'outVoltage'; bei
+// ungueltiger Eingabe false, sodass der Aufrufer auf normales
+// Zahlen-Parsing zurueckfallen kann.
+inline bool noteNameToVoltage(const std::string& raw, float& outVoltage) {
+	size_t start = raw.find_first_not_of(" \t");
+	if (start == std::string::npos) {
+		return false;
+	}
+	size_t end = raw.find_last_not_of(" \t");
+	std::string s = raw.substr(start, end - start + 1);
+	if (s.size() < 2) {
+		return false;
+	}
+
+	// Halbtonabstand ab C je Notenbuchstabe (A-G), NICHT alphabetische
+	// Reihenfolge - daher explizite Tabelle statt Berechnung.
+	static const int baseSemitone[7] = {9, 11, 0, 2, 4, 5, 7}; // A B C D E F G
+	char letter = (char) std::toupper((unsigned char) s[0]);
+	int letterIdx = letter - 'A';
+	if (letterIdx < 0 || letterIdx > 6) {
+		return false;
+	}
+
+	size_t idx = 1;
+	int accidental = 0;
+	if (idx < s.size() && s[idx] == '#') {
+		accidental = 1;
+		idx++;
+	}
+	else if (idx < s.size() && s[idx] == 'b') {
+		// Nur Kleinbuchstabe 'b' als Erniedrigungs-Vorzeichen, damit keine
+		// Verwechslung mit dem Notenbuchstaben "B" entsteht (z.B. "Bb4"
+		// bleibt eindeutig: B=Notenbuchstabe, b=Vorzeichen).
+		accidental = -1;
+		idx++;
+	}
+	if (idx >= s.size()) {
+		return false; // keine Oktavzahl mehr uebrig
+	}
+
+	// std::stoi wirft bei ungueltigem Format eine Exception statt eines
+	// Fehler-Rueckgabewerts - hier abgefangen, da Racks Eingabe-Callback
+	// nicht gegen Exceptions abgesichert ist.
+	std::string octavePart = s.substr(idx);
+	int octave = 0;
+	size_t parsedChars = 0;
+	try {
+		octave = std::stoi(octavePart, &parsedChars);
+	}
+	catch (...) {
+		return false;
+	}
+	if (parsedChars != octavePart.size()) {
+		return false; // Ueberschuessige Zeichen nach der Oktavzahl
+	}
+
+	int semitone = baseSemitone[letterIdx] + accidental;
+	int octaveDiff = octave - 4; // Referenz: 0V = C4 (Eurorack-Konvention)
+	int totalSemitones = octaveDiff * 12 + semitone;
+	outVoltage = (float) totalSemitones / 12.f;
+	return true;
 }
 
 // BPM-Feature (Time Multiplier V/Oct-Tempo-Semantik, Breaking Change ggue.

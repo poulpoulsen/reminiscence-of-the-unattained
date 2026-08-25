@@ -33,7 +33,18 @@ static std::string normalizeDecimalComma(std::string s) {
 struct StageVoltageQuantity : ParamQuantity {
 	int stageIndex = 0;
 	std::string getDisplayValueString() override;
+	// Notennamen-Eingabe (Kinovice-Bugreport "Slider nehmen keine
+	// Notenbezeichnungen an") wird IMMER akzeptiert, unabhaengig vom
+	// Quantize-Zustand der Stage (MOD_QUANT_OCT beeinflusst nur die
+	// ANZEIGE in getDisplayValueString(), nicht was hier eingegeben werden
+	// darf). Notenname hat Vorrang: erst versuchen, bei Fehlschlag auf das
+	// bisherige Zahlen-Parsing (inkl. Komma-Fix) zurueckfallen.
 	void setDisplayValueString(std::string s) override {
+		float noteVoltage = 0.f;
+		if (noteNameToVoltage(s, noteVoltage)) {
+			setValue(rack::clamp(noteVoltage, getMinValue(), getMaxValue()));
+			return;
+		}
 		ParamQuantity::setDisplayValueString(normalizeDecimalComma(s));
 	}
 };

@@ -202,7 +202,7 @@ werden zusätzlich durch dünne horizontale Trennlinien (`HDivider`) abgesetzt.
 Jede der 16 Stage-Spalten enthält von oben nach unten:
 
 **Voltage** (`STAGE_VOLTAGE_PARAM`) *(Vertikaler Schieberegler, 0–10V)*<br>
-Programmierte Ausgangsspannung der Stage. Im External-Modus (`MOD_VOLT_EXT`) dient die Reglerposition stattdessen als Kanalwahl A–D (4 Zonen à 2,5V). Tooltip zeigt je nach Zustand Volt, Notenname (bei Quantize) oder Kanalname (bei External) – siehe `StageVoltageQuantity`.
+Programmierte Ausgangsspannung der Stage. Im External-Modus (`MOD_VOLT_EXT`) dient die Reglerposition stattdessen als Kanalwahl A–D (4 Zonen à 2,5V). Tooltip zeigt je nach Zustand Volt, Notenname (bei Quantize) oder Kanalname (bei External) – siehe `StageVoltageQuantity`. **Rechtsklick-Zahleneingabe akzeptiert zusätzlich Notennamen** (z.B. „C4", „C#4", „Db4" – Notenbuchstabe case-insensitiv, Vorzeichen `#` oder Kleinbuchstabe `b`, Pflicht-Oktavzahl, Referenz 0V=C4) statt reiner Volt-Zahlen. Funktioniert unabhängig vom Quantize-Zustand der Stage; bei ungültiger Eingabe fällt es auf normales Zahlen-Parsing zurück.
 
 **Time** (`STAGE_TIME_PARAM`) *(Vertikaler Schieberegler, normalisiert 0–1)*<br>
 Programmierte Stage-Zeit als Position **innerhalb** des gewählten Time-Range-Bereichs (TR1–4). Der Tooltip zeigt den Buchla-Cookbook-Dial-Wert (0–10, führend) mit der exakt aufgelösten Sekundenzahl dahinter in Klammern, z.B. `4.0 (0.132 s)` – siehe `StageTimeQuantity`. Rechtsklick-Zahleneingabe akzeptiert weiterhin den 0–10-Dial-Wert. Im External-Modus (`MOD_TIME_EXT`) dient die Position als Kanalwahl A–D.
@@ -1023,6 +1023,9 @@ Wendet Full/Half/Limited-Range-Skalierung inkl. Oktav-Offset an.
 **`voltageToNoteName(v)`**<br>
 Wandelt 1V/Okt-Spannung in Notennamen (Eurorack-Konvention, 0V=C4) um.
 
+**`noteNameToVoltage(raw, outVoltage)`**<br>
+Kehrfunktion zu `voltageToNoteName()`: parst einen per Rechtsklick eingegebenen Notennamen (z.B. „C4", „C#4", „Db4" – Notenbuchstabe case-insensitiv, `#`/Kleinbuchstabe `b` als Vorzeichen, Pflicht-Oktavzahl) zu einer 1V/Okt-Spannung. Gibt bei Erfolg `true` zurück und schreibt das Ergebnis nach `outVoltage`, bei ungültiger Eingabe `false`, sodass der Aufrufer auf normales Zahlen-Parsing zurückfallen kann.
+
 **`getTimeRangeIndex(mod)`**<br>
 Löst die exklusiven `MOD_TRANGE_*`-Bits zu einem Index 0–3 auf (TR3 = Default).
 
@@ -1075,6 +1078,9 @@ Hauptverarbeitung einer Section pro Sample: Start/Stop, Run-Gate, Advance, Susta
 
 **`StageVoltageQuantity::getDisplayValueString()`**<br>
 Tooltip-Text des Voltage-Reglers: Kanalname bei External, Notenname bei Quantize, sonst Volt-Zahl.
+
+**`StageVoltageQuantity::setDisplayValueString()`**<br>
+Rechtsklick-Zahleneingabe: versucht die Eingabe zuerst per `noteNameToVoltage()` als Notenname zu interpretieren (immer aktiv, unabhängig vom Quantize-Zustand der Stage); bei Fehlschlag Fallback auf das bisherige Zahlen-Parsing inkl. Komma-Fix (`normalizeDecimalComma()`). Behebt einen Bug, bei dem Notennamen trotz korrekter Anzeige in `getDisplayValueString()` nicht eingegeben werden konnten.
 
 **`StageTimeQuantity::getDisplayValue()` / `setDisplayValue()`**<br>
 **Neu**: rechnet den internen 0–1-Rohwert für Anzeige/Rechtsklick-Eingabe auf die Buchla-Cookbook-Dial-Konvention (0–10) um – der interne Parameterwert bleibt unverändert 0–1 (kein Breaking Change für bestehende Presets).
@@ -1621,6 +1627,35 @@ Am ehesten vergleichbar mit Variante 3 (Stage 1 wird tatsächlich
 ausgegeben, kein Überspringen), aber ohne Clock-Bindung für den
 Startzeitpunkt selbst – der Reset-Trigger löst die Ausgabe direkt aus,
 statt auf einen externen Takt zu warten.
+
+### 10.14 Momentary-Taster (Scale/Key, Load/Save, Clear, Stage-Modifier) setzen den Patch nicht auf "ungespeichert"
+
+VCV Racks Sternchen-Indikator für ungespeicherte Änderungen hängt
+ausschließlich an `APP->history->isSaved()` – also an Racks eigenem
+Undo/Redo-Verlauf, nicht an einer generischen Prüfung "hat sich der
+Modulzustand verändert". Kontinuierliche Params (Slider, Knobs,
+Trimpots) landen bei jedem Drag automatisch in dieser History und lösen
+den Stern zuverlässig aus. Momentane Trigger-Taster (`configButton()`,
+z.B. `SCALE_PARAM`/`KEY_PARAM`, `LOAD_PARAM`/`SAVE_PARAM`,
+`CLEAR_PARAM`/`RESET_VALUES_PARAM`/`AUTOFILL_PARAM` sowie die
+Stage-Modifier-Klick-Buttons) tun das in der Regel nicht – ein Klick
+darauf hinterlässt keinen History-Eintrag, obwohl er intern durchaus
+persistenten Zustand verändert (z.B. `currentKey`/`currentScale`,
+Preset-Slots, `stageModifier[]`-Bits). Diese Werte sind zwar korrekt
+in `dataToJson()` erfasst und werden beim expliziten Speichern zuverlässig
+mitgespeichert – **das Sternchen erscheint dabei aber nicht**, obwohl
+sich der Patch faktisch geändert hat.
+
+Praktische Konsequenz: Sich beim Entscheiden "muss ich noch speichern?"
+allein auf das Sternchen zu verlassen ist bei diesem Modul (wie bei
+vielen anderen Modulen mit ähnlichem Button-Muster) nicht zuverlässig.
+Ein "richtiger" Fix würde bedeuten, die betroffene Zustandsänderung aus
+`process()` (Echtzeit-Audio-Thread) heraus in die GUI-Event-Handler des
+Widgets zu verlagern, um dort aktiv `APP->history->push()` aufzurufen –
+das widerspricht aber dem Grundsatz, niemals GUI-/History-Zugriffe aus
+dem Realtime-Kontext heraus zu tätigen (siehe Architekturprinzipien).
+Bewusst nicht behoben; als bekannte Rack-Eigenheit dokumentiert statt
+als Modul-Bug behandelt.
 
 ---
 

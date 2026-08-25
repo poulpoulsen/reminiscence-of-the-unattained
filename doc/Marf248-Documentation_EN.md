@@ -201,7 +201,7 @@ horizontal divider lines (`HDivider`).
 Each of the 16 stage columns contains, from top to bottom:
 
 **Voltage** (`STAGE_VOLTAGE_PARAM`) *(Vertical slider, 0–10V)*<br>
-Programmed output voltage of the stage. In External mode (`MOD_VOLT_EXT`), the slider position instead selects the channel A–D (4 zones of 2.5V each). The tooltip shows volts, note name (when Quantize is active), or channel name (when External is active) – see `StageVoltageQuantity`.
+Programmed output voltage of the stage. In External mode (`MOD_VOLT_EXT`), the slider position instead selects the channel A–D (4 zones of 2.5V each). The tooltip shows volts, note name (when Quantize is active), or channel name (when External is active) – see `StageVoltageQuantity`. **Right-click number entry also accepts note names** (e.g. "C4", "C#4", "Db4" – note letter case-insensitive, accidental `#` or lowercase `b`, octave number required, reference 0V=C4) instead of plain volt values. Works regardless of the stage's Quantize state; falls back to normal numeric parsing on invalid input.
 
 **Time** (`STAGE_TIME_PARAM`) *(Vertical slider, normalized 0–1)*<br>
 Programmed stage time as a position **within** the selected Time Range bracket (TR1–4). The tooltip shows the Buchla Cookbook dial value (0–10, leading) with the exactly resolved number of seconds in parentheses afterward, e.g. `4.0 (0.132 s)` – see `StageTimeQuantity`. Right-click number entry still accepts the 0–10 dial value. In External mode (`MOD_TIME_EXT`), the position selects the channel A–D.
@@ -1018,6 +1018,9 @@ Applies Full/Half/Limited range scaling including octave offset.
 **`voltageToNoteName(v)`**<br>
 Converts a 1V/oct voltage into a note name (Eurorack convention, 0V=C4).
 
+**`noteNameToVoltage(raw, outVoltage)`**<br>
+Inverse of `voltageToNoteName()`: parses a note name entered via right-click (e.g. "C4", "C#4", "Db4" – note letter case-insensitive, `#`/lowercase `b` as accidental, octave number required) into a 1V/oct voltage. Returns `true` on success and writes the result to `outVoltage`, or `false` on invalid input so the caller can fall back to normal numeric parsing.
+
 **`getTimeRangeIndex(mod)`**<br>
 Resolves the exclusive `MOD_TRANGE_*` bits to an index 0–3 (TR3 = default).
 
@@ -1070,6 +1073,9 @@ Main per-sample processing of a section: start/stop, Run Gate, Advance, Sustain/
 
 **`StageVoltageQuantity::getDisplayValueString()`**<br>
 Tooltip text of the Voltage knob: channel name in External mode, note name with Quantize, otherwise a voltage figure.
+
+**`StageVoltageQuantity::setDisplayValueString()`**<br>
+Right-click number entry: first tries to interpret the input as a note name via `noteNameToVoltage()` (always active, regardless of the stage's Quantize state); falls back to the existing numeric parsing incl. the comma fix (`normalizeDecimalComma()`) on failure. Fixes a bug where note names could not be entered even though `getDisplayValueString()` already displayed them correctly.
 
 **`StageTimeQuantity::getDisplayValue()` / `setDisplayValue()`**<br>
 **New**: converts the internal 0–1 raw value to/from the Buchla Cookbook dial convention (0–10) for display and right-click entry – the internal parameter value itself stays 0–1 (no breaking change for existing presets).
@@ -1603,6 +1609,33 @@ immediate branch, checked before Continuous/Strobe:
 Closest match is variant 3 (stage 1 is actually output, no skipping),
 but without a clock dependency for the start itself – the Reset trigger
 fires the output directly instead of waiting for an external clock.
+
+### 10.14 Momentary buttons (Scale/Key, Load/Save, Clear, stage modifiers) don't mark the patch "unsaved"
+
+VCV Rack's unsaved-changes asterisk is driven entirely by
+`APP->history->isSaved()` – Rack's own undo/redo history, not a generic
+check of "has the module state changed". Continuous params (sliders,
+knobs, trimpots) automatically land in that history on every drag and
+reliably trigger the asterisk. Momentary trigger buttons
+(`configButton()`, e.g. `SCALE_PARAM`/`KEY_PARAM`, `LOAD_PARAM`/
+`SAVE_PARAM`, `CLEAR_PARAM`/`RESET_VALUES_PARAM`/`AUTOFILL_PARAM`, and
+the stage-modifier click buttons) generally do not – a click on one of
+these leaves no history entry, even though it does change persistent
+state internally (e.g. `currentKey`/`currentScale`, preset slots,
+`stageModifier[]` bits). These values are correctly captured in
+`dataToJson()` and are reliably included on an explicit save – **the
+asterisk simply doesn't appear**, even though the patch has in fact
+changed.
+
+Practical consequence: relying on the asterisk alone to decide "do I
+still need to save?" is not reliable for this module (as with many
+other modules using a similar button pattern). A "proper" fix would
+mean moving the affected state change out of `process()` (the real-time
+audio thread) into the widget's GUI event handlers, so `APP->history->push()`
+could be called there – but that conflicts with the principle of never
+touching GUI/history state from the real-time context (see architecture
+principles). Deliberately left unfixed; documented as a known Rack
+quirk rather than treated as a module bug.
 
 ---
 
