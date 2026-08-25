@@ -3393,13 +3393,37 @@ struct Marf248Widget : ModuleWidget {
 			//   Gruppe Zustand:       Stop   | Sustain /  Enable| -
 			//   Gruppe Adress-Fluss:  First  | Last    /  Slope | -
 			//   Gruppe Quelle/Override: Quant| Volt-Ext/ Time-Ext| Normalize
+			//
+			// LICHTFARBEN-SCHEMA (nachtraeglich festgelegt und dokumentiert,
+			// ausgeloest durch eine Kinovice-Nachfrage zur Mute-Farbe - siehe
+			// Marf248-Dokumentation_DE.md Kapitel 11 fuer die vollstaendige
+			// Begruendung, hier nur die Kurzfassung als Code-Referenz):
+			//   Rot    = Ablauf-/Ausgabe-Verhalten der Stage weicht vom
+			//            Normalzustand ab (Pulse1/Pulse2 feuern Trigger,
+			//            Skip schliesst die Stage komplett aus, Stop/
+			//            Sustain/Enable halten den Ablauf an, Mute
+			//            unterdrueckt die Trigger-Ausgabe).
+			//   Gruen  = reine Struktur-/Kurven-Modifikatoren ohne direkten
+			//            Eingriff in Trigger-Feuerung oder Ablaufsteuerung
+			//            (First/Last, Slope, Quant, QuantGlide).
+			//   Blau   = Kanal-/Zustandsauswahl (Volt-Ext/Time-Ext-
+			//            Kanalwahl, Shape Exp/Log-Zustandsanzeige).
+			//   Gelb   = Einzelfall Normalize (bewusst abgesetzte reine
+			//            Fein-Justage-Funktion ohne eigene Kategorie).
+			// Skip war urspruenglich Gruen (folgte der Adress-Fluss-Logik:
+			// "wirkt nur bei automatischem Ablauf"), wurde aber auf Rot
+			// umgestellt, um konsistent mit Mute/Pulse1/Pulse2 zu sein -
+			// alle vier beeinflussen direkt, ob/wie eine Stage nach aussen
+			// wahrnehmbar ist (Skip: komplett unsichtbar, Mute: stumm,
+			// Pulse1/2: erzeugen die Trigger, die Mute wieder unterdrueckt).
 			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[0])), module, Marf248::STAGE_PULSE1_PARAM + i));
 			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[0])), module, Marf248::STAGE_PULSE1_LIGHT + i));
 			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[0])), module, Marf248::STAGE_PULSE2_PARAM + i));
 			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[0])), module, Marf248::STAGE_PULSE2_LIGHT + i));
 
+
 			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[1])), module, Marf248::STAGE_SKIP_PARAM + i));
-			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[1])), module, Marf248::STAGE_SKIP_LIGHT + i));
+			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[1])), module, Marf248::STAGE_SKIP_LIGHT + i));
 			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[1])), module, Marf248::STAGE_MUTE_PARAM + i));
 			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[1])), module, Marf248::STAGE_MUTE_LIGHT + i));
 

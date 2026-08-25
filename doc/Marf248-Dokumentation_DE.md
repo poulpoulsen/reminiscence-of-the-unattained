@@ -213,8 +213,8 @@ Zusätzlich zum Tooltip zeigt der Schieberegler-Griff den aktuellen Wert gerunde
 **Zwei Stage-LEDs (`STAGE_LIGHT_A/B`)** *(Licht)*<br>
 Zeigen an, ob Section A bzw. B gerade diese Stage adressiert (grün/rot, nebeneinander).
 
-**Pulse 1 / Pulse 2 / Skip** *(LED-Taster (Toggle))*<br>
-Reihe 1: `MOD_PULSE1`/`MOD_PULSE2` lösen beim Erreichen der Stage einen kurzen Trigger auf P1OUT/P2OUT der jeweiligen Section aus. `MOD_SKIP` (reine Software-Erweiterung) überspringt die Stage beim automatischen Zeitablauf vollständig – keine Zeit, keine Trigger, keine Voltage-Ausgabe. Wirkt nur beim automatischen Ablauf, nicht bei manueller Adressierung (Reset/Strobe/Continuous).
+**Pulse 1 / Pulse 2 / Skip / Mute** *(LED-Taster (Toggle), alle vier rot)*<br>
+Gruppe Puls/Output (2×2-Raster): `MOD_PULSE1`/`MOD_PULSE2` lösen beim Erreichen der Stage einen kurzen Trigger auf P1OUT/P2OUT der jeweiligen Section aus. `MOD_SKIP` (reine Software-Erweiterung) überspringt die Stage beim automatischen Zeitablauf vollständig – keine Zeit, keine Trigger, keine Voltage-Ausgabe. Wirkt nur beim automatischen Ablauf, nicht bei manueller Adressierung (Reset/Strobe/Continuous). `MOD_MUTE` unterdrückt P1OUT/P2OUT **und** APOUT dieser Stage vollständig, ohne die Pulse1/Pulse2-Programmierung selbst zu verändern (greift sofort wieder nach Unmute); wirkt modulweit für beide Sections gleichzeitig, siehe [4.7](#sec4-7) und [Fallstricke](#sec10). Zusätzlich per CV überschreibbar über `STAGE_MUTE_POLY_INPUT` am Trigger-Expander (siehe [6](#sec6)). Zur einheitlich roten LED-Farbe dieser vier Taster siehe die Begründung des Farbschemas unter [Design-Entscheidungen](#sec11) · [[#11. Design-Entscheidungen & Abgrenzungen|Obsidian]].
 
 **Stop / Sustain / Enable** *(LED-Taster (Toggle))*<br>
 Reihe 2: `MOD_STOP` = programmierte Stop-Stage (pausiert den Ablauf, bis die Section neu gestartet wird). `MOD_SUSTAIN` = hält die Stage, solange am Start-Eingang ein High-Pegel (Gate) anliegt (Release-Verhalten wie ADSR). `MOD_ENABLE` = hält die Stage, solange **kein** High-Pegel anliegt (Freigabe erst durch Gate). Beide Halte-Zustände pausieren den Verweilzeit-Zähler `elapsed`. **Achtung Fallstrick ohne gepatchtes Kabel an START_A/B – siehe [Abschnitt 10](#sec10).**
@@ -484,7 +484,13 @@ muss, damit die normale Zeitablauflogik im selben Frame pausiert):
 
 - **Reset**: springt sofort auf die MOD_FIRST-Stage mit dem niedrigsten
   Index (`findLowestFirst()`, Fallback Stage 1) – unabhängig vom aktuellen
-  Modus, unabhängig von Continuous/Strobe.
+  Modus, unabhängig von Continuous/Strobe. Höchstpriorisierter Zweig in
+  `applyStageAddress()`, noch vor Continuous/Strobe geprüft. Reset ist
+  dabei keine Clock-synchrone Aktion wie bei klassischen Step-Sequencern:
+  `elapsed` wird sofort auf 0 gesetzt und die Rampe/der interne Timer
+  beginnt im selben Sample, ohne auf einen externen Clock zu warten – auch
+  wenn Clock-quantisiertes Advance für diese Section gerade aktiv ist
+  (siehe [10.13](#sec10)).
 - **Continuous**: hält `currentStage` jeden Frame synchron zur Adresse
   (Knob oder externe CV) und erzwingt sofortige volle Auslenkung. Der
   eigentliche Rampen-Fortschritt (`elapsed += sampleTime`) läuft dabei
@@ -677,9 +683,10 @@ Nachholen nach Ende der Haltung.
   unbeeinflusst** – reiner Eingriff in die Trigger-Erzeugung, kein
   Eingriff in `applyRange()`/`applySlewCurve()`. `MOD_MUTE` ist wie alle
   anderen Modifier-Bits **modulweit pro Stage**, nicht pro Section A/B.
-  Aktuell nur per `STAGE_MUTE_POLY_INPUT` am Trigger-Expander setzbar
-  (siehe [6](#sec6)) – kein Panel-Button/Light am Hauptmodul, das folgt
-  erst mit der separat geplanten Panel-Relayout-Session.
+  Steuerbar per Panel-Button/Light (`STAGE_MUTE_PARAM`/`STAGE_MUTE_LIGHT`,
+  siehe [3.2](#sec3-2)) **und** zusätzlich per CV überschreibbar über
+  `STAGE_MUTE_POLY_INPUT` am Trigger-Expander (siehe [6](#sec6)) – CV hat
+  bei gepatchtem Kabel Vorrang vor dem manuellen Klick.
 
 <a id="sec4-8"></a>
 
@@ -1172,7 +1179,7 @@ Clock-quantisiertes Advance, siehe [4.10](#sec4-10). Sitzt seit der Panel-Beschr
 Pegel-Override (Schwelle `GATE_THRESHOLD = 2V`) für das jeweilige Modifier-Bit. Nur wirksam, solange die Buchse gepatcht ist (`isConnected()`); dann hat CV Vorrang und überschreibt einen im selben Frame verarbeiteten manuellen Klick. Ohne Kabel bleibt der zuletzt per Klick gesetzte Zustand erhalten. **Shape/Lin-Exp-Log bleibt bewusst ohne CV-Override**, da es ein echter 3-Zustands-Zyklus statt eines einfachen Bits ist.
 
 **`STAGE_MUTE_POLY_INPUT`** *(Poly-Gate (16 Kanäle = Stage 1–16))*<br>
-Identisches Pegel-Override-Prinzip, setzt `MOD_MUTE` statt eines der obigen Bits (siehe [4.7](#sec4-7)). Sitzt in Reihe 7, Spalte B. **Kein Panel-Button/Light am Hauptmodul** – bis zur geplanten Panel-Relayout-Session ist dies die einzige Bedienmöglichkeit für Mute.
+Identisches Pegel-Override-Prinzip, setzt `MOD_MUTE` statt eines der obigen Bits (siehe [4.7](#sec4-7)). Sitzt in Reihe 7, Spalte B. Ergänzt den Panel-Button/Light am Hauptmodul (`STAGE_MUTE_PARAM`/`STAGE_MUTE_LIGHT`, siehe [3.2](#sec3-2)) um eine CV-Override-Möglichkeit; bei gepatchtem Kabel hat die CV Vorrang vor dem manuellen Klick.
 
 **`STAGE_VOLTEXT_CH_POLY_INPUT` / `STAGE_TIMEEXT_CH_POLY_INPUT`** *(**Neu**, Poly-CV (16 Kanäle = Stage 1–16))*<br>
 Kanalwahl per CV für `MOD_VOLT_EXT`/`MOD_TIME_EXT` (siehe [4.5](#sec4-5) und die Bit-Tabelle in [2.](#sec2)). Ergänzt das bestehende Bit-Override-Prinzip der übrigen Stage-Modifier-Poly-Inputs um eine gleichzeitige Kanalwahl (A–D), statt nur ein einfaches Ein/Aus-Gate zu sein. Fünf Zonen à 2V im 0–10V-Bereich: 0–2V = Intern (Bit wird gelöscht), 2–4V = Kanal A, 4–6V = B, 6–8V = C, 8–10V = D (Bit gesetzt **und** Kanal erzwungen). Nur wirksam, solange die Buchse gepatcht ist – dann hat die CV Vorrang vor dem Panel-Button **und** vor der bisherigen Slider-Kanalwahl (Reglerposition bestimmt sonst den Kanal). Ohne Kabel bleibt das bestehende Verhalten (Button-Klick + Slider-Position als Kanalwahl) unverändert. Nicht angesteuerte Poly-Kanäle liefern automatisch 0V = Intern-Zone. Bewusst getrennte Eingänge statt einem gemeinsamen, da Voltage- und Time-Kanalwahl unabhängig sein können. Bewusst **nicht** auf dem CV-Expander untergebracht, obwohl es sich um CV-Signale handelt: es sind Zustands-/Bit-Overrides analog zu Skip/First/Last usw., kein additiver/attenuierter Modulationswert wie Stage Time CV/Curve CV – daher konsequent beim Trigger-Expander, wo bereits alle anderen Stage-Modifier-Poly-Overrides sitzen. `VOLT EXT CH` sitzt in Reihe 4, Spalte E, `TIME EXT CH` in Reihe 7, Spalte E (beides bisher leere Plätze, keine Panel-Verbreiterung nötig).
@@ -1190,7 +1197,7 @@ Kanalwahl per CV für den 7-Positionen-Range-Drehschalter (`STAGE_RANGE_PARAM`/`
 Pegel-Override für `MOD_QUANT_GLIDE` (siehe [4.4](#sec4-4)), gleiches Prinzip wie `STAGE_SLOPE_POLY_INPUT` oben (Schwelle 2V, `isConnected()`-Guard, überschreibt einen manuellen Panel-Klick). Sitzt in Reihe 3, Spalte E, direkt unterhalb von Range CV.
 
 **`STAGE_RATCHET_POLY_INPUT`** *(**Neu**, Poly-Gate (16 Kanäle = Stage 1–16))*<br>
-Ratcheting-Enable, siehe [4.13](#sec4-13). Identisches Pegel-Override-Prinzip wie oben (Schwelle 2V), setzt `MOD_RATCHET`. **Kein Panel-Button/Light am Hauptmodul** – wie bei Mute die einzige Bedienmöglichkeit in dieser Session. Sitzt in Reihe 6, Spalte F.
+Ratcheting-Enable, siehe [4.13](#sec4-13). Identisches Pegel-Override-Prinzip wie oben (Schwelle 2V), setzt `MOD_RATCHET`. **Kein Panel-Button/Light am Hauptmodul** – im Unterschied zu Mute (siehe oben) ist dies aktuell die einzige Bedienmöglichkeit für Ratcheting. Sitzt in Reihe 6, Spalte F.
 
 **`STAGE_RATCHET_COUNT_POLY_INPUT`** *(**Neu**, Poly-CV (16 Kanäle = Stage 1–16))*<br>
 Ratchet-Sub-Trigger-Count, siehe [4.13](#sec4-13). Acht Zonen à 1,25V im 0–10V-Bereich = Count 1–8 (`resolveRatchetCount()`). Nicht gepatcht = Ratcheting bleibt wirkungslos, auch bei aktivem Enable-Gate. Sitzt in Reihe 7, Spalte F, direkt unterhalb von Ratchet Enable.
@@ -1525,24 +1532,29 @@ Zustand schon vor dem Fix repariert, da `onReset()` die Bits korrekt neu
 gesetzt hat – nur der Panel-/CV-Taster für Global Clear selbst war
 betroffen.
 
-### 10.11 Mute wirkt modulweit pro Stage, hat kein Panel-Feedback und keinen eigenen Reset
+### 10.11 Mute wirkt modulweit pro Stage und hat keinen eigenen CV-Reset-Mechanismus
 
-Drei Eigenheiten von `MOD_MUTE`, die beim ersten Test leicht zu Verwirrung
+*Korrekturhinweis: Dieser Abschnitt beschrieb Mute ursprünglich als reine
+CV-Funktion ohne Panel-Bedienelement. Seit der Session
+„Hauptmodul-Relayout" hat Mute einen eigenen Panel-Button/Light
+(`STAGE_MUTE_PARAM`/`STAGE_MUTE_LIGHT`, siehe [3.2](#sec3-2)) – die
+Beschreibung unten ist entsprechend aktualisiert.*
+
+Zwei Eigenheiten von `MOD_MUTE`, die beim ersten Test leicht zu Verwirrung
 führen:
 
 - **Modulweit pro Stage, nicht pro Section A/B** – wie alle anderen
   Modifier-Bits teilen sich Section A und B dasselbe `stageModifier[]`.
   Ein High-Gate an `STAGE_MUTE_POLY_INPUT` Kanal i mutet Stage i für
-  **beide** Sections gleichzeitig, sobald sie diese Stage erreichen.
-- **Kein Panel-Feedback** – bis zur geplanten Panel-Relayout-Session gibt
-  es weder Button noch Light am Hauptmodul. Der Mute-Zustand einer Stage
-  ist ausschließlich am CV-Pegel des Trigger-Expanders ablesbar.
-- **Kein eigener Reset-Mechanismus** – wird das Kabel abgezogen, während
-  der Kanal high war, bleibt die Stage dauerhaft gemutet (gleiches
-  Rückfallverhalten wie bei allen anderen Poly-Overrides, siehe
-  [6](#sec6)). Einzige Möglichkeit, ein so hängendes Mute aufzuheben, ist
-  **Global Clear** (`performGlobalClear()` setzt `stageModifier[i] = 0`
-  für alle Stages).
+  **beide** Sections gleichzeitig, sobald sie diese Stage erreichen –
+  unabhängig davon, ob Mute per Panel-Klick oder per CV gesetzt wurde.
+- **Kein eigener CV-Reset-Mechanismus** – wird das CV-Kabel an
+  `STAGE_MUTE_POLY_INPUT` abgezogen, während der Kanal high war, bleibt
+  die Stage dauerhaft gemutet (gleiches Rückfallverhalten wie bei allen
+  anderen Poly-Overrides, siehe [6](#sec6)). In diesem Fall hilft entweder
+  ein Klick auf den Panel-Button der betroffenen Stage oder **Global
+  Clear** (`performGlobalClear()` setzt `stageModifier[i] = 0` für alle
+  Stages).
 
 ### 10.12 Curve wirkt nur bei aktivem Slope UND Shape ≠ Linear
 
@@ -1572,6 +1584,43 @@ CV-Expander, siehe [7](#sec7)): bewährt hat sich ein SurgeXT QuadLFO
 (unipolar 0–10V) als CV-Quelle auf mehrere Poly-Kanäle gepatcht, mehrere
 Stages gleichzeitig auf Slope + Exp/Log gestellt, Kurvenform live
 beobachtet.
+
+### 10.13 Reset ist keine Clock-synchrone Sequencer-Aktion
+
+In einer VCV-Rack-Forendiskussion über das Reset-Verhalten von
+Sequencern während des laufenden Betriebs wurden drei gängige Varianten
+unterschieden: (1) Sprung auf einen Pseudo-0-Step, erst der nächste Clock
+bringt Step 1; (2) Reset landet auf Step 1, dieser wird aber nicht
+ausgegeben, erst Step 2 folgt beim nächsten Clock; (3) Reset landet auf
+Step 1 und wartet dort bis zum nächsten Clock, bevor Werte ausgegeben
+werden.
+
+Unser Reset (`STAGE_ADDR_RESET_A/B_PARAM`, [4.3](#sec4-3)) passt in keine
+der drei Kategorien exakt, weil MARF kein klassischer, Clock-per-Step
+getakteter Sequencer ist, sondern intern per Timer (`elapsed`) läuft.
+`applyStageAddress()` behandelt Reset als höchstpriorisierten,
+sofortigen Zweig, noch vor Continuous/Strobe:
+
+- `jumpToStage(findLowestFirst(...))` springt sofort, im selben Sample,
+  auf die First-Stage (Fallback Stage 1).
+- `elapsed = 0.f`, `voltageFrom = voltageOut` – Ausgabe/Rampe beginnen
+  unmittelbar, unabhängig von `running`/`effectiveRunning` und
+  unabhängig davon, ob Clock-quantisiertes Advance für diese Section
+  gerade aktiv ist (siehe [4.10](#sec4-10)).
+- Stage 1 wird also tatsächlich ausgegeben (anders als Variante 2), aber
+  es gibt kein "Warten auf den nächsten Clock" wie bei Variante 3 – die
+  Rampe bzw. der interne Timer startet sofort mit dem Reset-Trigger.
+- Nur im Advance-Modus bestimmt der **nächste** externe Advance-Trigger
+  den Wechsel zu Stage 2 – Stage 1 selbst wird davon unabhängig sofort
+  angesteuert, nicht erst bei diesem Trigger.
+- Ist Stage 1 als `MOD_SKIP` markiert, wird sie sofort weitergeschaltet,
+  noch bevor Stage-Zeit oder ein Advance-Trigger überhaupt relevant
+  werden (siehe [4.2](#sec4-2)).
+
+Am ehesten vergleichbar mit Variante 3 (Stage 1 wird tatsächlich
+ausgegeben, kein Überspringen), aber ohne Clock-Bindung für den
+Startzeitpunkt selbst – der Reset-Trigger löst die Ausgabe direkt aus,
+statt auf einen externen Takt zu warten.
 
 ---
 
@@ -1614,18 +1663,31 @@ beobachtet.
 - **Mute ist modulweit pro Stage, nicht pro Section A/B** – wie alle
   anderen Modifier-Bits auch, da `stageModifier[]` zwischen Section A und
   B geteilt ist.
-- **Mute hat aktuell keinen Panel-Button** – nur per CV am Trigger-Expander
-  steuerbar; ein Panel-Button/Light folgt erst mit der separat geplanten
-  Panel-Relayout-Session (breitere 4-Spalten-Button-Reihen). Wichtig dabei:
+- **Mute hat seit der Session „Hauptmodul-Relayout" einen eigenen
+  Panel-Button/Light** (`STAGE_MUTE_PARAM`/`STAGE_MUTE_LIGHT`, siehe
+  [3.2](#sec3-2)) – zusätzlich weiterhin per CV am Trigger-Expander
+  überschreibbar (`STAGE_MUTE_POLY_INPUT`, siehe [6](#sec6)). Das
+  Relayout selbst wurde mit 2 statt der ursprünglich geplanten 4
+  Button-Spalten pro Stage umgesetzt (Kinovice-Feedback nach dem ersten
+  Entwurf: schmalere Stage-Spalte, dafür längere Slider). Wichtig dabei:
   VCV-Modulhöhe ist fix (`RACK_GRID_HEIGHT`), ein Relayout kann das Modul
   also nur breiter, nie niedriger machen.
 - **TR3 ist der implizite Default** (kein Bit gesetzt), nach demselben
   Muster wie Range/Shape/Slope-Defaults.
 - **Gate-Schwelle einheitlich 2V** (nicht die manualspezifizierten 5V für
   Enable) – bewusste Projektentscheidung, ggf. später überprüfbar.
-- **Kein SIMD**: durch fehlende Polyphonie und stark verzweigten
-  Pro-Stage-Code aktuell nicht sinnvoll anwendbar; natürlicher Auslöser
-  wäre eine künftige Polyphonie-Erweiterung.
+- **SIMD wird für die Curve-Power-Berechnung genutzt** (Session
+  „CPU-Optimierung Stage-Resolution (SIMD)", Folge-Session auf eine
+  vorherige CPU-Analyse, die `std::pow()` für `stageCurvePower[]` als
+  Hauptkostentreiber identifiziert hatte): In `Marf248::process()`
+  werden je 4 benachbarte Stages per `rack::simd::float_4` gemeinsam
+  verarbeitet (4 Batches für `NUM_STAGES=16`), inklusive eines auf
+  Batch- statt Pro-Stage-Ebene arbeitenden Dirty-Caches. Restliche
+  Pro-Stage-Berechnungen (Quantisierung, CV-Expander-Scans) laufen
+  weiterhin skalar – dort wurde bislang kein vergleichbarer
+  Kostentreiber identifiziert. Eine Erweiterung auf weitere Bereiche
+  wäre bei Bedarf (z.B. künftige Polyphonie-Erweiterung) ein möglicher
+  nächster Schritt.
 - **Advance und Continuous sind bewusst gegenseitig exklusiv** – beide
   Mechanismen adressieren die Stage auf konzeptionell unterschiedliche Art
   (Trigger-basiert vs. direkt-adressierend), eine Kombination wäre
@@ -1666,6 +1728,32 @@ beobachtet.
 - **CvExpander-Gate A/B bleibt von Ratcheting unberührt** – bewusst
   getrennt vom Ratchet-Sub-Trigger-Mechanismus auf P1OUT/P2OUT, damit das
   Stage-Gate weiterhin unabhängig extern nutzbar bleibt.
+- **Lichtfarben-Schema der Stage-Modifier-Buttons** (nachträglich
+  festgelegt und dokumentiert, ausgelöst durch eine Kinovice-Nachfrage,
+  warum Mute rot statt grün ist – siehe [Fallstricke 10.11](#sec10)): die 14
+  LED-Taster jeder Stage-Spalte folgen vier Farbkategorien statt einer
+  rein zeilenweisen Gruppierung:
+  - **Rot** – Ablauf-/Ausgabe-Verhalten der Stage weicht vom
+    Normalzustand ab: `Pulse1`/`Pulse2` (feuern Trigger), `Skip`
+    (schließt die Stage komplett aus), `Stop`/`Sustain`/`Enable` (halten
+    den Ablauf an), `Mute` (unterdrückt die Trigger-Ausgabe).
+  - **Grün** – reine Struktur-/Kurven-Modifikatoren ohne direkten
+    Eingriff in Trigger-Feuerung oder Ablaufsteuerung: `First`/`Last`,
+    `Slope`, `Quant`, `QuantGlide`.
+  - **Blau** – Kanal-/Zustandsauswahl: `Volt-Ext`/`Time-Ext`-Kanalwahl,
+    Shape-Exp/Log-Zustandsanzeige.
+  - **Gelb** – Einzelfall `Normalize`, bewusst abgesetzte reine
+    Fein-Justage-Funktion ohne eigene Kategorie.
+
+  `Skip` folgte ursprünglich der Grün-Kategorie (Begründung damals:
+  "wirkt nur beim automatischen Ablauf", also eine reine
+  Adress-Fluss-Eigenschaft). Bei der Überprüfung fiel auf, dass `Skip`
+  in derselben thematischen Zweiergruppe wie `Mute` sitzt (siehe
+  [3.2](#sec3-2)), farblich aber inkonsistent war. Da `Skip` – wie
+  `Pulse1`/`Pulse2`/`Mute` – direkt bestimmt, ob/wie eine Stage nach
+  außen wahrnehmbar ist (komplett unsichtbar statt nur stumm), wurde
+  `Skip` nachträglich auf Rot umgestellt, um mit dieser Gruppe konsistent
+  zu sein.
 
 ---
 
