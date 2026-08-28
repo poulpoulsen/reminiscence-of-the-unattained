@@ -2,6 +2,12 @@
 #include "Marf248TriggerExpander.hpp"
 #include "Marf248CvExpander.hpp"
 #include "PanelLabel.hpp"
+// Fuer den Stage-Number-Broadcast (Rechtsklick "Apply to all stages" auf
+// Modifier-Buttons/Slidern/Reglern, siehe weiter unten): history::Action/
+// history::ComplexAction/history::ParamChange fuer echtes Undo/Redo ueber
+// VCV's Standard-Verlauf, da ein einzelner Broadcast potenziell alle 16
+// Stages gleichzeitig ueberschreibt.
+#include <history.hpp>
 
 struct Marf248; // Forward-Deklaration fuer StageVoltageQuantity
 
@@ -307,6 +313,19 @@ struct Marf248 : Module {
 		APOUT_B_OUTPUT,
 		P1OUT_B_OUTPUT,
 		P2OUT_B_OUTPUT,
+		// Time Output (Manual "Outputs and Indicators"): statische CV
+		// proportional zur rohen Interval-Time-Sliderposition (0..1 ->
+		// 0-10V), UNABHAENGIG von Time Range (TR1-4), External-Source-CV
+		// oder der ablaufenden Stage-Phase. Bewusst getrennt von
+		// TOUT_A/B_OUTPUT weiter oben, das trotz seines Namens tatsaechlich
+		// die im Manual als "Reference Output" beschriebene abfallende
+		// Rampe ueber die Stage-Zeit ausgibt (siehe Kommentar dort).
+		// Neuer Eintrag ans Enum-Ende angehaengt (nicht zwischen VOUT/TOUT
+		// einsortiert), damit bestehende Patch-Kabel-Indizes stabil
+		// bleiben - siehe Projektkonvention "Enum entries ... always
+		// appended at end".
+		TIMESTATIC_A_OUTPUT,
+		TIMESTATIC_B_OUTPUT,
 		OUTPUTS_LEN
 	};
 	enum LightId {
@@ -328,22 +347,28 @@ struct Marf248 : Module {
 		ENUMS(STAGE_PULSE2_LIGHT, NUM_STAGES),
 		ENUMS(STAGE_SKIP_LIGHT, NUM_STAGES),
 		RUN_A_LIGHT,
+		RUN_A_LIGHT_R = RUN_A_LIGHT,
+		RUN_A_LIGHT_G,
+		RUN_A_LIGHT_B,
 		RUN_B_LIGHT,
+		RUN_B_LIGHT_R = RUN_B_LIGHT,
+		RUN_B_LIGHT_G,
+		RUN_B_LIGHT_B,
 		// Mode (an = Reverse, aus = Forward) und Pendulum (an = aktiv) je
 		// eine LED pro Section.
 		MODE_A_LIGHT,
 		PENDULUM_A_LIGHT,
 		MODE_B_LIGHT,
 		PENDULUM_B_LIGHT,
-		// Dreifarbige Stage-Address-Statusanzeige je Section: RUN_x_LIGHT
-		// (bereits vorhanden, gruen) bekommt hier zwei Partner-LEDs an
-		// gleicher Panel-Position dazu - HOLD (gelb) und STOP (rot) - statt
-		// eines einzelnen RGB-Lights, analog zum bestehenden Shape-Button-
-		// Muster (zwei einzelne LEDs statt einer kombinierten).
-		HOLD_A_LIGHT,
-		STOP_A_LIGHT,
-		HOLD_B_LIGHT,
-		STOP_B_LIGHT,
+		// Dreifarbige Stage-Address-Statusanzeige je Section (Manual
+		// "FUNCTION GENERATOR CONTROL - MODE": Gruen=Run, Gelb=Hold,
+		// Rot=Stop): eine gemeinsame RedGreenBlueLight statt separater
+		// Einzel-LEDs, siehe RUN_A/B_LIGHT_R/G/B oben (Kinovice-Entscheidung
+		// diese Session). Ersetzt einen fruehen, nie am Panel verdrahteten
+		// Anlauf mit vier separaten HOLD_A/STOP_A/HOLD_B/STOP_B-LightIds
+		// (waren im Enum und wurden in process() beschrieben, aber nie per
+		// createLightCentered aufs Panel gebracht - siehe Git-Historie,
+		// falls das nochmal nachvollzogen werden muss).
 		// Int/Ext- und Continuous-Zustand der Stage Address, je Section.
 		STAGE_ADDR_MODE_A_LIGHT,
 		STAGE_ADDR_CONT_A_LIGHT,
@@ -759,15 +784,23 @@ struct Marf248 : Module {
 		configInput(BEATS_FACTOR_CV_B_INPUT, "Section B Beats per Cycle CV");
 
 		configOutput(VOUT_A_OUTPUT, "Section A Voltage");
-		configOutput(TOUT_A_OUTPUT, "Section A Time (interval ramp)");
+		// Name/Beschreibung praezisiert (Manual "Reference Output" - siehe
+		// Kommentar bei TIMESTATIC_A/B_OUTPUT oben): abfallende Rampe ueber
+		// die Stage-Zeit, kein statischer Wert.
+		configOutput(TOUT_A_OUTPUT, "Section A Reference (interval ramp)");
 		configOutput(APOUT_A_OUTPUT, "Section A All pulses");
 		configOutput(P1OUT_A_OUTPUT, "Section A Programmed Pulse 1");
 		configOutput(P2OUT_A_OUTPUT, "Section A Programmed Pulse 2");
 		configOutput(VOUT_B_OUTPUT, "Section B Voltage");
-		configOutput(TOUT_B_OUTPUT, "Section B Time (interval ramp)");
+		configOutput(TOUT_B_OUTPUT, "Section B Reference (interval ramp)");
 		configOutput(APOUT_B_OUTPUT, "Section B All pulses");
 		configOutput(P1OUT_B_OUTPUT, "Section B Programmed Pulse 1");
 		configOutput(P2OUT_B_OUTPUT, "Section B Programmed Pulse 2");
+		// Time Output (Manual "Outputs and Indicators"): statische CV
+		// proportional zur Interval-Time-Sliderposition der aktuell
+		// adressierten Stage - siehe Kommentar bei TIMESTATIC_A/B_OUTPUT.
+		configOutput(TIMESTATIC_A_OUTPUT, "Section A Time (static, proportional to slider)");
+		configOutput(TIMESTATIC_B_OUTPUT, "Section B Time (static, proportional to slider)");
 
 		stageModifier[0] |= MOD_FIRST;
 		stageModifier[NUM_STAGES - 1] |= MOD_LAST;
@@ -1949,6 +1982,14 @@ struct Marf248 : Module {
 		outputs[APOUT_A_OUTPUT].setVoltage(apA);
 		outputs[P1OUT_A_OUTPUT].setVoltage(p1A);
 		outputs[P2OUT_A_OUTPUT].setVoltage(p2A);
+		// Time Output (siehe Kommentar bei TIMESTATIC_A/B_OUTPUT oben):
+		// bewusst die ROHE Sliderposition (stageTime[], 0..1 -> 0-10V) der
+		// von Section A aktuell adressierten Stage, NICHT resolvedTimeA
+		// (bereits aufgeloeste Sekundenzeit inkl. Time Range/External-CV).
+		// Manual: bleibt auch bei Time Source = External nutzbar, ohne die
+		// tatsaechliche Ablaufzeit zu beeinflussen - genau dafuer muss der
+		// Wert von resolvedTime[]/External-Override unabhaengig bleiben.
+		outputs[TIMESTATIC_A_OUTPUT].setVoltage(stageTime[afgA.currentStage] * 10.f);
 		lights[P1_ACTIVE_A_LIGHT].setBrightness(p1A > 0.f ? 1.f : 0.f);
 		lights[P2_ACTIVE_A_LIGHT].setBrightness(p2A > 0.f ? 1.f : 0.f);
 
@@ -1973,6 +2014,9 @@ struct Marf248 : Module {
 		outputs[APOUT_B_OUTPUT].setVoltage(apB);
 		outputs[P1OUT_B_OUTPUT].setVoltage(p1B);
 		outputs[P2OUT_B_OUTPUT].setVoltage(p2B);
+		// Time Output Section B: siehe Kommentar bei TIMESTATIC_A_OUTPUT
+		// oben, analog.
+		outputs[TIMESTATIC_B_OUTPUT].setVoltage(stageTime[afgB.currentStage] * 10.f);
 		lights[P1_ACTIVE_B_LIGHT].setBrightness(p1B > 0.f ? 1.f : 0.f);
 		lights[P2_ACTIVE_B_LIGHT].setBrightness(p2B > 0.f ? 1.f : 0.f);
 
@@ -2110,17 +2154,30 @@ struct Marf248 : Module {
 		// Advance-Modus weiterhin eine echte Sequenz durchlaeuft (nur extern
 		// statt intern getaktet), waehrend Continuous konzeptionell gar
 		// keine "laufende" Sequenz mehr ist, sondern eine direkte Adressierung.
+		//
+		// Farbmischung auf der RGB-LED (siehe RUN_A/B_LIGHT_R/G/B oben):
+		// Gruen=Run (nur G), Rot=Stop (nur R), Gelb=Hold (R+G gemeinsam,
+		// Standard-additive Mischung). Blau bleibt ungenutzt (0).
+		//
+		// HOLD_BRIGHTNESS: Gelb (zwei volle Kanaele gleichzeitig) wirkt
+		// optisch heller als Rot/Gruen allein (je nur ein Kanal) - beide
+		// Kanaele werden im Hold-Zustand daher gemeinsam gedimmt
+		// (Kinovice-Feedback "Gelb zu hell"). Bei Bedarf hier anpassen -
+		// 1.0 waere wieder volle Helligkeit wie zuvor.
+		const float HOLD_BRIGHTNESS = 0.5f;
 		bool stopA = (!afgA.effectiveRunning && !afgA.advanceModeActive) || afgA.statusStoppedByStage || addrContOnA;
 		bool holdA = !stopA && afgA.statusHeld;
-		lights[STOP_A_LIGHT].setBrightness(stopA ? 1.f : 0.f);
-		lights[HOLD_A_LIGHT].setBrightness(holdA ? 1.f : 0.f);
-		lights[RUN_A_LIGHT].setBrightness((!stopA && !holdA) ? 1.f : 0.f);
+		bool runA = !stopA && !holdA;
+		lights[RUN_A_LIGHT_R].setBrightness(stopA ? 1.f : (holdA ? HOLD_BRIGHTNESS : 0.f));
+		lights[RUN_A_LIGHT_G].setBrightness(runA ? 1.f : (holdA ? HOLD_BRIGHTNESS : 0.f));
+		lights[RUN_A_LIGHT_B].setBrightness(0.f);
 
 		bool stopB = (!afgB.effectiveRunning && !afgB.advanceModeActive) || afgB.statusStoppedByStage || addrContOnB;
 		bool holdB = !stopB && afgB.statusHeld;
-		lights[STOP_B_LIGHT].setBrightness(stopB ? 1.f : 0.f);
-		lights[HOLD_B_LIGHT].setBrightness(holdB ? 1.f : 0.f);
-		lights[RUN_B_LIGHT].setBrightness((!stopB && !holdB) ? 1.f : 0.f);
+		bool runB = !stopB && !holdB;
+		lights[RUN_B_LIGHT_R].setBrightness(stopB ? 1.f : (holdB ? HOLD_BRIGHTNESS : 0.f));
+		lights[RUN_B_LIGHT_G].setBrightness(runB ? 1.f : (holdB ? HOLD_BRIGHTNESS : 0.f));
+		lights[RUN_B_LIGHT_B].setBrightness(0.f);
 		for (int i = 0; i < NUM_STAGES; i++) {
 			lights[STAGE_LIGHT_A + i].setBrightness(i == afgA.currentStage ? 0.35f : 0.f);
 			lights[STAGE_LIGHT_B + i].setBrightness(i == afgB.currentStage ? 0.35f : 0.f);
@@ -2371,6 +2428,173 @@ std::string StageTimeQuantity::getDisplayValueString() {
 }
 
 
+// ============================================================================
+// Stage-Number-Broadcast (Session "Stage-Number-Broadcast"): Rechtsklick-
+// Kontextmenue-Eintrag "Apply to all stages" auf einem Modifier-Button oder
+// einem kontinuierlichen Regler (Voltage/Time/Range/Curve) uebertraegt den
+// aktuellen Zustand/Wert der Quell-Stage auf alle 16 Stages. Zwei getrennte
+// Mechanismen noetig, da die beiden Kategorien unterschiedlich gespeichert
+// werden:
+//
+//   - Bit-Modifier (Pulse1/2, Skip, First/Last, Stop/Sustain/Enable, Slope)
+//     leben als einzelne Bits in Marf248::stageModifier[] (Modul-internes
+//     Array) - das ist KEIN von der Engine verwaltetes Param, VCV's
+//     eingebautes history::ParamChange greift hier also nicht.
+//   - Kontinuierliche Regler (Voltage/Time/Range/Curve) sind normale
+//     ParamQuantities, dafuer genuegt eine Sammlung aus Standard-
+//     history::ParamChange-Objekten in einer history::ComplexAction.
+//
+// Beide Pfade sind vollstaendig ueber VCV's Undo/Redo (Strg+Z) rueckgaengig
+// machbar, in jeweils einem einzigen Schritt fuer den kompletten Broadcast
+// (Kinovice-Entscheidung, da ein Broadcast potenziell 16 Stage-Werte
+// gleichzeitig ueberschreibt).
+
+// -- Bit-Modifier-Pfad -------------------------------------------------------
+//
+// Eigene history::Action-Unterklasse, die einen kompletten Snapshot des
+// stageModifier[]-Arrays vor/nach dem Broadcast sichert (16 x int, billig)
+// statt nur das einzelne Bit zu tracken - robuster, falls sich das Bit-Layout
+// spaeter aendert, und deckt ohne Zusatzaufwand auch den (aktuell nicht
+// vorkommenden) Fall ab, dass ein Broadcast mehrere Bits gleichzeitig
+// betrifft. moduleId statt direktem Modul-Zeiger, da das Modul zwischen
+// Undo/Redo-Aufrufen theoretisch entfernt/neu erzeugt werden koennte (Rack-
+// Standardmuster, siehe history::ParamChange::moduleId in Rack SDK).
+struct StageModifierBroadcastAction : history::Action {
+	int64_t moduleId = -1;
+	int oldValues[NUM_STAGES] = {};
+	int newValues[NUM_STAGES] = {};
+
+	void undo() override {
+		Marf248* m = dynamic_cast<Marf248*>(APP->engine->getModule(moduleId));
+		if (!m) {
+			return;
+		}
+		for (int i = 0; i < NUM_STAGES; i++) {
+			m->stageModifier[i] = oldValues[i];
+		}
+	}
+
+	void redo() override {
+		Marf248* m = dynamic_cast<Marf248*>(APP->engine->getModule(moduleId));
+		if (!m) {
+			return;
+		}
+		for (int i = 0; i < NUM_STAGES; i++) {
+			m->stageModifier[i] = newValues[i];
+		}
+	}
+};
+
+// Fuehrt den Broadcast eines einzelnen Modifier-Bits von sourceStage auf alle
+// 16 Stages aus (uebernimmt den Bit-ZUSTAND der Quell-Stage: gesetzt -> bei
+// allen setzen, geloescht -> bei allen loeschen) und erzeugt dabei den
+// zugehoerigen Undo-Schritt. Kein Undo-Eintrag, falls sich nichts aendert
+// (z.B. wenn ohnehin schon alle Stages denselben Zustand hatten) - vermeidet
+// leere/wirkungslose History-Eintraege.
+static void broadcastModifierBitToAllStages(Marf248* m, uint32_t bit, int sourceStage, const std::string& actionName) {
+	if (!m || sourceStage < 0 || sourceStage >= NUM_STAGES) {
+		return;
+	}
+	bool state = (m->stageModifier[sourceStage] & bit) != 0;
+
+	StageModifierBroadcastAction* action = new StageModifierBroadcastAction;
+	action->moduleId = m->id;
+	action->name = actionName;
+	for (int i = 0; i < NUM_STAGES; i++) {
+		action->oldValues[i] = m->stageModifier[i];
+	}
+
+	for (int i = 0; i < NUM_STAGES; i++) {
+		if (state) {
+			m->stageModifier[i] |= bit;
+		}
+		else {
+			m->stageModifier[i] &= ~bit;
+		}
+	}
+
+	bool changed = false;
+	for (int i = 0; i < NUM_STAGES; i++) {
+		action->newValues[i] = m->stageModifier[i];
+		if (action->newValues[i] != action->oldValues[i]) {
+			changed = true;
+		}
+	}
+	if (changed) {
+		APP->history->push(action);
+	}
+	else {
+		delete action;
+	}
+}
+
+// Lookup-Tabelle: ordnet den Basis-ParamId einer Button-Familie (STAGE_
+// PULSE1_PARAM usw.) dem zugehoerigen Modifier-Bit und einem Anzeigenamen
+// fuers Menue zu. Bewusst NUR die per Session-Entscheidung freigegebenen
+// neun einfachen Bit-Modifier (Pulse1/2, Skip, First/Last, Stop/Sustain/
+// Enable, Slope) - Quant/QuantGlide/Normalize/Mute/Volt-Ext/Time-Ext/Shape
+// bleiben aussen vor (nicht Teil dieser Session).
+struct BroadcastBitInfo {
+	int baseParamId;
+	uint32_t bit;
+	const char* label;
+};
+static const BroadcastBitInfo BROADCAST_BIT_TABLE[] = {
+	{Marf248::STAGE_PULSE1_PARAM,  MOD_PULSE1,  "Pulse 1"},
+	{Marf248::STAGE_PULSE2_PARAM,  MOD_PULSE2,  "Pulse 2"},
+	{Marf248::STAGE_SKIP_PARAM,    MOD_SKIP,    "Skip"},
+	{Marf248::STAGE_STOP_PARAM,    MOD_STOP,    "Stop"},
+	{Marf248::STAGE_SUSTAIN_PARAM, MOD_SUSTAIN, "Sustain"},
+	{Marf248::STAGE_ENABLE_PARAM,  MOD_ENABLE,  "Enable"},
+	{Marf248::STAGE_FIRST_PARAM,   MOD_FIRST,   "First"},
+	{Marf248::STAGE_LAST_PARAM,    MOD_LAST,    "Last"},
+	{Marf248::STAGE_SLOPE_PARAM,   MOD_SLOPED,  "Slope"},
+};
+static const int BROADCAST_BIT_TABLE_SIZE = sizeof(BROADCAST_BIT_TABLE) / sizeof(BROADCAST_BIT_TABLE[0]);
+
+// -- Kontinuierliche-Regler-Pfad (Voltage/Time/Range/Curve) ------------------
+//
+// Anders als bei den Bit-Modifiern sind das normale, von der Engine
+// verwaltete ParamQuantities - dafuer reicht eine Sammlung aus Standard-
+// history::ParamChange-Objekten (Rack-Bordmittel) in einer
+// history::ComplexAction, keine eigene Action-Klasse noetig. Wert wird ueber
+// APP->engine->setParamValue() gesetzt (Engine-Thread-sicherer Weg), nicht
+// per direktem ParamQuantity::setValue() wie bei RangeKnob/TrangeButton
+// oben - dort unkritisch (einzelner Sofortwert), hier bewusst konsistent
+// zum Engine-Setter, da 16 Werte in einer Aktion gesetzt werden.
+static void broadcastParamToAllStages(Marf248* m, int baseParamId, int sourceStage, const std::string& actionName) {
+	if (!m || sourceStage < 0 || sourceStage >= NUM_STAGES) {
+		return;
+	}
+	float value = m->params[baseParamId + sourceStage].getValue();
+
+	history::ComplexAction* complexAction = new history::ComplexAction;
+	complexAction->name = actionName;
+	bool any = false;
+	for (int i = 0; i < NUM_STAGES; i++) {
+		int paramId = baseParamId + i;
+		float oldValue = m->params[paramId].getValue();
+		if (oldValue == value) {
+			continue;
+		}
+		history::ParamChange* h = new history::ParamChange;
+		h->moduleId = m->id;
+		h->paramId = paramId;
+		h->oldValue = oldValue;
+		h->newValue = value;
+		complexAction->push(h);
+		APP->engine->setParamValue(m, paramId, value);
+		any = true;
+	}
+	if (any) {
+		APP->history->push(complexAction);
+	}
+	else {
+		delete complexAction;
+	}
+}
+
+
 // Einfache helle Panel-Hintergrundflaeche im Buchla/Tiptop-Silber-Look, da
 // bisher kein SVG-Panel gesetzt ist und das Modul sonst transparent bleibt.
 struct PanelBackground : Widget {
@@ -2479,6 +2703,43 @@ struct TempoBpmDisplay : TransparentWidget {
 		nvgText(args.vg, cx, cy, text.c_str(), NULL);
 	}
 };
+
+// Ersetzt (nur fuer die neun in BROADCAST_BIT_TABLE gelisteten Modifier-
+// Familien, siehe dort) den bisher verwendeten nackten LEDButton. Rein
+// visuell/interaktiv identisch mit LEDButton (keine draw()-Aenderung, kein
+// eigenes Rendering) - fuegt lediglich per appendContextMenu() den
+// Rechtsklick-Eintrag "Apply to all stages" hinzu. Reine Widget-Klassen-
+// Umstellung, keine Aenderung an ParamId/Enum-Reihenfolge, daher keine
+// bestehenden Patch-Kabel betroffen.
+struct StageModBroadcastButton : LEDButton {
+	void appendContextMenu(ui::Menu* menu) override {
+		ParamQuantity* pq = getParamQuantity();
+		if (!pq) {
+			return;
+		}
+		Marf248* m = dynamic_cast<Marf248*>(pq->module);
+		if (!m) {
+			return;
+		}
+		for (int t = 0; t < BROADCAST_BIT_TABLE_SIZE; t++) {
+			const BroadcastBitInfo& info = BROADCAST_BIT_TABLE[t];
+			if (pq->paramId < info.baseParamId || pq->paramId >= info.baseParamId + NUM_STAGES) {
+				continue;
+			}
+			int stageIndex = pq->paramId - info.baseParamId;
+			menu->addChild(new ui::MenuSeparator);
+			menu->addChild(createMenuItem(
+				string::f("Apply %s to all stages", info.label), "",
+				[=]() {
+					broadcastModifierBitToAllStages(m, info.bit, stageIndex,
+						string::f("apply Stage %d %s to all stages", stageIndex + 1, info.label));
+				}
+			));
+			return;
+		}
+	}
+};
+
 
 struct TrangeButton : LEDButton {
 	void draw(const DrawArgs& args) override {
@@ -2659,6 +2920,21 @@ struct RangeKnob : RoundBlackKnob {
 				[=]() { pq->setValue((float) i); }
 			));
 		}
+
+		// Stage-Number-Broadcast (Session "Stage-Number-Broadcast"): Range
+		// gehoert zu den per Kinovice-Entscheidung freigegebenen
+		// kontinuierlichen Reglern.
+		Marf248* m = dynamic_cast<Marf248*>(pq->module);
+		int stageIndex = pq->paramId - Marf248::STAGE_RANGE_PARAM;
+		if (m && stageIndex >= 0 && stageIndex < NUM_STAGES) {
+			menu->addChild(new ui::MenuSeparator);
+			menu->addChild(createMenuItem("Apply Range to all stages", "",
+				[=]() {
+					broadcastParamToAllStages(m, Marf248::STAGE_RANGE_PARAM, stageIndex,
+						string::f("apply Stage %d Range to all stages", stageIndex + 1));
+				}
+			));
+		}
 	}
 };
 
@@ -2837,6 +3113,43 @@ struct StageSlider : ParamWidget {
 		if (pq)
 			pq->reset();
 	}
+
+	// Stage-Number-Broadcast (Session "Stage-Number-Broadcast"): StageSlider
+	// wird sowohl fuer Voltage als auch fuer Time verwendet (siehe
+	// Marf248Widget-Konstruktor) - welche der beiden Familien vorliegt, wird
+	// hier rein anhand des ParamId-Bereichs unterschieden, kein eigenes
+	// Member noetig.
+	void appendContextMenu(ui::Menu* menu) override {
+		ParamQuantity* pq = getParamQuantity();
+		if (!pq) {
+			return;
+		}
+		Marf248* m = dynamic_cast<Marf248*>(pq->module);
+		if (!m) {
+			return;
+		}
+		int baseParamId = -1;
+		const char* label = nullptr;
+		if (pq->paramId >= Marf248::STAGE_VOLTAGE_PARAM && pq->paramId < Marf248::STAGE_VOLTAGE_PARAM + NUM_STAGES) {
+			baseParamId = Marf248::STAGE_VOLTAGE_PARAM;
+			label = "Voltage";
+		}
+		else if (pq->paramId >= Marf248::STAGE_TIME_PARAM && pq->paramId < Marf248::STAGE_TIME_PARAM + NUM_STAGES) {
+			baseParamId = Marf248::STAGE_TIME_PARAM;
+			label = "Time";
+		}
+		if (baseParamId < 0) {
+			return;
+		}
+		int stageIndex = pq->paramId - baseParamId;
+		menu->addChild(new ui::MenuSeparator);
+		menu->addChild(createMenuItem(string::f("Apply %s to all stages", label), "",
+			[=]() {
+				broadcastParamToAllStages(m, baseParamId, stageIndex,
+					string::f("apply Stage %d %s to all stages", stageIndex + 1, label));
+			}
+		));
+	}
 };
 
 
@@ -2915,6 +3228,38 @@ struct PulseRingLight : app::ModuleLightWidget {
 // COLOR_MUSICAL/COLOR_TEMPO-Entfernung von vorher bleibt unveraendert -
 // COLOR_MUSICAL wird nur vom Trigger Expander gebraucht und ist dort
 // lokal geblieben.
+
+
+// Stage-Number-Broadcast (Session "Stage-Number-Broadcast"): duenner
+// Trimpot-Wrapper nur fuer den Curve-Modifier (STAGE_CURVE_PARAM), der
+// bisher als nackter Trimpot ohne eigene Widget-Klasse verwendet wurde
+// (siehe Marf248Widget-Konstruktor). Wie StageModBroadcastButton/RangeKnob/
+// StageSlider oben: keine draw()-Aenderung, appendContextMenu() haengt sich
+// lediglich an Racks Standard-Kontextmenue (Fine Adjust/Initialize etc.) an
+// und ergaenzt den Broadcast-Eintrag.
+struct StageCurveTrimpot : Trimpot {
+	void appendContextMenu(ui::Menu* menu) override {
+		ParamQuantity* pq = getParamQuantity();
+		if (!pq) {
+			return;
+		}
+		Marf248* m = dynamic_cast<Marf248*>(pq->module);
+		if (!m) {
+			return;
+		}
+		int stageIndex = pq->paramId - Marf248::STAGE_CURVE_PARAM;
+		if (stageIndex < 0 || stageIndex >= NUM_STAGES) {
+			return;
+		}
+		menu->addChild(new ui::MenuSeparator);
+		menu->addChild(createMenuItem("Apply Curve to all stages", "",
+			[=]() {
+				broadcastParamToAllStages(m, Marf248::STAGE_CURVE_PARAM, stageIndex,
+					string::f("apply Stage %d Curve to all stages", stageIndex + 1));
+			}
+		));
+	}
+};
 
 
 struct Marf248Widget : ModuleWidget {
@@ -3093,12 +3438,14 @@ struct Marf248Widget : ModuleWidget {
 			addChild(jacksFrame);
 		}
 
-		// Neue VOUT/TOUT-Ausgangsspalte (Kinovice-Wunsch): eigener, kleiner
-		// Rahmen zwischen Jacks-Spalte und Stage-Array, spiegelbildlich fuer
-		// A/B. Bewusst kurz gehalten (nur 2 Buchsen), kein Grund, ihn auf
-		// die Hoehe der anderen Spalten aufzublasen.
+		// Neue VOUT/TOUT/TIME-Ausgangsspalte (Kinovice-Wunsch): eigener,
+		// kleiner Rahmen zwischen Jacks-Spalte und Stage-Array, spiegel-
+		// bildlich fuer A/B. Untergrenze auf Kinovice-Wunsch erweitert, um
+		// die neue dritte Buchse (TIME, y=49, Label bis ca. 53.5mm - siehe
+		// Session "Time/Reference-Output-Trennung") mit einzuschliessen;
+		// vorher war der Rahmen bewusst kurz gehalten fuer nur 2 Buchsen.
 		const float outputsFrameTopMM = 12.f;
-		const float outputsFrameBottomMM = 44.f;
+		const float outputsFrameBottomMM = 56.f;
 		float outputsColsFrame[2] = {colAOutputs, colBOutputs};
 		for (int s = 0; s < 2; s++) {
 			StageFrame* outputsFrame = new StageFrame;
@@ -3123,6 +3470,10 @@ struct Marf248Widget : ModuleWidget {
 		int stopInputs[2] = {Marf248::STOP_A_INPUT, Marf248::STOP_B_INPUT};
 		int voutOutputs[2] = {Marf248::VOUT_A_OUTPUT, Marf248::VOUT_B_OUTPUT};
 		int toutOutputs[2] = {Marf248::TOUT_A_OUTPUT, Marf248::TOUT_B_OUTPUT};
+		// Neuer statischer Time-Output (Manual "Time Output", siehe
+		// Kommentar bei TIMESTATIC_A/B_OUTPUT weiter oben) - eigene Buchse,
+		// bewusst unter TOUT platziert (Kinovice-Wunsch).
+		int timeStaticOutputs[2] = {Marf248::TIMESTATIC_A_OUTPUT, Marf248::TIMESTATIC_B_OUTPUT};
 		int apoutOutputs[2] = {Marf248::APOUT_A_OUTPUT, Marf248::APOUT_B_OUTPUT};
 		int p1ActiveLights[2] = {Marf248::P1_ACTIVE_A_LIGHT, Marf248::P1_ACTIVE_B_LIGHT};
 		int p1Outputs[2] = {Marf248::P1OUT_A_OUTPUT, Marf248::P1OUT_B_OUTPUT};
@@ -3196,7 +3547,10 @@ struct Marf248Widget : ModuleWidget {
 			addChild(divTimeMultRun);
 
 			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 50)), module, runParams[s]));
-			addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(ctrl, 50)), module, runLights[s]));
+			// Dreifarbige Statusanzeige (Gruen=Run/Gelb=Hold/Rot=Stop, siehe
+			// RUN_A/B_LIGHT_R/G/B und Kommentar in process()) statt der
+			// vorherigen einfarbig-gruenen LED.
+			addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(mm2px(Vec(ctrl, 50)), module, runLights[s]));
 
 			HDivider* divRunMode = new HDivider;
 			divRunMode->box.pos = mm2px(Vec(ctrl - 4.f, 58.f));
@@ -3296,11 +3650,11 @@ struct Marf248Widget : ModuleWidget {
 			// nebenan) hochgezogen, TOUT nur etwas hoeher (36 -> 34.5) -
 			// beides auf Kinovice-Wunsch, um unter der jetzt groesseren
 			// Beschriftung (siehe unten) Platz zu schaffen, ohne den
-			// bestehenden Ausgangs-Rahmen (12-44mm, "der ist gut") zu
-			// aendern. Beide Buchsen bleiben damit klar innerhalb des
-			// Rahmens (VOUT-Oberkante ca. 15.8mm, TOUT-Label-Unterkante
-			// ca. 44.1mm - letzteres beruehrt die Rahmenunterkante quasi
-			// exakt, siehe naechster Kommentar).
+			// bestehenden Ausgangs-Rahmen (12-56mm, siehe outputsFrameBottomMM
+			// oben - urspruenglich 44mm, auf Kinovice-Wunsch fuer die dritte
+			// Buchse TIME weiter unten erweitert) zu aendern. Beide Buchsen
+			// bleiben damit klar innerhalb des Rahmens (VOUT-Oberkante ca.
+			// 15.8mm, TOUT-Label-Unterkante ca. 44.1mm).
 			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(outCol, 20)), module, voutOutputs[s]));
 			// Gleiches Schriftbild wie Ext A-D (10pt, 5.5mm Versatz statt
 			// der vorherigen kompakten 6.5pt/4mm-Variante) - Kinovice-
@@ -3316,6 +3670,14 @@ struct Marf248Widget : ModuleWidget {
 			// Dateianfang zum PanelLabel-System).
 			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(outCol, 34.5f)), module, toutOutputs[s]));
 			addLabelBelow(Vec(outCol, 34.5f), 5.5f, "TOUT", (s == 0 ? COLOR_SECTION_A : COLOR_SECTION_B), 10.f);
+
+			// Neuer statischer Time-Output (Session "Time/Reference-Output-
+			// Trennung"): direkt unter TOUT, gleicher 14.5mm-Pitch wie
+			// VOUT->TOUT, bei y=49mm. Label-Unterkante ca. 53.5mm - passt
+			// jetzt in den auf 56mm erweiterten Rahmen (outputsFrameBottomMM
+			// oben, Kinovice-Wunsch), mit ca. 2.5mm Luft zur Rahmenunterkante.
+			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(outCol, 49)), module, timeStaticOutputs[s]));
+			addLabelBelow(Vec(outCol, 49), 5.5f, "TIME", (s == 0 ? COLOR_SECTION_A : COLOR_SECTION_B), 10.f);
 		}
 
 		// --- Stage-Array (Mitte), Session "Hauptmodul-Relayout" (zweiter
@@ -3427,32 +3789,32 @@ struct Marf248Widget : ModuleWidget {
 			// alle vier beeinflussen direkt, ob/wie eine Stage nach aussen
 			// wahrnehmbar ist (Skip: komplett unsichtbar, Mute: stumm,
 			// Pulse1/2: erzeugen die Trigger, die Mute wieder unterdrueckt).
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[0])), module, Marf248::STAGE_PULSE1_PARAM + i));
+			addParam(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[0])), module, Marf248::STAGE_PULSE1_PARAM + i));
 			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[0])), module, Marf248::STAGE_PULSE1_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[0])), module, Marf248::STAGE_PULSE2_PARAM + i));
+			addParam(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[0])), module, Marf248::STAGE_PULSE2_PARAM + i));
 			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[0])), module, Marf248::STAGE_PULSE2_LIGHT + i));
 
 
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[1])), module, Marf248::STAGE_SKIP_PARAM + i));
+			addParam(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[1])), module, Marf248::STAGE_SKIP_PARAM + i));
 			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[1])), module, Marf248::STAGE_SKIP_LIGHT + i));
 			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[1])), module, Marf248::STAGE_MUTE_PARAM + i));
 			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[1])), module, Marf248::STAGE_MUTE_LIGHT + i));
 
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[2])), module, Marf248::STAGE_STOP_PARAM + i));
+			addParam(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[2])), module, Marf248::STAGE_STOP_PARAM + i));
 			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[2])), module, Marf248::STAGE_STOP_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[2])), module, Marf248::STAGE_SUSTAIN_PARAM + i));
+			addParam(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[2])), module, Marf248::STAGE_SUSTAIN_PARAM + i));
 			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[2])), module, Marf248::STAGE_SUSTAIN_LIGHT + i));
 
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[3])), module, Marf248::STAGE_ENABLE_PARAM + i));
+			addParam(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[3])), module, Marf248::STAGE_ENABLE_PARAM + i));
 			addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[3])), module, Marf248::STAGE_ENABLE_LIGHT + i));
 			// buttonColOffsets[1] in dieser Reihe bewusst frei.
 
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[4])), module, Marf248::STAGE_FIRST_PARAM + i));
+			addParam(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[4])), module, Marf248::STAGE_FIRST_PARAM + i));
 			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[4])), module, Marf248::STAGE_FIRST_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[4])), module, Marf248::STAGE_LAST_PARAM + i));
+			addParam(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[4])), module, Marf248::STAGE_LAST_PARAM + i));
 			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[4])), module, Marf248::STAGE_LAST_LIGHT + i));
 
-			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[5])), module, Marf248::STAGE_SLOPE_PARAM + i));
+			addParam(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[5])), module, Marf248::STAGE_SLOPE_PARAM + i));
 			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[5])), module, Marf248::STAGE_SLOPE_LIGHT + i));
 			// Quantized Glide (siehe MOD_QUANT_GLIDE in Marf248.hpp): belegt
 			// den bisher freien buttonColOffsets[1]-Slot in dieser Reihe,
@@ -3477,7 +3839,7 @@ struct Marf248Widget : ModuleWidget {
 			addParam(createParamCentered<LEDButton>(mm2px(Vec(x + shapeCurveOffsetX + 4.f, shapeCurveY)), module, Marf248::STAGE_SHAPE_PARAM + i));
 			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + shapeCurveOffsetX + 1.f, shapeCurveY)), module, Marf248::STAGE_SHAPE_EXP_LIGHT + i));
 			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + shapeCurveOffsetX + 7.f, shapeCurveY)), module, Marf248::STAGE_SHAPE_LOG_LIGHT + i));
-			addParam(createParamCentered<Trimpot>(mm2px(Vec(x + shapeCurveOffsetX - 4.f, shapeCurveY)), module, Marf248::STAGE_CURVE_PARAM + i));
+			addParam(createParamCentered<StageCurveTrimpot>(mm2px(Vec(x + shapeCurveOffsetX - 4.f, shapeCurveY)), module, Marf248::STAGE_CURVE_PARAM + i));
 
 			// Time Range (TR1-4): eigene Reihe, mittig in der Button-
 			// Unterspalte. TrangeButton zeichnet sich komplett selbst (kein

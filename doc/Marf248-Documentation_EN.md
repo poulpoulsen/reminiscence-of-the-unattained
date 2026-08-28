@@ -14,8 +14,10 @@ Status: every feature described in this documentation has been live-tested
 and confirmed by Kinovice in a running Rack instance (including Address
 Memory Store/Recall, 4-channel A–D selection with zone boundaries and
 fallback behavior, backward compatibility of existing mono patches, V/Oct
-tempo control including right-click numeric entry, and Stage Mute
-including APOUT suppression).
+tempo control including right-click numeric entry, Stage Mute
+including APOUT suppression, Reference/Time-Output separation, the
+tri-color RGB status LED, and Stage-Number Broadcast including
+undo/redo).
 
 ---
 
@@ -47,6 +49,7 @@ including APOUT suppression).
    - [Scale/Key Quantization](#sec4-11) · [[#4.11 Scale/Key Quantization|Obsidian]]
    - [Tempo/BPM Control (V/Oct, BEATS_FACTOR)](#sec4-12) · [[#4.12 Tempo/BPM Control (V/Oct, BEATS_FACTOR)|Obsidian]]
    - [Ratcheting](#sec4-13) · [[#4.13 Ratcheting|Obsidian]]
+   - [Stage-Number Broadcast](#sec4-14) · [[#4.14 Stage-Number Broadcast|Obsidian]]
 5. [Marf248 – Function Reference (C++)](#sec5) · [[#5. Marf248 – Function Reference (C++)|Obsidian]]
 6. [Marf248TriggerExpander](#sec6) · [[#6. Marf248TriggerExpander|Obsidian]]
 7. [Marf248CvExpander](#sec7) · [[#7. Marf248CvExpander|Obsidian]]
@@ -176,10 +179,12 @@ required width – see below) and organized into several vertical columns
 - **Section A/B Jacks column** (12–121mm): Start/Stop, Tempo CV, live BPM
   display, BEATS_FACTOR CV, P1OUT/P2OUT, APOUT, Stage Address CV, Stage
   Address channel-select CV.
-- **Section A/B Outputs column** (new, 12mm wide, 12–44mm): just VOUT
-  (voltage output) and TOUT (time/interval output) – its own narrow column
-  between the Jacks column and the stage array, mirrored for A/B. Moved
-  out of the Jacks column to make room for the enlarged BPM display.
+- **Section A/B Outputs column** (12mm wide, 12–56mm, frame extended
+  since the "Time/Reference-Output Separation" session): VOUT (voltage
+  output), Reference (`TOUT_A/B`, ramp), and Time (`TIMESTATIC_A/B`,
+  **new**, static CV) – its own narrow column between the Jacks column
+  and the stage array, mirrored for A/B. Moved out of the Jacks column
+  to make room for the enlarged BPM display.
 - **Stage array** (center, 16 identically-structured columns): the actual
   programming for each of the 16 stages.
 - **Preset column** (far right): Load/Save, Scale/Key, 12 preset slots.
@@ -239,6 +244,9 @@ Selects TR1 (0.002–0.03s) through TR4 (2–30s); shows the current digit 1–4
 **Range** (`STAGE_RANGE_PARAM`, `RangeKnob`) *(Large knob with text display (7 detent positions))*<br>
 Full (0–10V unchanged) → Half (compressed to 0–5V) → Limited +0/+2/+4/+6/+8V (2V span, equivalent to 2 octaves at 1V/oct, shifted by the chosen offset). Shows an abbreviation ("F"/"H"/"L0"…"L8") directly on the knob plus a colored pointer. Right-click opens a checklist context menu (more reliable than text entry for this snap-enabled control).
 
+**Stage-Number Broadcast** *(right-click context menu, session "Stage-Number-Broadcast")*<br>
+On nine of the toggle buttons (Pulse1/2, Skip, First/Last, Stop/Sustain/Enable, Slope) as well as all four continuous controls (Voltage, Time, Range, Curve), right-clicking adds an "Apply … to all stages" entry to the respective standard menu – copies the current state/value of the clicked stage onto all 16 stages at once. Fully undoable in a single Ctrl+Z step. See [4.14](#sec4-14) for scope, trigger mechanism, and undo details.
+
 <a id="sec3-3"></a>
 
 ### 3.3 Per-Section Controls (A/B)
@@ -295,18 +303,37 @@ light `PulseRingLight` around the jack that blinks with the pulse), APOUT
 (All Pulses, fires on **every** stage change), Stage Address CV input,
 Stage Address channel-select CV input.
 
-**Outputs column** (new, its own narrow column between the Jacks column
-and the stage array): VOUT (voltage output), TOUT (time/interval output,
-0–10V descending ramp). Previously part of the Jacks column, now moved out
-to make room for the larger BPM display.
+**Outputs column** (its own narrow column between the Jacks column
+and the stage array): VOUT (voltage output), Reference (`TOUT_A/B_OUTPUT`,
+0–10V descending ramp over stage time, intended for downstream 292t LPGs),
+Time (`TIMESTATIC_A/B_OUTPUT`, **new, session "Time/Reference-Output
+Separation"**: static CV 0–10V proportional to the raw interval-time
+slider position, independent of Time Range/external source/elapsed
+phase – placed directly below Reference, same 14.5mm pitch as VOUT→
+Reference; the outputs frame was extended for this from 12–44mm to
+12–56mm). **Naming correction:** the jack originally labeled "TOUT"
+actually computes what the manual calls the "Reference Output" ramp, not
+the static "Time Output" voltage – both functions now exist as separate
+jacks, see [4.5](#sec4-5).
 
 **"Run/Hold/Stop" tri-color status LED** (at the same panel position):
-- **Green** (`RUN_x_LIGHT`): section is running normally (or Advance mode
-  is active – deliberately shown as "running", see [4.10](#sec4-10)).
-- **Yellow** (`HOLD_x_LIGHT`): section is waiting in a Sustain/Enable
-  stage for a start gate.
-- **Red** (`STOP_x_LIGHT`): section stopped (button/pulse, a programmed
+a single RGB light (`RUN_A/B_LIGHT`, as a 3-channel light block
+`_R`/`_G`/`_B`) rather than separate individual lights – additive color
+mixing:
+- **Green** (G channel only): section is running normally (or Advance
+  mode is active – deliberately shown as "running", see [4.10](#sec4-10)).
+- **Yellow** (R+G together, G dimmed to `HOLD_BRIGHTNESS = 0.5` instead of
+  full brightness, so yellow reads distinctly from pure red/green):
+  section is waiting in a Sustain/Enable stage for a start gate.
+- **Red** (R channel only): section stopped (button/pulse, a programmed
   stop stage, or Continuous addressing active).
+
+The underlying `stopA`/`holdA` logic (including the Advance-mode special
+case and Continuous override) came from unfinished groundwork in an
+earlier session (orphaned `HOLD_x_LIGHT`/`STOP_x_LIGHT` light IDs with no
+panel wiring) and was consolidated into the RGB variant in the "Status
+LED Green/Yellow/Red" session instead of wiring up the four separate
+lights.
 
 <a id="sec3-4"></a>
 
@@ -360,7 +387,7 @@ to make room for the larger BPM display.
 | Stage address channel-select CV | `STAGE_ADDR_EXT_CHANNEL_A/B_INPUT` (new) | per section |
 | Time Multiplier CV | `TIME_MULT_CV_A/B_INPUT` (Tempo, V/Oct) | per section |
 | BEATS_FACTOR CV | `BEATS_FACTOR_CV_A/B_INPUT` (new) | per section |
-| Section outputs | `VOUT_A/B`, `TOUT_A/B`, `APOUT_A/B`, `P1OUT_A/B`, `P2OUT_A/B` | per section |
+| Section outputs | `VOUT_A/B` (Voltage), `TOUT_A/B` (Reference, descending ramp), `TIMESTATIC_A/B` (Time, new, static CV), `APOUT_A/B`, `P1OUT_A/B`, `P2OUT_A/B` | per section |
 
 ---
 
@@ -605,6 +632,29 @@ a normalized position 0–1 **within** the bracket selected by
    (`resolvedTimeA`) and B (`resolvedTimeB`), since these values are not
    shared module-wide. **Breaking change** vs. the original 0.5×–4.0×
    factor semantics – full derivation in [4.12](#sec4-12).
+
+**Reference vs. Time Output (session "Time/Reference-Output Separation"):**
+The manual describes two separate jacks that were originally merged into
+one in the code:
+
+- **Reference Output** (`TOUT_A/B_OUTPUT`, originally named "TOUT"):
+  `(1.f - phase) * 10.f` – a ramp descending over the stage time,
+  intended as a control voltage for downstream 292t LPGs. Pure naming
+  correction of the `configOutput()` description, no behavioral change.
+- **Time Output** (`TIMESTATIC_A/B_OUTPUT`, **new**): `stageTime[stage] *
+  10.f` – a static voltage proportional to the **raw** interval-time
+  slider position of the currently addressed stage (0–1 → 0–10V),
+  independent of Time Range, external source, or the running phase. The
+  chosen value range is based on a community first-hand account (an
+  original 248 hardware owner, ModWiggler forum: "you can use their
+  output voltages as different sequence stages (accessed via 'Time'
+  output …)") together with the manual's own wording, "proportional to
+  the interval time slider" (not "elapsed stage time") – both point to a
+  static, per-stage programmed value rather than a phase-dependent
+  signal. TipTop's own firmware source code is not public; the closest
+  available reference was the open 248r community implementation
+  (`wir35/marf`), which implements the same original Buchla
+  specification.
 
 <a id="sec4-6"></a>
 
@@ -992,6 +1042,56 @@ triggers are programmed.
 
 ---
 
+<a id="sec4-14"></a>
+
+### 4.14 Stage-Number Broadcast
+*[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
+
+A right-click context-menu entry, "Apply … to all stages", on a modifier
+button or a continuous control copies the current state/value of the
+clicked source stage onto all 16 stages at once. Two separate technical
+paths, since the two control categories are stored differently:
+
+**Scope (Kinovice decision, session design question):**
+- **Bit modifiers** (`StageModBroadcastButton`, replaces the previously
+  bare `LEDButton` for exactly these nine param families): Pulse1,
+  Pulse2, Skip, First, Last, Stop, Sustain, Enable, Slope.
+- **Continuous controls**: Voltage, Time (both via `StageSlider`), Range
+  (`RangeKnob`), Curve (new `StageCurveTrimpot` wrapper around
+  `Trimpot`).
+- **Deliberately excluded**: Quantize, Quantized Glide, Normalize, Mute,
+  Volt-Ext/Time-Ext channel selection, Shape – not part of this session.
+
+**Bit-modifier path:** the nine bits live in `Marf248::stageModifier[]`
+(a module-internal array), which is **not** an engine-managed param –
+VCV's built-in `history::ParamChange` therefore doesn't apply here.
+`broadcastModifierBitToAllStages()` copies the source stage's bit
+**state** (set → set on all, cleared → cleared on all) and creates a
+dedicated `StageModifierBroadcastAction : history::Action`, which
+captures a full snapshot of the `stageModifier[]` array before/after the
+broadcast (16× int, cheap) rather than tracking just the single bit.
+
+**Continuous-control path:** these are ordinary, engine-managed
+`ParamQuantity`s – a collection of standard `history::ParamChange`
+objects (Rack's built-in mechanism) bundled in a `history::ComplexAction`
+suffices, no custom Action class needed
+(`broadcastParamToAllStages()`). The value is set via
+`APP->engine->setParamValue()` (the engine-thread-safe path).
+
+**Undo/Redo (Kinovice decision: full VCV history system instead of a
+confirmation dialog):** both paths create exactly **one** undo step per
+broadcast (Ctrl+Z undoes the entire operation in one step), since a
+single broadcast can potentially overwrite 16 stage values at once. No
+history entry is created if nothing actually changes (all stages already
+had the same state/value) – avoids empty, no-op history entries.
+
+**Trigger (Kinovice decision):** right-click context menu only – no
+Shift-click, no dedicated panel button. A pure widget-class swap for the
+nine bit-modifier buttons and the curve trimpot (no rendering difference
+vs. the previous `LEDButton`/`Trimpot` instances), so **no enum
+reordering, no changed param IDs** – existing patch cables/presets are
+unaffected.
+
 <a id="sec5"></a>
 
 
@@ -1108,7 +1208,7 @@ Resets only Voltage/Time on all stages to default. Shared between the panel butt
 **New**: sets the 16 shared Voltage knobs to a linear 0–10V grid and forces `Range = Full` per stage, see [3.4](#sec3-4).
 
 **`Marf248::process(args)`**<br>
-Central per-sample processing function. Sequence (see also sections 3–4): trigger-expander lookup (right at the top, for SEXT) → Global Clear/Reset Values/Auto-Fill → preset/scale/key arming logic → stage-modifier click buttons (decimated via `stageButtonDivider`) → stage-modifier poly-CV overrides from the trigger expander (every sample, undecimated) → per-stage resolution of voltage/time/curve (range, external sources, time range, additive CV, curve-power cache) → **tempo/BEATS_FACTOR resolution and multiplier back-calculation per section (see [4.12](#sec4-12))** → per-section stage-address processing (incl. channel-select CV) → `afgA.process()`/`afgB.process()` calls (incl. Run Gate and Advance) → output writing → decimated update of the live BPM display values → trigger-expander actions (Clear/Reset/Preset/Address Memory Store/Recall/Scale/Key/Start-End-of-Cycle) → CV-expander gate output → tri-color status LEDs.
+Central per-sample processing function. Sequence (see also sections 3–4): trigger-expander lookup (right at the top, for SEXT) → Global Clear/Reset Values/Auto-Fill → preset/scale/key arming logic → stage-modifier click buttons (decimated via `stageButtonDivider`) → stage-modifier poly-CV overrides from the trigger expander (every sample, undecimated) → per-stage resolution of voltage/time/curve (range, external sources, time range, additive CV, curve-power cache) → **tempo/BEATS_FACTOR resolution and multiplier back-calculation per section (see [4.12](#sec4-12))** → per-section stage-address processing (incl. channel-select CV) → `afgA.process()`/`afgB.process()` calls (incl. Run Gate and Advance) → output writing, **incl. `TIMESTATIC_A/B_OUTPUT`** (static CV proportional to the raw time-slider position of the currently addressed stage, see [4.5](#sec4-5)) → decimated update of the live BPM display values → trigger-expander actions (Clear/Reset/Preset/Address Memory Store/Recall/Scale/Key/Start-End-of-Cycle) → CV-expander gate output → tri-color RGB status LEDs (see [3.3](#sec3-3)).
 
 **`Marf248::dataToJson()` / `dataFromJson(rootJ)`**<br>
 Persists modifier bits, Mode/Pendulum/Stage-Address states, Scale/Key, all 12 preset slots, and Address Memory (see [Section 9](#sec9)).
@@ -1128,8 +1228,29 @@ Right-click checklist for direct Range selection (standard text entry was found 
 **`PulseRingLight`**<br>
 Custom light widget: draws a thin ring around the P1/P2 output jack instead of a separate dot.
 
+**`StageModifierBroadcastAction`** *(struct, `history::Action`)*<br>
+**New**, session "Stage-Number-Broadcast": dedicated undo/redo action for bit-modifier broadcasts. Captures a full snapshot of `stageModifier[NUM_STAGES]` before and after the broadcast, since the bits are not an engine-managed param.
+
+**`broadcastModifierBitToAllStages(m, bit, sourceStage, actionName)`**<br>
+**New**: copies the state of a single modifier bit from `sourceStage` onto all 16 stages, creating the corresponding `StageModifierBroadcastAction` undo step. No history entry if nothing changes.
+
+**`broadcastParamToAllStages(m, baseParamId, sourceStage, actionName)`**<br>
+**New**: copies the current value of a continuous control (Voltage/Time/Range/Curve) from `sourceStage` onto all 16 stages, set via `APP->engine->setParamValue()`, bundled into a `history::ComplexAction` made of standard `history::ParamChange` objects.
+
+**`StageModBroadcastButton::appendContextMenu()`**<br>
+**New**: replaces the previously bare `LEDButton` for the nine broadcastable bit-modifier families (Pulse1/2, Skip, First/Last, Stop/Sustain/Enable, Slope). Looks up its own `paramId` in `BROADCAST_BIT_TABLE` and adds the "Apply … to all stages" menu entry.
+
+**`StageSlider::appendContextMenu()`**<br>
+**New**: distinguishes between the Voltage and Time families by `paramId` range (both share the `StageSlider` class) and offers the corresponding broadcast menu entry.
+
+**`RangeKnob::appendContextMenu()`**<br>
+**Extended**: in addition to the existing Full/Half/Limited checklist, now also offers a broadcast menu entry for Range.
+
+**`StageCurveTrimpot::appendContextMenu()`**<br>
+**New**: thin `Trimpot` wrapper solely for `STAGE_CURVE_PARAM` (previously a bare `Trimpot` with no dedicated widget class), hooks into Rack's standard context menu and adds the Curve broadcast entry.
+
 **`Marf248Widget::Marf248Widget(module)`**<br>
-Builds the complete 146HP panel: frames, column geometry (including the VOUT/TOUT outputs column per section), all knobs/buttons/jacks/lights for external CV, both sections, and the 16 stage columns as well as the preset column (see [3.1](#sec3-1)).
+Builds the complete 146HP panel: frames, column geometry (including the VOUT/Reference/Time outputs column per section, outputs frame extended to 12–56mm), all knobs/buttons/jacks/lights for external CV, both sections, and the 16 stage columns as well as the preset column (see [3.1](#sec3-1)).
 
 ---
 
@@ -1637,6 +1758,21 @@ touching GUI/history state from the real-time context (see architecture
 principles). Deliberately left unfixed; documented as a known Rack
 quirk rather than treated as a module bug.
 
+### 10.15 Stage-Number Broadcast does mark the patch "unsaved" – unlike a single click
+
+Direct contrast to [10.14](#sec10): a single click on a stage-modifier
+button leaves **no** history entry (see above), but a **broadcast**
+through that same button's right-click context menu does. Reason: the
+broadcast is not triggered from the real-time audio thread but directly
+from a GUI event handler (the `appendContextMenu()` lambda) – exactly
+the context in which, per [10.14](#sec10), an `APP->history->push()`
+would be legitimate. Both broadcast paths
+(`StageModifierBroadcastAction` for bit modifiers,
+`history::ComplexAction`/`history::ParamChange` for continuous controls,
+see [4.14](#sec4-14)) therefore push reliably, and Ctrl+Z undoes the
+entire broadcast in one step. Not an inconsistency, but two different
+trigger contexts with different Rack default behavior.
+
 ---
 
 <a id="sec11"></a>
@@ -1770,6 +1906,48 @@ quirk rather than treated as a module bug.
   is perceivable from the outside (entirely invisible rather than just
   silent), `Skip` was subsequently switched to red to stay consistent
   with that group.
+- **Reference Output and Time Output are two deliberately separate
+  jacks** (session "Time/Reference-Output Separation", see [4.5](#sec4-5))
+  – the original single `TOUT_A/B_OUTPUT` jack already computed the
+  Reference ramp correctly, but was misleadingly named "Time Output" in
+  code. Rather than reinterpreting the existing jack, a second, new jack
+  (`TIMESTATIC_A/B_OUTPUT`) was added and only the existing jack's
+  `configOutput()` description was corrected – **no breaking change**,
+  existing Reference patches continue to work unchanged.
+- **Time Output's value range (0–10V, proportional to the raw slider
+  position)** was derived, in the absence of public TipTop firmware
+  source code, from the original Buchla manual's own wording
+  ("proportional to the interval time slider") together with a community
+  first-hand account (see [4.5](#sec4-5)) – deliberately analogous to the
+  already-existing Voltage Output behavior, not 1V/oct-style or tied to
+  the resolved number of seconds.
+- **Status LED as a single RGB light rather than four separate
+  individual lights** (session "Status LED Green/Yellow/Red", see
+  [3.3](#sec3-3)) – additive color mixing (green=Run, red=Stop,
+  yellow=R+G with dimmed `HOLD_BRIGHTNESS`) instead of four independent
+  light IDs (`HOLD_x_LIGHT`/`STOP_x_LIGHT`), even though their
+  calculation logic already existed in the code as orphaned groundwork.
+  Since light indices (unlike param/input/output) are not stored in
+  patches, this consolidation was unproblematic.
+- **Stage-Number Broadcast exclusively via right-click context menu**
+  (session "Stage-Number-Broadcast", see [4.14](#sec4-14)) – deliberately
+  decided against Shift-click or a dedicated panel button, since a
+  right-click menu entry costs the least panel space and fits
+  seamlessly into the already-existing context menus of `RangeKnob`/
+  `TrangeButton`.
+- **Broadcast scope deliberately limited to nine bit modifiers plus four
+  continuous controls** – Quantize, Quantized Glide, Normalize, Mute, as
+  well as the Volt-Ext/Time-Ext channel selection and Shape are excluded,
+  since they either already act module-wide elsewhere (Mute) or their
+  semantics under a bulk overwrite would be unclear (e.g. Shape as a
+  3-state cycle rather than an on/off bit).
+- **Broadcast uses VCV's full history system rather than a plain
+  confirmation dialog** (Kinovice decision) – a single broadcast can
+  potentially overwrite 16 stage values at once, and a simple
+  confirmation dialog would not have made a misclick's effect
+  reversible. Two separate undo mechanisms were needed, since bit
+  modifiers (`stageModifier[]`) and continuous controls (engine params)
+  are stored differently, see [4.14](#sec4-14).
 
 ---
 
@@ -1797,7 +1975,11 @@ there (External CV / Section A Controls-Jacks-Outputs / 16× Stage / Section
 B Outputs-Jacks-Controls / Preset column). Since all 16 stage columns are
 structurally identical, only the first two and the last are drawn in
 full, with the rest collapsed to "…" – see Figure 2 for the detailed
-per-stage layout.
+per-stage layout. **Out of date (session "Time/Reference-Output
+Separation"):** still shows the outputs column with only VOUT/TOUT; the
+new `TIMESTATIC_A/B_OUTPUT` jack directly below TOUT (see
+[3.3](#sec3-3)) is missing – SVG regeneration was not part of that
+session.
 
 <a id="fig2"></a>
 
