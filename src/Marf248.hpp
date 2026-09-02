@@ -891,6 +891,71 @@ struct Afg {
 		return NUM_STAGES - 1;
 	}
 
+	// BEATS_FACTOR Auto-Modus (Segmentlaengen-Sync, Session "BEATS_FACTOR
+	// Auto-Modus"): Cache fuer die zur Laufzeit ermittelte Segmentlaenge
+	// (First/Last-Bereich um currentStage) samt Anzahl nicht-geskippter
+	// Stages und deren Zeitsumme darin - siehe updateAutoSegment(). Nur
+	// bei tatsaechlichem Segmentwechsel neu berechnet (Kinovice-
+	// Entscheidung), nicht jeden Sample. segAutoLastStage = -1 erzwingt
+	// eine einmalige Neuberechnung beim allerersten Aufruf bzw. direkt
+	// nach dem Einschalten von Auto (siehe BeatsFactorTrimpot in
+	// Marf248.cpp, das dies beim Umschalten explizit zuruecksetzt).
+	int segAutoLastStage = -1;
+	int segAutoCachedStart = -1;
+	int segAutoCachedEnd = -1;
+	int segAutoStageCount = 0;
+	float segAutoBaseCycleTime = 0.f;
+
+	// Ermittelt/cached Segmentgrenzen, nicht-geskippte Stage-Anzahl und
+	// deren rohe Zeitsumme fuer das aktuell aktive First/Last-Segment um
+	// currentStage - Basis fuer BEATS_FACTOR_effektiv im Auto-Modus (siehe
+	// Marf248::process(), Kommentar "Time Multiplier / BPM-Feature"). Wird
+	// dort nur aufgerufen, wenn Auto fuer die jeweilige Section aktiv ist.
+	// Die aeussere Bedingung (currentStage == segAutoLastStage) ist ein
+	// trivial billiger Vergleich und laeuft trotzdem jeden Sample; die
+	// eigentliche Grenzsuche (findFirstBefore/findLastAfter, je O(16)
+	// worst case) sowie die Zaehl-/Summierschleife laufen dadurch nur bei
+	// tatsaechlichen Stage-Uebergaengen, nicht jeden Sample. Ohne
+	// First/Last-Programmierung liefern findFirstBefore/findLastAfter
+	// bereits ihre eigenen Fallbacks (Stage 0 bzw. NUM_STAGES-1), das
+	// Segment entspricht dann automatisch allen 16 Stages (bestehendes
+	// Default-Verhalten).
+	void updateAutoSegment(const int stageModifier[NUM_STAGES], const float resolvedTime[NUM_STAGES]) {
+		if (currentStage == segAutoLastStage) {
+			return;
+		}
+		segAutoLastStage = currentStage;
+
+		int segStart = findFirstBefore(stageModifier, currentStage);
+		int segEnd = findLastAfter(stageModifier, currentStage);
+		if (segStart == segAutoCachedStart && segEnd == segAutoCachedEnd) {
+			return;
+		}
+		segAutoCachedStart = segStart;
+		segAutoCachedEnd = segEnd;
+
+		int count = 0;
+		float sum = 0.f;
+		int idx = segStart;
+		// Wraparound-sicher (Segment kann ueber Stage 15->0 hinweg
+		// verlaufen): laeuft von segStart bis inklusive segEnd im Ring,
+		// auf NUM_STAGES Schritte begrenzt als Sicherheitsnetz (analog
+		// zum Skip-Guard in advanceStage()), falls segStart/segEnd sich
+		// durch einen Randfall nie treffen sollten.
+		for (int guard = 0; guard < NUM_STAGES; guard++) {
+			if (!(stageModifier[idx] & MOD_SKIP)) {
+				count++;
+				sum += resolvedTime[idx];
+			}
+			if (idx == segEnd) {
+				break;
+			}
+			idx = (idx + 1) % NUM_STAGES;
+		}
+		segAutoStageCount = count;
+		segAutoBaseCycleTime = sum;
+	}
+
 	void advanceStage(const int stageModifier[NUM_STAGES]) {
 		int next;
 		bool wasFirst = stageModifier[currentStage] & MOD_FIRST;

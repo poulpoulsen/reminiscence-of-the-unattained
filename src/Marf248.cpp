@@ -461,6 +461,17 @@ struct Marf248 : Module {
 	bool addrContOnA = false;
 	bool addrExtB = false;
 	bool addrContOnB = false;
+
+	// BEATS_FACTOR Auto-Modus (Segmentlaengen-Sync, Session "BEATS_FACTOR
+	// Auto-Modus"): pro Section unabhaengig umschaltbar zwischen manuellem
+	// BEATS_FACTOR_A/B_PARAM-Trimpot-Wert (bisheriges Verhalten) und Auto
+	// (BEATS_FACTOR wird aus der Anzahl nicht-geskippter Stages im aktuell
+	// aktiven First/Last-Segment abgeleitet, siehe Afg::updateAutoSegment()
+	// in Marf248.hpp und process() unten). Umschaltung per Kontextmenue am
+	// Trimpot (BeatsFactorTrimpot::appendContextMenu()), kein eigener
+	// Panel-Platz/LightId noetig. Persistiert wie reverseA/pendulumOnA etc.
+	bool beatsFactorAutoA = false;
+	bool beatsFactorAutoB = false;
 	dsp::SchmittTrigger addrModeATrigger, addrContATrigger, addrStrobeATrigger, addrResetATrigger;
 	dsp::SchmittTrigger addrModeBTrigger, addrContBTrigger, addrStrobeBTrigger, addrResetBTrigger;
 	// Blitz-Feedback fuer Strobe/Reset (siehe STAGE_ADDR_STROBE_A_LIGHT
@@ -1812,15 +1823,45 @@ struct Marf248 : Module {
 		totalVoltsA = rack::clamp(totalVoltsA, -TEMPO_VOLT_SAFETY_CLAMP, TEMPO_VOLT_SAFETY_CLAMP);
 		float bpmA = tempoVoltsToBpm(totalVoltsA);
 
-		float beatsCvA = inputs[BEATS_FACTOR_CV_A_INPUT].getVoltage();
-		// CV-Skalierung analog zum bisherigen Time-Multiplier-Muster (offene,
-		// spaeter justierbare Annahme): +-5V CV deckt die volle Parameter-
-		// spanne (0.1-64 Beats, Spanne ~64) ab, additiv auf den Trimpot-Wert.
-		float beatsFactorA = params[BEATS_FACTOR_A_PARAM].getValue() + (beatsCvA / 5.f) * 64.f;
-		beatsFactorA = rack::clamp(beatsFactorA, 0.1f, 64.f);
+		// BEATS_FACTOR Auto-Modus (Segmentlaengen-Sync, Session "BEATS_FACTOR
+		// Auto-Modus"): im Auto-Modus wird BEATS_FACTOR_A_PARAM (der
+		// Trimpot-Wert selbst) ignoriert, BEATS_FACTOR_CV_A_INPUT bleibt
+		// aber additiv wirksam (Kinovice-Entscheidung) - die aus der
+		// Segmentlaenge abgeleitete Stage-Anzahl bildet die Basis, auf die
+		// CV genau wie im manuellen Modus draufaddiert wird (gleiche
+		// Skalierung: +-5V deckt die volle Parameterspanne von ~64 Beats
+		// ab). Segmentgrenzen/-Zeitsumme kommen aus dem Cache (nur bei
+		// Segmentwechsel neu berechnet, siehe Afg::updateAutoSegment() in
+		// Marf248.hpp) - die Summationsbasis fuer den Multiplier ist dann
+		// ebenfalls nur dieses Segment (baseCycleTimeA), nicht mehr die
+		// modulweite Summe aller 16 Stages (baseCycleTime oben), siehe
+		// Session-Diskussion "Option A: proportional". currentStage
+		// spiegelt hier den Stand vom Ende des VORHERIGEN Frames wider
+		// (applyStageAddress()/process() fuer Section A laufen erst weiter
+		// unten) - ein Sample Verzoegerung bei Segmentwechseln, musikalisch
+		// irrelevant.
+		float beatsFactorA;
+		float baseCycleTimeA;
+		if (beatsFactorAutoA) {
+			afgA.updateAutoSegment(stageModifier, resolvedTime);
+			float beatsCvA = inputs[BEATS_FACTOR_CV_A_INPUT].getVoltage();
+			beatsFactorA = (float) afgA.segAutoStageCount + (beatsCvA / 5.f) * 64.f;
+			beatsFactorA = rack::clamp(beatsFactorA, 0.1f, 64.f);
+			baseCycleTimeA = afgA.segAutoBaseCycleTime;
+		}
+		else {
+			float beatsCvA = inputs[BEATS_FACTOR_CV_A_INPUT].getVoltage();
+			// CV-Skalierung analog zum bisherigen Time-Multiplier-Muster
+			// (offene, spaeter justierbare Annahme): +-5V CV deckt die volle
+			// Parameterspanne (0.1-64 Beats, Spanne ~64) ab, additiv auf den
+			// Trimpot-Wert.
+			beatsFactorA = params[BEATS_FACTOR_A_PARAM].getValue() + (beatsCvA / 5.f) * 64.f;
+			beatsFactorA = rack::clamp(beatsFactorA, 0.1f, 64.f);
+			baseCycleTimeA = baseCycleTime;
+		}
 
 		float desiredCycleTimeA = (60.f / bpmA) * beatsFactorA;
-		float multiplierA = (baseCycleTime > 0.f) ? (desiredCycleTimeA / baseCycleTime) : 1.f;
+		float multiplierA = (baseCycleTimeA > 0.f) ? (desiredCycleTimeA / baseCycleTimeA) : 1.f;
 		multiplierA = rack::clamp(multiplierA, MULT_SAFETY_MIN, MULT_SAFETY_MAX);
 
 		float cvB = inputs[TIME_MULT_CV_B_INPUT].getVoltage();
@@ -1829,12 +1870,26 @@ struct Marf248 : Module {
 		totalVoltsB = rack::clamp(totalVoltsB, -TEMPO_VOLT_SAFETY_CLAMP, TEMPO_VOLT_SAFETY_CLAMP);
 		float bpmB = tempoVoltsToBpm(totalVoltsB);
 
-		float beatsCvB = inputs[BEATS_FACTOR_CV_B_INPUT].getVoltage();
-		float beatsFactorB = params[BEATS_FACTOR_B_PARAM].getValue() + (beatsCvB / 5.f) * 64.f;
-		beatsFactorB = rack::clamp(beatsFactorB, 0.1f, 64.f);
+		// Auto-Modus Section B: identisches Muster zu Section A oben
+		// (inkl. additiver CV), siehe dortigen Kommentar.
+		float beatsFactorB;
+		float baseCycleTimeB;
+		if (beatsFactorAutoB) {
+			afgB.updateAutoSegment(stageModifier, resolvedTime);
+			float beatsCvB = inputs[BEATS_FACTOR_CV_B_INPUT].getVoltage();
+			beatsFactorB = (float) afgB.segAutoStageCount + (beatsCvB / 5.f) * 64.f;
+			beatsFactorB = rack::clamp(beatsFactorB, 0.1f, 64.f);
+			baseCycleTimeB = afgB.segAutoBaseCycleTime;
+		}
+		else {
+			float beatsCvB = inputs[BEATS_FACTOR_CV_B_INPUT].getVoltage();
+			beatsFactorB = params[BEATS_FACTOR_B_PARAM].getValue() + (beatsCvB / 5.f) * 64.f;
+			beatsFactorB = rack::clamp(beatsFactorB, 0.1f, 64.f);
+			baseCycleTimeB = baseCycleTime;
+		}
 
 		float desiredCycleTimeB = (60.f / bpmB) * beatsFactorB;
-		float multiplierB = (baseCycleTime > 0.f) ? (desiredCycleTimeB / baseCycleTime) : 1.f;
+		float multiplierB = (baseCycleTimeB > 0.f) ? (desiredCycleTimeB / baseCycleTimeB) : 1.f;
 		multiplierB = rack::clamp(multiplierB, MULT_SAFETY_MIN, MULT_SAFETY_MAX);
 
 		for (int i = 0; i < NUM_STAGES; i++) {
@@ -2199,6 +2254,8 @@ struct Marf248 : Module {
 		json_object_set_new(rootJ, "addrContOnA", json_boolean(addrContOnA));
 		json_object_set_new(rootJ, "addrExtB", json_boolean(addrExtB));
 		json_object_set_new(rootJ, "addrContOnB", json_boolean(addrContOnB));
+		json_object_set_new(rootJ, "beatsFactorAutoA", json_boolean(beatsFactorAutoA));
+		json_object_set_new(rootJ, "beatsFactorAutoB", json_boolean(beatsFactorAutoB));
 		json_object_set_new(rootJ, "currentKey", json_integer(currentKey));
 		json_object_set_new(rootJ, "currentScale", json_integer(currentScale));
 
@@ -2295,6 +2352,14 @@ struct Marf248 : Module {
 		json_t* addrContOnBJ = json_object_get(rootJ, "addrContOnB");
 		if (addrContOnBJ) {
 			addrContOnB = json_boolean_value(addrContOnBJ);
+		}
+		json_t* beatsFactorAutoAJ = json_object_get(rootJ, "beatsFactorAutoA");
+		if (beatsFactorAutoAJ) {
+			beatsFactorAutoA = json_boolean_value(beatsFactorAutoAJ);
+		}
+		json_t* beatsFactorAutoBJ = json_object_get(rootJ, "beatsFactorAutoB");
+		if (beatsFactorAutoBJ) {
+			beatsFactorAutoB = json_boolean_value(beatsFactorAutoBJ);
 		}
 
 		json_t* currentKeyJ = json_object_get(rootJ, "currentKey");
@@ -3261,6 +3326,51 @@ struct StageCurveTrimpot : Trimpot {
 	}
 };
 
+// BEATS_FACTOR Auto-Modus (Segmentlaengen-Sync, Session "BEATS_FACTOR
+// Auto-Modus"): duenner Trimpot-Wrapper fuer BEATS_FACTOR_A/B_PARAM, wie
+// StageCurveTrimpot oben. Ergaenzt Racks Standard-Kontextmenue um einen
+// Checkbox-Eintrag zum Umschalten auf Auto (BEATS_FACTOR wird dann aus
+// der Segmentlaenge um die aktuell adressierte Stage abgeleitet statt aus
+// diesem Trimpot-Wert, siehe Marf248::process()/Afg::updateAutoSegment()
+// in Marf248.hpp; BEATS_FACTOR_CV_A/B_INPUT bleibt dabei additiv wirksam,
+// nur der Trimpot-Wert selbst wird ignoriert). Der Trimpot-Wert bleibt
+// bei aktivem Auto unveraendert gespeichert/anzeigbar - er wird nur im
+// Signalpfad ignoriert, damit beim Zurueckschalten auf manuell sofort
+// wieder der zuletzt eingestellte Wert greift (kein Datenverlust).
+struct BeatsFactorTrimpot : Trimpot {
+	void appendContextMenu(ui::Menu* menu) override {
+		ParamQuantity* pq = getParamQuantity();
+		if (!pq) {
+			return;
+		}
+		Marf248* m = dynamic_cast<Marf248*>(pq->module);
+		if (!m) {
+			return;
+		}
+		bool isA = (pq->paramId == Marf248::BEATS_FACTOR_A_PARAM);
+		bool isB = (pq->paramId == Marf248::BEATS_FACTOR_B_PARAM);
+		if (!isA && !isB) {
+			return;
+		}
+		menu->addChild(new ui::MenuSeparator);
+		menu->addChild(createCheckMenuItem("Auto (Segment Length)", "",
+			[=]() { return isA ? m->beatsFactorAutoA : m->beatsFactorAutoB; },
+			[=]() {
+				bool& flag = isA ? m->beatsFactorAutoA : m->beatsFactorAutoB;
+				flag = !flag;
+				// Beim Einschalten den Segment-Cache invalidieren, damit
+				// sofort neu ermittelt wird, statt einen evtl. veralteten
+				// Stand aus einer frueheren Auto-Phase weiterzuverwenden
+				// (siehe Afg::updateAutoSegment()-Kommentar in Marf248.hpp).
+				if (flag) {
+					Afg& afg = isA ? m->afgA : m->afgB;
+					afg.segAutoLastStage = -1;
+				}
+			}
+		));
+	}
+};
+
 
 struct Marf248Widget : ModuleWidget {
 	// Label UNTER dem Element (Expander-Muster) - nur fuer Spalten mit
@@ -3441,11 +3551,17 @@ struct Marf248Widget : ModuleWidget {
 		// Neue VOUT/TOUT/TIME-Ausgangsspalte (Kinovice-Wunsch): eigener,
 		// kleiner Rahmen zwischen Jacks-Spalte und Stage-Array, spiegel-
 		// bildlich fuer A/B. Untergrenze auf Kinovice-Wunsch erweitert, um
-		// die neue dritte Buchse (TIME, y=49, Label bis ca. 53.5mm - siehe
-		// Session "Time/Reference-Output-Trennung") mit einzuschliessen;
-		// vorher war der Rahmen bewusst kurz gehalten fuer nur 2 Buchsen.
+		// die neue dritte Buchse (TIME, y=49, siehe Session "Time/Reference-
+		// Output-Trennung") mit einzuschliessen. BUGFIX (Kinovice-Report:
+		// "Rahmen schneidet TIME-Beschriftung"): die vorherige Untergrenze
+		// (56mm) ging von einer Label-Unterkante von ca. 53.5mm aus - das
+		// war ein Rechenfehler, siehe Kommentar am VOUT-Label weiter unten
+		// (5.5mm Versatz + ca. 4.1mm Zeilenhoehe bei 10pt = ca. 9.6mm ab
+		// Buchsenmitte, also bis ca. 58.6mm, nicht 53.5mm). Auf 61mm erweitert,
+		// das entspricht denselben ca. 2.4mm Luft zur Rahmenunterkante wie
+		// urspruenglich fuer TIME beabsichtigt.
 		const float outputsFrameTopMM = 12.f;
-		const float outputsFrameBottomMM = 56.f;
+		const float outputsFrameBottomMM = 61.f;
 		float outputsColsFrame[2] = {colAOutputs, colBOutputs};
 		for (int s = 0; s < 2; s++) {
 			StageFrame* outputsFrame = new StageFrame;
@@ -3539,7 +3655,7 @@ struct Marf248Widget : ModuleWidget {
 			// vier Stellen um je 1mm gestrafft) - siehe controlsFrameBottomMM
 			// oben. ACHTUNG Kinovice: wie ueblich kurz in Rack gegenchecken,
 			// bei so vielen verschobenen Elementen in einer Session besonders.
-			addParam(createParamCentered<Trimpot>(mm2px(Vec(ctrl, 38)), module, beatsFactorParams[s]));
+			addParam(createParamCentered<BeatsFactorTrimpot>(mm2px(Vec(ctrl, 38)), module, beatsFactorParams[s]));
 
 			HDivider* divTimeMultRun = new HDivider;
 			divTimeMultRun->box.pos = mm2px(Vec(ctrl - 4.f, 44.f));
@@ -3650,11 +3766,11 @@ struct Marf248Widget : ModuleWidget {
 			// nebenan) hochgezogen, TOUT nur etwas hoeher (36 -> 34.5) -
 			// beides auf Kinovice-Wunsch, um unter der jetzt groesseren
 			// Beschriftung (siehe unten) Platz zu schaffen, ohne den
-			// bestehenden Ausgangs-Rahmen (12-56mm, siehe outputsFrameBottomMM
-			// oben - urspruenglich 44mm, auf Kinovice-Wunsch fuer die dritte
-			// Buchse TIME weiter unten erweitert) zu aendern. Beide Buchsen
-			// bleiben damit klar innerhalb des Rahmens (VOUT-Oberkante ca.
-			// 15.8mm, TOUT-Label-Unterkante ca. 44.1mm).
+			// bestehenden Ausgangs-Rahmen (12-61mm, siehe outputsFrameBottomMM
+			// oben - urspruenglich 44mm, dann 56mm, siehe dortiger Bugfix-
+			// Kommentar) zu aendern. Beide Buchsen bleiben damit klar innerhalb
+			// des Rahmens (VOUT-Oberkante ca. 15.8mm, TOUT-Label-Unterkante
+			// ca. 44.1mm).
 			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(outCol, 20)), module, voutOutputs[s]));
 			// Gleiches Schriftbild wie Ext A-D (10pt, 5.5mm Versatz statt
 			// der vorherigen kompakten 6.5pt/4mm-Variante) - Kinovice-
@@ -3673,9 +3789,13 @@ struct Marf248Widget : ModuleWidget {
 
 			// Neuer statischer Time-Output (Session "Time/Reference-Output-
 			// Trennung"): direkt unter TOUT, gleicher 14.5mm-Pitch wie
-			// VOUT->TOUT, bei y=49mm. Label-Unterkante ca. 53.5mm - passt
-			// jetzt in den auf 56mm erweiterten Rahmen (outputsFrameBottomMM
-			// oben, Kinovice-Wunsch), mit ca. 2.5mm Luft zur Rahmenunterkante.
+			// VOUT->TOUT, bei y=49mm. Label-Unterkante ca. 58.6mm (5.5mm
+			// Versatz + ca. 4.1mm Zeilenhoehe bei 10pt, siehe Kommentar am
+			// VOUT-Label oben) - passt jetzt in den auf 61mm erweiterten
+			// Rahmen (outputsFrameBottomMM oben, Bugfix-Session), mit ca.
+			// 2.4mm Luft zur Rahmenunterkante statt vorher negativ (Label
+			// ragte ueber die alte 56mm-Grenze hinaus - daher der Kinovice-
+			// Report "Rahmen schneidet TIME ab").
 			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(outCol, 49)), module, timeStaticOutputs[s]));
 			addLabelBelow(Vec(outCol, 49), 5.5f, "TIME", (s == 0 ? COLOR_SECTION_A : COLOR_SECTION_B), 10.f);
 		}

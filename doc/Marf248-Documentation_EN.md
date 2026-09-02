@@ -265,7 +265,9 @@ Identical, mirrored layout for Section A and B:
 - **BEATS_FACTOR** (`BEATS_FACTOR_A/B_PARAM`, trimmer, 0.1–64, default 4)
   + associated CV input: sets how many beats a full cycle across all
   non-skipped stages should represent; the actually effective time factor
-  is back-calculated from this. See [4.12](#sec4-12).
+  is back-calculated from this. Switchable to **Auto** via right-click
+  context menu (segment-length sync instead of a fixed value, CV stays
+  additive). See [4.12](#sec4-12).
 - **Run** (`RUN_A/B_PARAM`, LED button): toggles Start/Stop of the section
   (green LED = running). OR-combined with an external Start/Stop gate
   from the trigger expander. **Ignored while Advance is patched – see
@@ -900,13 +902,51 @@ multiplier = desiredCycleTime / baseCycleTime
 `multiplier` is additionally clamped to `[1e-4, 1e4]` (pure computational
 safeguard, e.g. against division by zero if every stage is skipped).
 
+**BEATS_FACTOR Auto mode (segment-length sync)**: an alternative to the
+fixed trimmer value, switchable via right-click context menu on the
+BEATS_FACTOR trimmer (`BeatsFactorTrimpot::appendContextMenu()`, checkbox
+"Auto (Segment Length)"), independently per section A/B. In Auto mode
+BEATS_FACTOR is not taken from the trimmer value but derived from the
+count of **non-skipped** stages in the currently active First/Last segment
+around the addressed stage – and the summation base for the multiplier is
+then also just that segment, not all 16 stages anymore:
+
+```
+segment = [nearest First at/before currentStage … nearest Last at/after currentStage]
+BEATS_FACTOR = count of non-skipped stages in the segment (+ CV, additive)
+baseCycleTime = Σ resolvedTime[i]  (stages in the segment without MOD_SKIP only)
+```
+
+Without First/Last programming, the segment automatically corresponds to
+all 16 stages (fallback of `findFirstBefore()`/`findLastAfter()`), i.e.
+the same behavior as before. `BEATS_FACTOR_CV_A/B_INPUT` stays additive in
+Auto mode (same scaling as in manual mode, ±5V ≈ the full span of ~64) –
+only the raw trimmer value itself is ignored, but stays stored/visible and
+takes effect immediately again when switching back to manual.
+
+Since `stageModifier[]` is shared module-wide but `currentStage` runs
+independently per section, Section A and B can be synced to different
+segments of the same 16-stage array at the same time (multi-segment
+configurations, see [4.2](#sec4-2)).
+
+Segment boundaries and sum are cached and **only recomputed on an actual
+segment change** (`Afg::updateAutoSegment()`), not every sample – a cheap
+`currentStage` comparison decides per sample whether a recomputation is
+even needed. At this point in the signal flow, `currentStage` still
+reflects the state from the end of the *previous* frame (stage addressing
+runs later in `process()`) – a one-sample delay on segment changes,
+musically irrelevant.
+
 **Pendulum behavior (Option B, deliberate decision)**: BEATS_FACTOR
 **always refers to a single pass** (forward traversal across all
-non-skipped stages), regardless of whether Pendulum is active. With
-Pendulum active, a full back-and-forth cycle therefore automatically takes
-2×BEATS_FACTOR beats – there is **no** automatic doubling/halving in the
-code. Anyone who wants a fixed full-cycle value sets BEATS_FACTOR to half
-that value themselves.
+non-skipped stages), regardless of whether Pendulum is active – this holds
+equally in manual and Auto mode (in Auto mode, "a single pass" refers to
+one traversal through the segment). With Pendulum active, a full
+back-and-forth cycle therefore automatically takes 2×BEATS_FACTOR beats –
+there is **no** automatic doubling/halving in the code. Anyone who wants a
+fixed full-cycle value sets BEATS_FACTOR to half that value themselves
+(not possible in Auto mode, since BEATS_FACTOR isn't freely settable there
+– switching back to manual is the only option).
 
 **Live BPM display** (`TempoBpmDisplay`, Jacks column): a pure NVG text
 readout with no interaction of its own, showing the actually effective
@@ -1208,7 +1248,7 @@ Resets only Voltage/Time on all stages to default. Shared between the panel butt
 **New**: sets the 16 shared Voltage knobs to a linear 0–10V grid and forces `Range = Full` per stage, see [3.4](#sec3-4).
 
 **`Marf248::process(args)`**<br>
-Central per-sample processing function. Sequence (see also sections 3–4): trigger-expander lookup (right at the top, for SEXT) → Global Clear/Reset Values/Auto-Fill → preset/scale/key arming logic → stage-modifier click buttons (decimated via `stageButtonDivider`) → stage-modifier poly-CV overrides from the trigger expander (every sample, undecimated) → per-stage resolution of voltage/time/curve (range, external sources, time range, additive CV, curve-power cache) → **tempo/BEATS_FACTOR resolution and multiplier back-calculation per section (see [4.12](#sec4-12))** → per-section stage-address processing (incl. channel-select CV) → `afgA.process()`/`afgB.process()` calls (incl. Run Gate and Advance) → output writing, **incl. `TIMESTATIC_A/B_OUTPUT`** (static CV proportional to the raw time-slider position of the currently addressed stage, see [4.5](#sec4-5)) → decimated update of the live BPM display values → trigger-expander actions (Clear/Reset/Preset/Address Memory Store/Recall/Scale/Key/Start-End-of-Cycle) → CV-expander gate output → tri-color RGB status LEDs (see [3.3](#sec3-3)).
+Central per-sample processing function. Sequence (see also sections 3–4): trigger-expander lookup (right at the top, for SEXT) → Global Clear/Reset Values/Auto-Fill → preset/scale/key arming logic → stage-modifier click buttons (decimated via `stageButtonDivider`) → stage-modifier poly-CV overrides from the trigger expander (every sample, undecimated) → per-stage resolution of voltage/time/curve (range, external sources, time range, additive CV, curve-power cache) → **tempo/BEATS_FACTOR resolution and multiplier back-calculation per section, incl. BEATS_FACTOR Auto mode/segment-length sync (see [4.12](#sec4-12))** → per-section stage-address processing (incl. channel-select CV) → `afgA.process()`/`afgB.process()` calls (incl. Run Gate and Advance) → output writing, **incl. `TIMESTATIC_A/B_OUTPUT`** (static CV proportional to the raw time-slider position of the currently addressed stage, see [4.5](#sec4-5)) → decimated update of the live BPM display values → trigger-expander actions (Clear/Reset/Preset/Address Memory Store/Recall/Scale/Key/Start-End-of-Cycle) → CV-expander gate output → tri-color RGB status LEDs (see [3.3](#sec3-3)).
 
 **`Marf248::dataToJson()` / `dataFromJson(rootJ)`**<br>
 Persists modifier bits, Mode/Pendulum/Stage-Address states, Scale/Key, all 12 preset slots, and Address Memory (see [Section 9](#sec9)).
@@ -1487,6 +1527,7 @@ params automatically stored by VCV Rack:
 - `stageModifier[]` (all 16 stages) as a JSON array.
 - `reverseA/B`, `pendulumOnA/B`, `addrExtA/B`, `addrContOnA/B`.
 - `currentKey`, `currentScale`.
+- `beatsFactorAutoA/B` (BEATS_FACTOR Auto mode, see [4.12](#sec4-12)).
 - All 12 preset slots (`used` flag + Voltage/Time/Range/Curve arrays +
   modifier array per slot).
 - **New:** Address Memory – one JSON array of 16 `{used, stage}` objects
@@ -1853,6 +1894,13 @@ trigger contexts with different Rack default behavior.
   back-and-forth Pendulum cycle** (Option B, see [4.12](#sec4-12)) – a
   parameter keeps one fixed, predictable meaning instead of a hidden
   Pendulum special case in the code.
+- **BEATS_FACTOR Auto mode only recomputes segment boundaries on an
+  actual segment change, not every sample** (see [4.12](#sec4-12)) – a
+  `currentStage` comparison acts as a cheap gate ahead of the more
+  expensive boundary search/summation loop, analogous to the quantize
+  cache pattern in [4.11](#sec4-11). Deliberate side effect: if First/Last
+  changes for the currently active segment without `currentStage` crossing
+  a segment boundary, the cached value stays until the next stage change.
 - **Multiplier safety clamps (`[1e-4, 1e4]`) are purely computational
   safeguards, not musical limits** – analogous to the existing
   CV-expander time clamp (`[0.001s, 30s]`).

@@ -264,7 +264,9 @@ Identischer, spiegelbildlicher Aufbau für Section A und B:
 - **BEATS_FACTOR** (`BEATS_FACTOR_A/B_PARAM`, Trimmer, 0,1–64, Default 4)
   + zugehöriger CV-Eingang: legt fest, wie viele Beats ein voller Zyklus
   über alle nicht geskippten Stages darstellen soll; daraus wird der
-  tatsächlich wirksame Zeitfaktor zurückgerechnet. Siehe [4.12](#sec4-12).
+  tatsächlich wirksame Zeitfaktor zurückgerechnet. Per Rechtsklick-
+  Kontextmenü auf **Auto** umschaltbar (Segmentlängen-Sync statt fester
+  Wert, CV bleibt additiv wirksam). Siehe [4.12](#sec4-12).
 - **Run** (`RUN_A/B_PARAM`, LED-Taster): togglet Start/Stop der Section
   (grüne LED = läuft). ODER-verknüpft mit einem externen Start/Stop-Gate
   vom Trigger-Expander. **Wird ignoriert, solange Advance gepatcht ist –
@@ -903,13 +905,52 @@ multiplier = desiredCycleTime / baseCycleTime
 `multiplier` wird zusätzlich auf `[1e-4, 1e4]` geklemmt (reiner
 Rechenschutz, z.B. gegen Division durch 0 falls alle Stages geskippt sind).
 
+**BEATS_FACTOR Auto-Modus (Segmentlängen-Sync)**: Alternative zum festen
+Trimpot-Wert, per Rechtsklick-Kontextmenü am BEATS_FACTOR-Trimpot
+umschaltbar (`BeatsFactorTrimpot::appendContextMenu()`, Checkbox „Auto
+(Segment Length)"), pro Section A/B unabhängig. Im Auto-Modus wird
+BEATS_FACTOR nicht aus dem Trimpot-Wert genommen, sondern aus der Anzahl
+**nicht geskippter** Stages im aktuell aktiven First/Last-Segment um die
+adressierte Stage abgeleitet – und auch die Summationsbasis für den
+Multiplier ist dann nur dieses Segment, nicht mehr alle 16 Stages:
+
+```
+segment = [nächstes First bei/vor currentStage … nächstes Last bei/nach currentStage]
+BEATS_FACTOR = Anzahl nicht geskippter Stages im Segment (+ CV, additiv)
+baseCycleTime = Σ resolvedTime[i]  (nur Stages im Segment ohne MOD_SKIP)
+```
+
+Ohne First/Last-Programmierung entspricht das Segment automatisch allen 16
+Stages (Fallback von `findFirstBefore()`/`findLastAfter()`), also demselben
+Verhalten wie bisher. `BEATS_FACTOR_CV_A/B_INPUT` bleibt im Auto-Modus
+additiv wirksam (gleiche Skalierung wie im manuellen Modus, ±5V ≈ volle
+64er-Spanne) – nur der Trimpot-Rohwert selbst wird ignoriert, bleibt aber
+gespeichert/sichtbar und greift beim Zurückschalten auf manuell sofort
+wieder.
+
+Da `stageModifier[]` modulweit geteilt ist, aber `currentStage` pro Section
+unabhängig läuft, können Section A und B gleichzeitig auf unterschiedliche
+Segmente desselben 16-Stage-Arrays synchronisiert sein (Multi-Segment-
+Konfigurationen, siehe [4.2](#sec4-2)).
+
+Segmentgrenzen und -summe werden gecacht und **nur bei tatsächlichem
+Segmentwechsel** neu berechnet (`Afg::updateAutoSegment()`), nicht jeden
+Sample – ein currentStage-Vergleich entscheidet dabei pro Sample billig,
+ob eine Neuberechnung überhaupt nötig ist. `currentStage` spiegelt an
+dieser Stelle im Signalfluss den Stand vom Ende des *vorherigen* Frames
+wider (Stage-Adressierung läuft in `process()` erst danach) – eine
+Sample-Verzögerung bei Segmentwechseln, musikalisch irrelevant.
+
 **Pendulum-Verhalten (Option B, bewusste Entscheidung)**: BEATS_FACTOR
 bezieht sich **immer nur auf einen Durchlauf** (Hinweg über alle nicht
-geskippten Stages), unabhängig davon, ob Pendulum aktiv ist. Bei aktivem
-Pendulum dauert ein voller Hin-und-Rück-Umlauf dadurch automatisch
-2×BEATS_FACTOR Beats – es gibt **keine** automatische Verdopplung/
-Halbierung im Code. Wer einen festen Umlaufwert will, stellt BEATS_FACTOR
-entsprechend selbst halbiert ein.
+geskippten Stages), unabhängig davon, ob Pendulum aktiv ist – das gilt im
+manuellen wie im Auto-Modus gleichermaßen (im Auto-Modus bezieht sich „ein
+Durchlauf" auf einen Weg durch das Segment). Bei aktivem Pendulum dauert
+ein voller Hin-und-Rück-Umlauf dadurch automatisch 2×BEATS_FACTOR Beats –
+es gibt **keine** automatische Verdopplung/Halbierung im Code. Wer einen
+festen Umlaufwert will, stellt BEATS_FACTOR entsprechend selbst halbiert
+ein (im Auto-Modus nicht möglich, da BEATS_FACTOR dort nicht frei wählbar
+ist – hier hilft nur ein Wechsel zurück auf manuell).
 
 **Live-BPM-Anzeige** (`TempoBpmDisplay`, Jacks-Spalte): reiner NVG-Text-
 Readout ohne eigene Interaktion, zeigt das tatsächlich wirksame Tempo
@@ -1213,7 +1254,7 @@ Setzt nur Voltage/Time aller Stages auf Default zurück. Wiederverwendet vom Pan
 **Neu**: setzt die 16 geteilten Voltage-Regler auf ein lineares 0–10V-Raster und erzwingt `Range = Full` je Stage, siehe [3.4](#sec3-4).
 
 **`Marf248::process(args)`**<br>
-Zentrale Verarbeitungsfunktion, pro Sample aufgerufen. Ablauf (siehe auch Abschnitte 3–4): Trigger-Expander-Lookup (ganz am Anfang, für SEXT) → Global Clear/Reset Values/Auto-Fill → Preset-/Scale-/Key-Arm-Logik → Stage-Modifier-Klick-Buttons (dezimiert per `stageButtonDivider`) → Stage-Modifier-Poly-CV-Overrides vom Trigger-Expander (jeden Sample, ungedrosselt) → Auflösung von Voltage/Time/Curve pro Stage (Range, External-Quellen, Time Range, additive CV, Curve-Power-Cache) → **Tempo-/BEATS_FACTOR-Auflösung und Multiplier-Rückrechnung je Section (siehe [4.12](#sec4-12))** → Stage-Address-Verarbeitung je Section (inkl. Kanalwahl-CV) → `afgA.process()`/`afgB.process()`-Aufrufe (inkl. Run-Gate und Advance) → Ausgabe schreiben, **inkl. `TIMESTATIC_A/B_OUTPUT`** (statische CV proportional zur rohen Time-Sliderposition der aktuell adressierten Stage, siehe [4.5](#sec4-5)) → dekimierte Übernahme der Live-BPM-Anzeigewerte → Trigger-Expander-Aktionen (Clear/Reset/Preset/Adress-Speicher Store/Recall/Scale/Key/Start-End-of-Cycle) → CV-Expander-Gate-Ausgabe → dreifarbige RGB-Status-LEDs (siehe [3.3](#sec3-3)).
+Zentrale Verarbeitungsfunktion, pro Sample aufgerufen. Ablauf (siehe auch Abschnitte 3–4): Trigger-Expander-Lookup (ganz am Anfang, für SEXT) → Global Clear/Reset Values/Auto-Fill → Preset-/Scale-/Key-Arm-Logik → Stage-Modifier-Klick-Buttons (dezimiert per `stageButtonDivider`) → Stage-Modifier-Poly-CV-Overrides vom Trigger-Expander (jeden Sample, ungedrosselt) → Auflösung von Voltage/Time/Curve pro Stage (Range, External-Quellen, Time Range, additive CV, Curve-Power-Cache) → **Tempo-/BEATS_FACTOR-Auflösung und Multiplier-Rückrechnung je Section, inkl. BEATS_FACTOR Auto-Modus/Segmentlängen-Sync (siehe [4.12](#sec4-12))** → Stage-Address-Verarbeitung je Section (inkl. Kanalwahl-CV) → `afgA.process()`/`afgB.process()`-Aufrufe (inkl. Run-Gate und Advance) → Ausgabe schreiben, **inkl. `TIMESTATIC_A/B_OUTPUT`** (statische CV proportional zur rohen Time-Sliderposition der aktuell adressierten Stage, siehe [4.5](#sec4-5)) → dekimierte Übernahme der Live-BPM-Anzeigewerte → Trigger-Expander-Aktionen (Clear/Reset/Preset/Adress-Speicher Store/Recall/Scale/Key/Start-End-of-Cycle) → CV-Expander-Gate-Ausgabe → dreifarbige RGB-Status-LEDs (siehe [3.3](#sec3-3)).
 
 **`Marf248::dataToJson()` / `dataFromJson(rootJ)`**<br>
 Persistiert Modifier-Bits, Mode/Pendulum/Stage-Address-Zustände, Scale/Key, alle 12 Preset-Slots sowie den Adress-Speicher (siehe [Abschnitt 9](#sec9)).
@@ -1495,6 +1536,7 @@ automatisch von VCV Rack gespeicherten Params:
 - `stageModifier[]` (alle 16 Stages) als JSON-Array.
 - `reverseA/B`, `pendulumOnA/B`, `addrExtA/B`, `addrContOnA/B`.
 - `currentKey`, `currentScale`.
+- `beatsFactorAutoA/B` (BEATS_FACTOR Auto-Modus, siehe [4.12](#sec4-12)).
 - Alle 12 Preset-Slots (`used`-Flag + Voltage/Time/Range/Curve-Arrays +
   Modifier-Array je Slot).
 - **Neu:** der Adress-Speicher – pro Section ein JSON-Array mit 16
@@ -1872,6 +1914,13 @@ unterschiedlichem Rack-Standardverhalten.
   den vollen Hin-und-Rück-Umlauf** (Option B, siehe [4.12](#sec4-12)) – ein
   Parameter behält eine feste, vorhersehbare Bedeutung statt eines
   versteckten Pendulum-Sonderfalls im Code.
+- **BEATS_FACTOR Auto-Modus rechnet Segmentgrenzen nur bei tatsächlichem
+  Segmentwechsel neu, nicht jeden Sample** (siehe [4.12](#sec4-12)) –
+  `currentStage`-Vergleich als billiges Gate vor der teureren Grenzsuche/
+  Summierschleife, analog zum Quantize-Cache-Muster in [4.11](#sec4-11).
+  Bewusste Nebenwirkung: Ändert sich First/Last für das gerade aktive
+  Segment, ohne dass currentStage die Segmentgrenze überschreitet, bleibt
+  der gecachte Wert bis zum nächsten Stage-Wechsel stehen.
 - **Multiplier-Sicherheitsklammern (`[1e-4, 1e4]`) sind reiner
   Rechenschutz, keine musikalische Grenze** – analog zur bestehenden
   CV-Expander-Zeit-Klammer (`[0,001s, 30s]`).
