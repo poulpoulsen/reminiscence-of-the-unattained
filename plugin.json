@@ -1,31 +1,31 @@
 {
-  "slug": "Marf248",
-  "name": "MARF 248t",
+  "slug": "reminiscence-of-the-unattained",
+  "name": "reminiscence of the unattained",
   "version": "2.0.0",
   "license": "GPL-3.0-or-later",
   "author": "Kinovice",
-  "authorEmail": "",
+  "authorEmail": "karlderletzte@holnishaus.de",
   "authorUrl": "",
   "pluginUrl": "",
-  "sourceUrl": "",
+  "sourceUrl": "https://codeberg.org/kinovice/marf248-vcv-cpp",
   "changelogUrl": "",
   "modules": [
     {
       "slug": "Marf248",
-      "name": "MARF 248t",
-      "description": "Buchla/Tiptop 248t Multiple Arbitrary Function Generator emulation",
+      "name": "Sofonisba",
+      "description": "Dual-section multiple arbitrary function generator with per-stage voltage, time, and modifier control",
       "tags": ["Sequencer", "Function generator", "Dual"]
     },
     {
       "slug": "Marf248TriggerExpander",
-      "name": "MARF 248t Trigger Expander",
-      "description": "Trigger/CV expander for MARF 248t: Clear, Reset Values, 12 preset loads, Scale/Key select, and Start/End of Cycle outputs",
+      "name": "Amilcare",
+      "description": "Trigger/CV expander for Sofonisba: Clear, Reset Values, 12 preset loads, Scale/Key select, Start/End of Cycle outputs",
       "tags": ["Expander", "Sequencer", "Utility"]
     },
     {
       "slug": "Marf248CvExpander",
-      "name": "MARF 248t CV Expander",
-      "description": "Poly CV expander for MARF 248t: additive Stage Time CV and per-stage Gate A/B outputs",
+      "name": "Bianca",
+      "description": "Poly CV expander for Sofonisba: additive Stage Time/Curve/Warp CV and per-stage Gate A/B outputs",
       "tags": ["Expander", "Sequencer", "Utility", "Polyphonic"]
     }
   ]

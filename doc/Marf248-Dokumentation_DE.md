@@ -1,9 +1,9 @@
-# Kinovice Marf248 – Technische Dokumentation
+# Kinovice reminiscence of the unattained – Technische Dokumentation
 
 VCV-Rack-C++-Portierung des Buchla/Tiptop 248t MARF (Multiple Arbitrary
 Function Generator). Diese Dokumentation beschreibt das Hauptmodul
-**Marf248** sowie die beiden Erweiterungsmodule **Marf248TriggerExpander**
-(30HP) und **Marf248CvExpander** (12HP): jedes Bedienelement, jeden
+**Sofonisba** sowie die beiden Erweiterungsmodule **Amilcare** (Trigger-Expander,
+30HP) und **Bianca** (CV-Expander, 12HP): jedes Bedienelement, jeden
 Ein-/Ausgang, die interne Signalverarbeitung, die wichtigsten C++-Funktionen
 und die bekannten Fallstricke im Zusammenspiel der Funktionen.
 
@@ -28,7 +28,7 @@ RGB-Status-LED, Stage-Number-Broadcast inkl. Undo/Redo).
 
 1. [Architektur-Überblick](#sec1) · [[#1. Architektur-Überblick|Obsidian]]
 2. [Grundbegriffe: Stage, Section, Modifier-Bits](#sec2) · [[#2. Grundbegriffe: Stage, Section, Modifier-Bits|Obsidian]]
-3. [Marf248 – Hauptmodul](#sec3) · [[#3. Marf248 – Hauptmodul|Obsidian]]
+3. [Sofonisba – Hauptmodul](#sec3) · [[#3. Sofonisba – Hauptmodul|Obsidian]]
    - [Panel-Layout](#sec3-1) · [[#3.1 Panel-Layout|Obsidian]]
    - [Bedienelemente pro Stage](#sec3-2) · [[#3.2 Bedienelemente pro Stage|Obsidian]]
    - [Bedienelemente pro Section (A/B)](#sec3-3) · [[#3.3 Bedienelemente pro Section (A/B)|Obsidian]]
@@ -49,9 +49,9 @@ RGB-Status-LED, Stage-Number-Broadcast inkl. Undo/Redo).
    - [Tempo/BPM-Steuerung (V/Oct, BEATS_FACTOR)](#sec4-12) · [[#4.12 Tempo/BPM-Steuerung (V/Oct, BEATS_FACTOR)|Obsidian]]
    - [Ratcheting](#sec4-13) · [[#4.13 Ratcheting|Obsidian]]
    - [Stage-Number-Broadcast](#sec4-14) · [[#4.14 Stage-Number-Broadcast|Obsidian]]
-5. [Marf248 – Funktionsreferenz (C++)](#sec5) · [[#5. Marf248 – Funktionsreferenz (C++)|Obsidian]]
-6. [Marf248TriggerExpander](#sec6) · [[#6. Marf248TriggerExpander|Obsidian]]
-7. [Marf248CvExpander](#sec7) · [[#7. Marf248CvExpander|Obsidian]]
+5. [Sofonisba – Funktionsreferenz (C++)](#sec5) · [[#5. Sofonisba – Funktionsreferenz (C++)|Obsidian]]
+6. [Amilcare – Trigger-Expander](#sec6) · [[#6. Amilcare – Trigger-Expander|Obsidian]]
+7. [Bianca – CV-Expander](#sec7) · [[#7. Bianca – CV-Expander|Obsidian]]
 8. [Expander-Mechanismus (Kommunikation zwischen den Modulen)](#sec8) · [[#8. Expander-Mechanismus (Kommunikation zwischen den Modulen)|Obsidian]]
 9. [Persistenz (Patch-Speicherung)](#sec9) · [[#9. Persistenz (Patch-Speicherung)|Obsidian]]
 10. [Bekannte Fallstricke im Zusammenspiel](#sec10) · [[#10. Bekannte Fallstricke im Zusammenspiel|Obsidian]]
@@ -85,7 +85,7 @@ Message-Passing/Doppelpufferung, ist aber nur zulässig, weil die Expander
 keine eigene unabhängige Verarbeitung haben (siehe VCV-Rack-Plugin-API-Guide,
 Abschnitt „Expanders": „you can implement its entire DSP algorithm in the
 [primary] module"). Die Expander selbst prüfen ebenfalls jeden Frame
-eigenständig, ob ein Marf248 andockt, um ihre Outputs/Lichter beim
+eigenständig, ob ein Sofonisba andockt, um ihre Outputs/Lichter beim
 Entfernen/Verschieben sauber auf 0V zurückzusetzen.
 
 Der Trigger-Expander-Lookup steht bewusst ganz am Anfang von
@@ -151,7 +151,7 @@ voneinander getrennt und dürfen nicht verwechselt werden.
 
 <a id="sec3"></a>
 
-## 3. Marf248 – Hauptmodul
+## 3. Sofonisba – Hauptmodul
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
 <a id="sec3-1"></a>
@@ -168,7 +168,7 @@ geworden, siehe unten) und in mehrere senkrechte Spalten gegliedert
 [External CV A–D] [Section-A-Controls] [Section-A-Jacks] [Section-A-Ausgänge] [Stage-Array (16×)] [Section-B-Ausgänge] [Section-B-Jacks] [Section-B-Controls] [Preset-Spalte]
 ```
 
-*[Siehe [Abbildung 1](#fig1) für eine schematische Übersicht dieser Spaltenstruktur · [[#Abbildung 1 – Marf248 Panel-Spaltenlayout (schematische Übersicht)|Obsidian]]]*
+*[Siehe [Abbildung 1](#fig1) für eine schematische Übersicht dieser Spaltenstruktur · [[#Abbildung 1 – Sofonisba Panel-Spaltenlayout (schematische Übersicht)|Obsidian]]]*
 
 - **External-CV-Spalte** (ganz links): die vier modulweit geteilten
   externen CV-Eingänge (Buchsen A–D), die von `MOD_VOLT_EXT`/`MOD_TIME_EXT`
@@ -200,7 +200,7 @@ werden zusätzlich durch dünne horizontale Trennlinien (`HDivider`) abgesetzt.
 ### 3.2 Bedienelemente pro Stage
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
-*[Siehe [Abbildung 2](#fig2) für die exakte Position jedes unten beschriebenen Bedienelements, da alle 16 Stage-Spalten identisch aufgebaut sind · [[#Abbildung 2 – Marf248 Stage-Spalten-Detail|Obsidian]]]*
+*[Siehe [Abbildung 2](#fig2) für die exakte Position jedes unten beschriebenen Bedienelements, da alle 16 Stage-Spalten identisch aufgebaut sind · [[#Abbildung 2 – Sofonisba Stage-Spalten-Detail|Obsidian]]]*
 
 Jede der 16 Stage-Spalten enthält von oben nach unten:
 
@@ -1027,7 +1027,7 @@ Bits während des Stage-Aufenthalts per CV nachträglich gesetzt werden),
 aber es wird nichts ausgegeben. `MOD_MUTE` unterdrückt Ratcheting genauso
 wie die normalen Pulse-Trigger (siehe [4.7](#sec4-7)).
 
-**Warp-Blend (Marf248CvExpander, `WARP_CV_INPUT`/`WARP_CV_ATTEN_PARAM`/
+**Warp-Blend (Bianca, `WARP_CV_INPUT`/`WARP_CV_ATTEN_PARAM`/
 `WARP_GLOBAL_PARAM`)**: blendet die lineare Sub-Trigger-Verteilung
 kontinuierlich zu einer Smootherstep-verzerrten Verteilung über
 (`smootherstep01()`/`ratchetWarpPhase()` in `Marf248.hpp`), 0–100%
@@ -1141,7 +1141,7 @@ geänderte ParamId** – bestehende Patch-Kabel/Presets bleiben unberührt.
 
 <a id="sec5"></a>
 
-## 5. Marf248 – Funktionsreferenz (C++)
+## 5. Sofonisba – Funktionsreferenz (C++)
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
 ### `Marf248.hpp`
@@ -1302,7 +1302,7 @@ Baut das komplette 146HP-Panel auf: Rahmen, Spalten-Geometrie (inkl. VOUT/Refere
 
 <a id="sec6"></a>
 
-## 6. Marf248TriggerExpander
+## 6. Amilcare – Trigger-Expander
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
 36HP-Expander (Entwicklungsverlauf: 12HP → 18HP für die Stage-Modifier-
@@ -1315,7 +1315,7 @@ die gesamte Verarbeitung findet in `Marf248::process()` statt, sobald das
 Modul als linker oder rechter Nachbar erkannt wird (`LINK_LIGHT` zeigt den
 Andock-Status).
 
-*[Siehe [Abbildung 3](#fig3) für das vollständige Panel mit allen beschrifteten Buchsen · [[#Abbildung 3 – Marf248TriggerExpander Panel (36HP)|Obsidian]]]*
+*[Siehe [Abbildung 3](#fig3) für das vollständige Panel mit allen beschrifteten Buchsen · [[#Abbildung 3 – Amilcare Panel (36HP)|Obsidian]]]*
 
 ### Eingänge
 
@@ -1430,7 +1430,7 @@ sind vernachlässigbar.
 
 <a id="sec7"></a>
 
-## 7. Marf248CvExpander
+## 7. Bianca – CV-Expander
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
 12HP-Expander (ursprünglich 6HP, für die Slew-Curve-CV-Spalte erweitert;
@@ -1438,7 +1438,7 @@ Höhe blieb auch in der Ratcheting-Session bei 12HP – die neue Warp-Blend-
 Zeile wurde vertikal ergänzt statt einer weiteren Spalte, siehe unten).
 Ebenfalls reiner Jack-Träger ohne eigene DSP-Logik.
 
-*[Siehe [Abbildung 4](#fig4) für das vollständige Panel mit allen beschrifteten Buchsen/Reglern · [[#Abbildung 4 – Marf248CvExpander Panel (12HP)|Obsidian]]]*
+*[Siehe [Abbildung 4](#fig4) für das vollständige Panel mit allen beschrifteten Buchsen/Reglern · [[#Abbildung 4 – Bianca Panel (12HP)|Obsidian]]]*
 
 ### Eingänge
 
@@ -1503,7 +1503,7 @@ visuell am Bildschirm bestätigt.
 Beide Expander erkennen `Marf248` links **oder** rechts von sich
 (`getLeftExpander()`/`getRightExpander()`, Vergleich über `getModel() ==
 modelMarf248`) und zeigen dies über ein grünes `LINK_LIGHT` an. Solange
-kein Marf248 andockt, setzen die Expander ihre eigenen Ausgänge selbst
+kein Sofonisba andockt, setzen die Expander ihre eigenen Ausgänge selbst
 jeden Frame auf 0V zurück (verhindert hängenbleibende Spannung beim
 Entfernen/Verschieben).
 
@@ -2038,10 +2038,10 @@ verlustfrei skalierbar) im Ordner `docs/figures/` neben dieser Datei.
 
 <a id="fig1"></a>
 
-#### Abbildung 1 – Marf248 Panel-Spaltenlayout (schematische Übersicht)
-*[[#Abbildung 1 – Marf248 Panel-Spaltenlayout (schematische Übersicht)|Obsidian]]*
+#### Abbildung 1 – Sofonisba Panel-Spaltenlayout (schematische Übersicht)
+*[[#Abbildung 1 – Sofonisba Panel-Spaltenlayout (schematische Übersicht)|Obsidian]]*
 
-![Marf248 Panel Overview](figures/Marf248_PanelOverview.svg)<br>
+![Sofonisba Panel Overview](figures/Marf248_PanelOverview.svg)<br>
 Referenziert aus [3.1](#sec3-1) · [[#3.1 Panel-Layout|Obsidian]]. Zeigt die dort beschriebene Spaltenstruktur
 (External CV / Section-A-Controls-Jacks-Ausgänge / 16× Stage / Section-B-
 Ausgänge-Jacks-Controls / Preset-Spalte). Da alle 16 Stage-Spalten
@@ -2055,10 +2055,10 @@ Teil dieser Session.
 
 <a id="fig2"></a>
 
-#### Abbildung 2 – Marf248 Stage-Spalten-Detail
-*[[#Abbildung 2 – Marf248 Stage-Spalten-Detail|Obsidian]]*
+#### Abbildung 2 – Sofonisba Stage-Spalten-Detail
+*[[#Abbildung 2 – Sofonisba Stage-Spalten-Detail|Obsidian]]*
 
-![Marf248 Stage Column Detail](figures/Marf248_StageColumnDetail.svg)<br>
+![Sofonisba Stage Column Detail](figures/Marf248_StageColumnDetail.svg)<br>
 Referenziert aus [3.2](#sec3-2) · [[#3.2 Bedienelemente pro Stage|Obsidian]]. Eine repräsentative Stage-Spalte (alle 16
 sind identisch, `xStep=36mm` Abstand), mit Voltage-/Time-Slidern, den
 beiden Stage-LEDs, allen 8 Button-Reihen (je 2 Spalten,
@@ -2068,11 +2068,11 @@ Range-Block.
 
 <a id="fig3"></a>
 
-#### Abbildung 3 – Marf248TriggerExpander Panel (36HP)
-*[[#Abbildung 3 – Marf248TriggerExpander Panel (36HP)|Obsidian]]*
+#### Abbildung 3 – Amilcare Panel (36HP)
+*[[#Abbildung 3 – Amilcare Panel (36HP)|Obsidian]]*
 
-![Marf248TriggerExpander Panel](figures/Marf248TriggerExpander_Panel.svg)<br>
-Referenziert aus [6.](#sec6) · [[#6. Marf248TriggerExpander|Obsidian]]. Alle 6 Spalten × 7 Reihen plus das LINK-
+![Amilcare Panel](figures/Marf248TriggerExpander_Panel.svg)<br>
+Referenziert aus [6.](#sec6) · [[#6. Amilcare – Trigger-Expander|Obsidian]]. Alle 6 Spalten × 7 Reihen plus das LINK-
 Licht, passend zur Koordinatentabelle im Panel-Layout-Unterabschnitt,
 inklusive Stage-Range-CV (Reihe 2E), Quantized Glide (Reihe 3E) sowie den
 drei neuen Ratchet-Eingängen in Spalte F (Offset Reihe 5, Enable Reihe 6,
@@ -2080,11 +2080,11 @@ Count Reihe 7).
 
 <a id="fig4"></a>
 
-#### Abbildung 4 – Marf248CvExpander Panel (12HP)
-*[[#Abbildung 4 – Marf248CvExpander Panel (12HP)|Obsidian]]*
+#### Abbildung 4 – Bianca Panel (12HP)
+*[[#Abbildung 4 – Bianca Panel (12HP)|Obsidian]]*
 
-![Marf248CvExpander Panel](figures/Marf248CvExpander_Panel.svg)<br>
-Referenziert aus [7.](#sec7) · [[#7. Marf248CvExpander|Obsidian]]. Stage-Time-CV-/Slew-Curve-CV-Eingänge mit
+![Bianca Panel](figures/Marf248CvExpander_Panel.svg)<br>
+Referenziert aus [7.](#sec7) · [[#7. Bianca – CV-Expander|Obsidian]]. Stage-Time-CV-/Slew-Curve-CV-Eingänge mit
 ihren Attenuvertern und Offset-/Bias-Reglern, die neue Ratchet-Warp-Blend-
 Zeile (CV, Attenuverter, globaler Bias) darunter, sowie Gate-A/B-Ausgänge
 (um zwei Zeilen nach unten verschoben).

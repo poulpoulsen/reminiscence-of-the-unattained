@@ -1,9 +1,9 @@
-# Kinovice Marf248 – Technical Documentation
+# Kinovice reminiscence of the unattained – Technical Documentation
 
 VCV Rack C++ port of the Buchla/Tiptop 248t MARF (Multiple Arbitrary
 Function Generator). This documentation describes the main module
-**Marf248** and the two expander modules **Marf248TriggerExpander** (30HP)
-and **Marf248CvExpander** (12HP): every control, every input/output, the
+**Sofonisba** and the two expander modules **Amilcare** (Trigger Expander, 30HP)
+and **Bianca** (CV Expander, 12HP): every control, every input/output, the
 internal signal processing, the most important C++ functions, and the
 known pitfalls in how the features interact.
 
@@ -29,7 +29,7 @@ undo/redo).
 
 1. [Architecture Overview](#sec1) · [[#1. Architecture Overview|Obsidian]]
 2. [Basic Concepts: Stage, Section, Modifier Bits](#sec2) · [[#2. Basic Concepts: Stage, Section, Modifier Bits|Obsidian]]
-3. [Marf248 – Main Module](#sec3) · [[#3. Marf248 – Main Module|Obsidian]]
+3. [Sofonisba – Main Module](#sec3) · [[#3. Sofonisba – Main Module|Obsidian]]
    - [Panel Layout](#sec3-1) · [[#3.1 Panel Layout|Obsidian]]
    - [Per-Stage Controls](#sec3-2) · [[#3.2 Per-Stage Controls|Obsidian]]
    - [Per-Section Controls (A/B)](#sec3-3) · [[#3.3 Per-Section Controls (A/B)|Obsidian]]
@@ -50,9 +50,9 @@ undo/redo).
    - [Tempo/BPM Control (V/Oct, BEATS_FACTOR)](#sec4-12) · [[#4.12 Tempo/BPM Control (V/Oct, BEATS_FACTOR)|Obsidian]]
    - [Ratcheting](#sec4-13) · [[#4.13 Ratcheting|Obsidian]]
    - [Stage-Number Broadcast](#sec4-14) · [[#4.14 Stage-Number Broadcast|Obsidian]]
-5. [Marf248 – Function Reference (C++)](#sec5) · [[#5. Marf248 – Function Reference (C++)|Obsidian]]
-6. [Marf248TriggerExpander](#sec6) · [[#6. Marf248TriggerExpander|Obsidian]]
-7. [Marf248CvExpander](#sec7) · [[#7. Marf248CvExpander|Obsidian]]
+5. [Sofonisba – Function Reference (C++)](#sec5) · [[#5. Sofonisba – Function Reference (C++)|Obsidian]]
+6. [Amilcare – Trigger Expander](#sec6) · [[#6. Amilcare – Trigger Expander|Obsidian]]
+7. [Bianca – CV Expander](#sec7) · [[#7. Bianca – CV Expander|Obsidian]]
 8. [Expander Mechanism (Inter-Module Communication)](#sec8) · [[#8. Expander Mechanism (Inter-Module Communication)|Obsidian]]
 9. [Persistence (Patch Storage)](#sec9) · [[#9. Persistence (Patch Storage)|Obsidian]]
 10. [Known Pitfalls in Feature Interaction](#sec10) · [[#10. Known Pitfalls in Feature Interaction|Obsidian]]
@@ -87,7 +87,7 @@ This avoids message-passing/double-buffering, but is only valid because
 the expanders have no independent processing of their own (see the VCV
 Rack Plugin API Guide, "Expanders" section: "you can implement its entire
 DSP algorithm in the [primary] module"). Each expander also independently
-checks every frame whether a Marf248 is docked, so it can reset its own
+checks every frame whether a Sofonisba is docked, so it can reset its own
 outputs/lights cleanly to 0V when removed or moved away.
 
 The trigger-expander lookup deliberately sits right at the top of
@@ -152,7 +152,7 @@ confused with one another.
 
 <a id="sec3"></a>
 
-## 3. Marf248 – Main Module
+## 3. Sofonisba – Main Module
 *[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
 
 <a id="sec3-1"></a>
@@ -169,7 +169,7 @@ required width – see below) and organized into several vertical columns
 [External CV A–D] [Section A Controls] [Section A Jacks] [Section A Outputs] [Stage Array (16×)] [Section B Outputs] [Section B Jacks] [Section B Controls] [Preset Column]
 ```
 
-*[See [Figure 1](#fig1) for a schematic overview of this column layout · [[#Figure 1 – Marf248 Panel Column Layout (schematic overview)|Obsidian]]]*
+*[See [Figure 1](#fig1) for a schematic overview of this column layout · [[#Figure 1 – Sofonisba Panel Column Layout (schematic overview)|Obsidian]]]*
 
 - **External CV column** (far left): the four module-wide shared external
   CV inputs (jacks A–D), which per-stage `MOD_VOLT_EXT`/`MOD_TIME_EXT` can
@@ -200,7 +200,7 @@ horizontal divider lines (`HDivider`).
 ### 3.2 Per-Stage Controls
 *[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
 
-*[See [Figure 2](#fig2) for the exact position of every control described below, since all 16 stage columns share the identical layout · [[#Figure 2 – Marf248 Stage Column Detail|Obsidian]]]*
+*[See [Figure 2](#fig2) for the exact position of every control described below, since all 16 stage columns share the identical layout · [[#Figure 2 – Sofonisba Stage Column Detail|Obsidian]]]*
 
 
 Each of the 16 stage columns contains, from top to bottom:
@@ -1022,7 +1022,7 @@ via CV later during the stage visit), but nothing is output. `MOD_MUTE`
 suppresses ratcheting the same way it suppresses normal pulse triggers
 (see [4.7](#sec4-7)).
 
-**Warp blend (Marf248CvExpander, `WARP_CV_INPUT`/`WARP_CV_ATTEN_PARAM`/
+**Warp blend (Bianca, `WARP_CV_INPUT`/`WARP_CV_ATTEN_PARAM`/
 `WARP_GLOBAL_PARAM`)**: continuously blends the linear sub-trigger
 distribution into a smootherstep-warped distribution
 (`smootherstep01()`/`ratchetWarpPhase()` in `Marf248.hpp`), 0–100%
@@ -1135,7 +1135,7 @@ unaffected.
 <a id="sec5"></a>
 
 
-## 5. Marf248 – Function Reference (C++)
+## 5. Sofonisba – Function Reference (C++)
 *[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
 
 ### `Marf248.hpp`
@@ -1296,7 +1296,7 @@ Builds the complete 146HP panel: frames, column geometry (including the VOUT/Ref
 
 <a id="sec6"></a>
 
-## 6. Marf248TriggerExpander
+## 6. Amilcare – Trigger Expander
 *[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
 
 36HP expander (development history: 12HP → 18HP for the stage-modifier
@@ -1309,7 +1309,7 @@ own – all processing happens in `Marf248::process()` once the module is
 recognized as a direct left or right neighbor (`LINK_LIGHT` shows the
 docking status).
 
-*[See [Figure 3](#fig3) for the full panel with every jack labeled · [[#Figure 3 – Marf248TriggerExpander Panel (36HP)|Obsidian]]]*
+*[See [Figure 3](#fig3) for the full panel with every jack labeled · [[#Figure 3 – Amilcare Panel (36HP)|Obsidian]]]*
 
 ### Inputs
 
@@ -1421,14 +1421,14 @@ CPU cost (~10 operations/sample/section) is negligible.
 
 <a id="sec7"></a>
 
-## 7. Marf248CvExpander
+## 7. Bianca – CV Expander
 *[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
 
 12HP expander (originally 6HP, widened to add the Slew Curve CV column;
 height stayed at 12HP through the ratcheting session too – the new Warp
 Blend row was added vertically instead of another column, see below).
 
-*[See [Figure 4](#fig4) for the full panel with every jack/knob labeled · [[#Figure 4 – Marf248CvExpander Panel (12HP)|Obsidian]]]*
+*[See [Figure 4](#fig4) for the full panel with every jack/knob labeled · [[#Figure 4 – Bianca Panel (12HP)|Obsidian]]]*
 
 Also a pure jack carrier with no DSP logic of its own.
 
@@ -1495,7 +1495,7 @@ yet visually confirmed on screen.
 Both expanders detect `Marf248` to their left **or** right
 (`getLeftExpander()`/`getRightExpander()`, compared via `getModel() ==
 modelMarf248`) and show this via a green `LINK_LIGHT`. As long as no
-Marf248 is docked, the expanders reset their own outputs to 0V every
+Sofonisba is docked, the expanders reset their own outputs to 0V every
 frame (preventing hanging voltages when removed or moved away).
 
 Conversely, `Marf248::process()` looks every frame for a
@@ -2014,10 +2014,10 @@ sit in `docs/figures/` alongside this file.
 
 <a id="fig1"></a>
 
-#### Figure 1 – Marf248 Panel Column Layout (schematic overview)
-*[[#Figure 1 – Marf248 Panel Column Layout (schematic overview)|Obsidian]]*
+#### Figure 1 – Sofonisba Panel Column Layout (schematic overview)
+*[[#Figure 1 – Sofonisba Panel Column Layout (schematic overview)|Obsidian]]*
 
-![Marf248 Panel Overview](figures/Marf248_PanelOverview.svg)<br>
+![Sofonisba Panel Overview](figures/Marf248_PanelOverview.svg)<br>
 Referenced from [3.1](#sec3-1) · [[#3.1 Panel Layout|Obsidian]]. Shows the column structure described
 there (External CV / Section A Controls-Jacks-Outputs / 16× Stage / Section
 B Outputs-Jacks-Controls / Preset column). Since all 16 stage columns are
@@ -2031,10 +2031,10 @@ session.
 
 <a id="fig2"></a>
 
-#### Figure 2 – Marf248 Stage Column Detail
-*[[#Figure 2 – Marf248 Stage Column Detail|Obsidian]]*
+#### Figure 2 – Sofonisba Stage Column Detail
+*[[#Figure 2 – Sofonisba Stage Column Detail|Obsidian]]*
 
-![Marf248 Stage Column Detail](figures/Marf248_StageColumnDetail.svg)<br>
+![Sofonisba Stage Column Detail](figures/Marf248_StageColumnDetail.svg)<br>
 Referenced from [3.2](#sec3-2) · [[#3.2 Per-Stage Controls|Obsidian]]. One representative stage column (all 16
 are identical, `xStep=36mm` apart), showing the Voltage/Time sliders,
 the two Stage LEDs, all 8 button rows (2 columns each, `buttonRowsY`/
@@ -2043,11 +2043,11 @@ button next to Slope, and the Shape/Curve/Time-Range/Range block.
 
 <a id="fig3"></a>
 
-#### Figure 3 – Marf248TriggerExpander Panel (36HP)
-*[[#Figure 3 – Marf248TriggerExpander Panel (36HP)|Obsidian]]*
+#### Figure 3 – Amilcare Panel (36HP)
+*[[#Figure 3 – Amilcare Panel (36HP)|Obsidian]]*
 
-![Marf248TriggerExpander Panel](figures/Marf248TriggerExpander_Panel.svg)<br>
-Referenced from [6.](#sec6) · [[#6. Marf248TriggerExpander|Obsidian]]. All 6 columns × 7 rows plus the LINK light,
+![Amilcare Panel](figures/Marf248TriggerExpander_Panel.svg)<br>
+Referenced from [6.](#sec6) · [[#6. Amilcare – Trigger Expander|Obsidian]]. All 6 columns × 7 rows plus the LINK light,
 matching the coordinate table in the Panel Layout subsection, including
 the Stage Range CV (row 2E) and Quantized Glide (row 3E) inputs, plus the
 three new ratchet inputs in column F (Offset row 5, Enable row 6, Count
@@ -2055,11 +2055,11 @@ row 7).
 
 <a id="fig4"></a>
 
-#### Figure 4 – Marf248CvExpander Panel (12HP)
-*[[#Figure 4 – Marf248CvExpander Panel (12HP)|Obsidian]]*
+#### Figure 4 – Bianca Panel (12HP)
+*[[#Figure 4 – Bianca Panel (12HP)|Obsidian]]*
 
-![Marf248CvExpander Panel](figures/Marf248CvExpander_Panel.svg)<br>
-Referenced from [7.](#sec7) · [[#7. Marf248CvExpander|Obsidian]]. Stage Time CV / Slew Curve CV inputs with
+![Bianca Panel](figures/Marf248CvExpander_Panel.svg)<br>
+Referenced from [7.](#sec7) · [[#7. Bianca – CV Expander|Obsidian]]. Stage Time CV / Slew Curve CV inputs with
 their attenuverters and offset/bias controls, the new Ratchet Warp Blend
 row (CV, attenuverter, global bias) below them, plus Gate A/B outputs
 (shifted down by two rows).
