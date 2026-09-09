@@ -57,7 +57,8 @@ undo/redo).
 9. [Persistence (Patch Storage)](#sec9) · [[#9. Persistence (Patch Storage)|Obsidian]]
 10. [Known Pitfalls in Feature Interaction](#sec10) · [[#10. Known Pitfalls in Feature Interaction|Obsidian]]
 11. [Design Decisions & Scope Boundaries](#sec11) · [[#11. Design Decisions & Scope Boundaries|Obsidian]]
-12. [List of Figures](#figures) · [[#List of Figures|Obsidian]]
+12. [Cross-Compile Workflow](#sec12) · [[#12. Cross-Compile Workflow|Obsidian]]
+13. [List of Figures](#figures) · [[#List of Figures|Obsidian]]
 
 ---
 
@@ -1996,6 +1997,68 @@ trigger contexts with different Rack default behavior.
   reversible. Two separate undo mechanisms were needed, since bit
   modifiers (`stageModifier[]`) and continuous controls (engine params)
   are stored differently, see [4.14](#sec4-14).
+
+---
+
+<a id="sec12"></a>
+
+## 12. Cross-Compile Workflow
+*[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
+
+For Windows and Linux builds outside the local development machine, the
+**VCV Rack Plugin Toolchain** is set up and verified working. This workflow
+is an **additional** step before releases/Codeberg pushes — it does **not**
+replace the normal local development workflow (`make clean && make -j4 &&
+make install` in the project folder) for day-to-day feature work.
+
+**Toolchain repo:**
+`~/vcvrack-sdk/rack-plugin-toolchain` (cloned from
+`github.com/VCVRack/rack-plugin-toolchain`, branch `v2`).
+
+**Prerequisites:**
+Docker (not Podman) is installed, user `held` is a member of the `docker`
+group.
+
+**Mac support is deliberately not set up** (no MacOSX SDK available). Three
+lines in the Dockerfile are commented out for this reason:
+- `COPY MacOSX${MACOS_SDK_VERSION}.sdk.tar.*`
+- `RUN JOBS=$JOBS make toolchain-mac`
+- `RUN rm MacOSX12.3.sdk.tar.*`
+
+### One-time image build
+
+Only needed on toolchain/SDK updates, run from the toolchain repo root:
+
+```bash
+JOBS=$(nproc) make docker-build
+```
+
+### Building the plugin per release (Nushell)
+
+`PLUGIN_DIR` must **always be an absolute path**, never `~`:
+
+```nu
+cd ~/vcvrack-sdk/rack-plugin-toolchain
+make -j8 docker-plugin-build-lin-x64 PLUGIN_DIR=/home/held/vcvrack-projects/marf248-vcv-cpp
+make -j8 docker-plugin-build-win-x64 PLUGIN_DIR=/home/held/vcvrack-projects/marf248-vcv-cpp
+```
+
+**Important:** the targets are named `-lin-x64`/`-win-x64`/`-mac-x64`/
+`-mac-arm64`, **not** `-lin`/`-win`. The generic `docker-plugin-build`
+(without a suffix) attempts all four platforms including Mac and fails on
+the missing Mac toolchain.
+
+The resulting packages (`.vcvplugin`, technically a zip archive) end up in
+`~/vcvrack-sdk/rack-plugin-toolchain/plugin-build/`.
+
+### Testing locally in Rack
+
+```bash
+unzip plugin-build/Marf248-<version>-lin-x64.vcvplugin -d <Rack plugin folder>
+```
+
+(typically `~/.Rack2/plugins-linux-x64/`) — remove the old Marf248 version
+there first, then restart Rack.
 
 ---
 

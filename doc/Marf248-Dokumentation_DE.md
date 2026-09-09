@@ -56,7 +56,8 @@ RGB-Status-LED, Stage-Number-Broadcast inkl. Undo/Redo).
 9. [Persistenz (Patch-Speicherung)](#sec9) · [[#9. Persistenz (Patch-Speicherung)|Obsidian]]
 10. [Bekannte Fallstricke im Zusammenspiel](#sec10) · [[#10. Bekannte Fallstricke im Zusammenspiel|Obsidian]]
 11. [Design-Entscheidungen & Abgrenzungen](#sec11) · [[#11. Design-Entscheidungen & Abgrenzungen|Obsidian]]
-12. [Abbildungsverzeichnis](#figures) · [[#Abbildungsverzeichnis|Obsidian]]
+12. [Cross-Compile-Workflow](#sec12) · [[#12. Cross-Compile-Workflow|Obsidian]]
+13. [Abbildungsverzeichnis](#figures) · [[#Abbildungsverzeichnis|Obsidian]]
 
 ---
 
@@ -2019,6 +2020,69 @@ unterschiedlichem Rack-Standardverhalten.
   nötig, da Bit-Modifier (`stageModifier[]`) und kontinuierliche Regler
   (Engine-Params) unterschiedlich gespeichert werden, siehe
   [4.14](#sec4-14).
+
+---
+
+<a id="sec12"></a>
+
+## 12. Cross-Compile-Workflow
+*[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
+
+Für Windows- und Linux-Builds abseits des lokalen Entwicklungsrechners steht die
+**VCV Rack Plugin Toolchain** bereit – eingerichtet und verifiziert
+funktionierend. Dieser Workflow ist ein **zusätzlicher** Schritt vor
+Releases/Codeberg-Pushes, er ersetzt **nicht** den normalen lokalen
+Entwicklungs-Workflow (`make clean && make -j4 && make install` im
+Projektordner) für die tägliche Feature-Arbeit.
+
+**Toolchain-Repo:**
+`~/vcvrack-sdk/rack-plugin-toolchain` (geklont von
+`github.com/VCVRack/rack-plugin-toolchain`, Branch `v2`).
+
+**Voraussetzungen:**
+Docker (nicht Podman) ist installiert, der Nutzer `held` ist Mitglied der
+`docker`-Gruppe.
+
+**Mac-Support ist bewusst nicht eingerichtet** (kein MacOSX-SDK vorhanden).
+Im Dockerfile sind dafür drei Zeilen auskommentiert:
+- `COPY MacOSX${MACOS_SDK_VERSION}.sdk.tar.*`
+- `RUN JOBS=$JOBS make toolchain-mac`
+- `RUN rm MacOSX12.3.sdk.tar.*`
+
+### Einmaliger Image-Build
+
+Nur bei Toolchain- oder SDK-Update nötig, im Toolchain-Repo-Root:
+
+```bash
+JOBS=$(nproc) make docker-build
+```
+
+### Plugin pro Release bauen (Nushell)
+
+`PLUGIN_DIR` muss **immer als absoluter Pfad** angegeben werden, kein `~`:
+
+```nu
+cd ~/vcvrack-sdk/rack-plugin-toolchain
+make -j8 docker-plugin-build-lin-x64 PLUGIN_DIR=/home/held/vcvrack-projects/marf248-vcv-cpp
+make -j8 docker-plugin-build-win-x64 PLUGIN_DIR=/home/held/vcvrack-projects/marf248-vcv-cpp
+```
+
+**Wichtig:** Die Targets heißen `-lin-x64`/`-win-x64`/`-mac-x64`/`-mac-arm64`,
+**nicht** `-lin`/`-win`. Das generische `docker-plugin-build` (ohne Suffix)
+versucht alle vier Plattformen inklusive Mac zu bauen und schlägt beim
+fehlenden Mac-Toolchain fehl.
+
+Die Ergebnis-Pakete (`.vcvplugin`, technisch ein Zip-Archiv) landen in
+`~/vcvrack-sdk/rack-plugin-toolchain/plugin-build/`.
+
+### Lokal in Rack testen
+
+```bash
+unzip plugin-build/Marf248-<version>-lin-x64.vcvplugin -d <Rack-Plugin-Ordner>
+```
+
+(i. d. R. `~/.Rack2/plugins-linux-x64/`) – alte Marf248-Version dort vorher
+entfernen, Rack anschließend neu starten.
 
 ---
 
