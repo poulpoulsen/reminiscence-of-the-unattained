@@ -42,7 +42,7 @@ undo/redo).
    - [Voltage Signal Path: Range, Quantize, Slew](#sec4-4) · [[#4.4 Voltage Signal Path: Range, Quantize, Slew|Obsidian]]
    - [Time Signal Path: Time Range, External Time, Time CV, Time Multiplier](#sec4-5) · [[#4.5 Time Signal Path: Time Range, External Time, Time CV, Time Multiplier|Obsidian]]
    - [Sustain / Enable / Stop](#sec4-6) · [[#4.6 Sustain / Enable / Stop|Obsidian]]
-   - [Pulse Outputs: APOUT, P1/P2OUT, Start/End of Cycle](#sec4-7) · [[#4.7 Pulse Outputs: APOUT, P1/P2OUT, Start/End of Cycle|Obsidian]]
+   - [Pulse Outputs: APOUT, EOS, P1/P2OUT, Start/End of Cycle](#sec4-7) · [[#4.7 Pulse Outputs: APOUT, EOS, P1/P2OUT, Start/End of Cycle|Obsidian]]
    - [Preset System (Pickup/Catch)](#sec4-8) · [[#4.8 Preset System (Pickup/Catch)|Obsidian]]
    - [Address Memory](#sec4-9) · [[#4.9 Address Memory|Obsidian]]
    - [Clock-Quantized Advance](#sec4-10) · [[#4.10 Clock-Quantized Advance|Obsidian]]
@@ -528,6 +528,22 @@ ineffective so the normal playback logic pauses in the same frame):
   addressing as well) and is deliberately used, e.g., in the Cookbook
   "String Patch" for glide behavior. Start/Stop has no effect in
   Continuous mode (`running` remains ineffective).
+- **Freeze** (**new**, Trigger Expander only, `STAGE_ADDR_FREEZE_POLY_INPUT`):
+  holds `currentStage` steady while the gate is high – the address CV
+  (e.g. a phasor) keeps running unimpeded, but `jumpToStage()` is
+  suppressed inside the Continuous branch until the gate goes low again.
+  `elapsed` keeps advancing independently during the freeze (see the
+  Continuous paragraph above), so a slew ramp already in progress toward
+  the last addressed stage finishes cleanly instead of breaking off at its
+  current value. On release (gate low again), `currentStage` jumps
+  directly to wherever the CV has since arrived – potentially across
+  several stages if the CV moved a lot in the meantime. This is not a
+  bug but a direct consequence of the addressing model: `addr` is
+  recomputed fresh from the voltage every frame, there is no step-by-step
+  catch-up (confirmed by Kinovice's test). Only effective while Continuous
+  is active for that section; outside Continuous the gate has no effect,
+  since Start/Stop/Sustain/Enable are already available for pausing
+  there.
 - **Strobe**: a one-time jump to the current address (`jumpToStage()`);
   afterward, normal playback/slew continues unchanged. Deliberately
   ignored inside the Continuous branch via an early return.
@@ -699,11 +715,26 @@ evaluated – no queuing, no catch-up after the hold ends.
 
 <a id="sec4-7"></a>
 
-### 4.7 Pulse Outputs: APOUT, P1/P2OUT, Start/End of Cycle
+### 4.7 Pulse Outputs: APOUT, EOS, P1/P2OUT, Start/End of Cycle
 *[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
 
 - **APOUT** (`allPulseGen`): fires on **every** stage entry (including
   re-entry without an index change), a 1ms trigger.
+- **EOS** (`eosGen`, **new**, "End of Stage", trigger expander only): also
+  fires on **every** stage entry, triggered at the same call sites as
+  `allPulseGen` (`advanceStage()` **and** `jumpToStage()`) – manual jumps
+  (Strobe button, Reset, Address Memory recall) fire EOS identically to
+  APOUT, not just normal automatic playback. Unlike APOUT, it remains
+  **unaffected by `MOD_MUTE`**, since it's a structural transition marker
+  rather than a programmed output pulse like P1/P2/APOUT – the same
+  principle as Start/End of Cycle (below), which are likewise exempt from
+  mute. Fires **simultaneously** with APOUT, not before it, since both
+  generators are triggered within the same sample inside
+  `advanceStage()`/`jumpToStage()` – this simultaneity deliberately was
+  not given a 1-sample delay relative to the other stage triggers
+  (Kinovice's decision, verified by testing): in a sample-based system,
+  the end of one stage and the start of the next fall on the same
+  discrete instant, there is no intermediate step.
 - **P1OUT/P2OUT**: fire when the current stage has `MOD_PULSE1`/
   `MOD_PULSE2` set. Detected via **continuous edge detection** (not just
   once on entry): `resetPulseEdgeState()` resets the previous values
@@ -1190,10 +1221,10 @@ Arms pickup for a new target value (preset load).
 Returns the effective value to use per frame (target or physical knob value), detects crossing.
 
 **`Afg::jumpToStage(stage, mod)`**<br>
-Immediate jump to a specific stage (Reset/Strobe/Continuous/Address Memory recall), ramp start remains the last output value.
+Immediate jump to a specific stage (Reset/Strobe/Continuous/Address Memory recall), ramp start remains the last output value. **Extended**: also triggers `eosGen` (End of Stage), regardless of `MOD_MUTE`, see [4.7](#sec4-7).
 
-**`Afg::applyStageAddress(continuous, addr, strobe, reset, mod)`**<br>
-Processes Reset/Continuous/Strobe addressing, see [4.3](#sec4-3).
+**`Afg::applyStageAddress(continuous, addr, strobe, reset, mod, frozen)`**<br>
+Processes Reset/Continuous/Strobe/Freeze addressing, see [4.3](#sec4-3).
 
 **`Afg::findLowestFirst(mod)`**<br>
 **New**: finds the `MOD_FIRST` stage with the lowest index (independent of `currentStage`) – used by Reset, so that with multiple First/Last segments, the very first segment is always reached.
@@ -1202,13 +1233,13 @@ Processes Reset/Continuous/Strobe addressing, see [4.3](#sec4-3).
 Ring search for the nearest `MOD_FIRST`/`MOD_LAST` stage for automatic wrap-around during Forward/Reverse playback.
 
 **`Afg::advanceStage(mod)`**<br>
-Core logic for the next stage step (Forward/Reverse/Pendulum, skip handling), see [4.2](#sec4-2).
+Core logic for the next stage step (Forward/Reverse/Pendulum, skip handling), see [4.2](#sec4-2). **Extended**: like `jumpToStage()`, also triggers `eosGen`, see [4.7](#sec4-7).
 
 **`Afg::resetPulseEdgeState()`**<br>
 Resets the P1/P2/First/Last edge-detection previous values (on every stage (re-)entry). **Extended**: also resets `ratchetIndex` and `ratchetWasActive`, see [4.13](#sec4-13).
 
 **`Afg::process(...)`**<br>
-Main per-sample processing of a section: start/stop, Run Gate, Advance, Sustain/Enable/Stop logic, automatic playback, voltage/time output, all pulse outputs including ratcheting (see [4.13](#sec4-13)). Takes the already-resolved stage arrays (voltage, time, modifier, curve power, **ratchet count, warp blend, ratchet offset**) plus Key/Scale and Start/Stop/Run-Gate/Advance inputs.
+Main per-sample processing of a section: start/stop, Run Gate, Advance, Sustain/Enable/Stop logic, automatic playback, voltage/time output, all pulse outputs including ratcheting (see [4.13](#sec4-13)). Takes the already-resolved stage arrays (voltage, time, modifier, curve power, **ratchet count, warp blend, ratchet offset**) plus Key/Scale and Start/Stop/Run-Gate/Advance inputs. Signature extended with a `float* outEos` output parameter (EOS pulse voltage, see [4.7](#sec4-7)).
 
 ### `Marf248.cpp`
 
@@ -1300,17 +1331,20 @@ Builds the complete 146HP panel: frames, column geometry (including the VOUT/Ref
 ## 6. Amilcare – Trigger Expander
 *[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
 
-36HP expander (development history: 12HP → 18HP for the stage-modifier
+42HP expander (development history: 12HP → 18HP for the stage-modifier
 poly CVs → 24HP for Advance → 30HP for the panel-labeling session, which
 needed a 5th column plus larger, more legible text and used the
 opportunity to regroup several jacks → 36HP for the ratcheting session,
-which needed a 6th column for the three new ratchet inputs, see Panel
-Layout below). A pure jack carrier with no DSP logic of its
+which needed a 6th column for the three new ratchet inputs → 42HP for the
+"End of Stage Output" session, which needed a 7th column for the two new
+EOS outputs, since the 36HP panel was already fully occupied by then
+(7 rows × 6 columns), see Panel Layout below). A pure jack carrier with no
+DSP logic of its
 own – all processing happens in `Marf248::process()` once the module is
 recognized as a direct left or right neighbor (`LINK_LIGHT` shows the
 docking status).
 
-*[See [Figure 3](#fig3) for the full panel with every jack labeled · [[#Figure 3 – Amilcare Panel (36HP)|Obsidian]]]*
+*[See [Figure 3](#fig3) for the full panel with every jack labeled · [[#Figure 3 – Amilcare Panel (42HP)|Obsidian]]]*
 
 ### Inputs
 
@@ -1368,6 +1402,18 @@ Ratchet sub-trigger count, see [4.13](#sec4-13). Eight 1.25V zones across the 0�
 **`STAGE_RATCHET_OFFSET_POLY_INPUT`** *(**New**, poly CV (16 channels = stage 1–16))*<br>
 Ratchet phase offset, see [4.13](#sec4-13). Direct linear 0–10V → 0–100% mapping (no zone grid like count), additively shifts the sub-trigger phase toward the stage end (capped, no wraparound). Unpatched = 0% (no shift). Sits in row 5, column F.
 
+**`STAGE_ADDR_POLY_INPUT`** *(poly CV (channel 1 = Section A, channel 2 = Section B))*<br>
+Full override of the stage address: when patched, bypasses both the panel knob and the Int/Ext logic entirely, regardless of the current `STAGE_ADDR_MODE_A/B` state. 0–10V = stage 1–16, linear. Also used by Continuous/Freeze (see [4.3](#sec4-3)). Sits in row 1, column F.
+
+**`STAGE_ADDR_INTEXT_POLY_INPUT`** *(poly gate (channel 1 = Section A, channel 2 = Section B))*<br>
+Level override (threshold `ADDR_GATE_THRESHOLD = 2V`) for the Int/Ext panel button (`STAGE_ADDR_MODE_A/B_PARAM`). Independent of `STAGE_ADDR_CONTINUOUS_POLY_INPUT` (Continuous works with both Int and Ext equally, no mutual exclusion). Sits in row 2, column F.
+
+**`STAGE_ADDR_CONTINUOUS_POLY_INPUT`** *(poly gate (channel 1 = Section A, channel 2 = Section B))*<br>
+Same level-override principle as above, overrides `STAGE_ADDR_CONT_A/B_PARAM`. See [4.3](#sec4-3) for Continuous behavior itself. Sits in row 3, column F.
+
+**`STAGE_ADDR_FREEZE_POLY_INPUT`** *(**New**, poly gate (channel 1 = Section A, channel 2 = Section B))*<br>
+Holds `currentStage` steady while the gate is high (threshold 2V, same level comparison as `STAGE_ADDR_CONTINUOUS_POLY_INPUT`) – see [4.3](#sec4-3) for the full behavior, including the jump on release. Only effective while Continuous is active for that section. No dedicated panel button (a pure expander feature, analogous to `STAGE_RATCHET_POLY_INPUT`), no stored state needed. Sits in row 4, column F.
+
 ### Outputs
 
 **`START_CYCLE_A/B_OUTPUT`**<br>
@@ -1376,7 +1422,10 @@ Fires (1ms trigger) when Section A/B reaches a `MOD_FIRST`-marked stage (continu
 **`END_CYCLE_A/B_OUTPUT`**<br>
 Same, for `MOD_LAST`.
 
-### Panel Layout (36HP, 6 columns spaced 27mm apart, 14mm row pitch)
+**`EOS_A_OUTPUT` / `EOS_B_OUTPUT`** *(**New**, "End of Stage")*<br>
+Fires (1ms trigger) on **every** stage entry of the respective section – triggered at the same call sites as APOUT (`advanceStage()` **and** `jumpToStage()`), see [4.7](#sec4-7) for the full behavior (including simultaneity with APOUT and independence from `MOD_MUTE`). Sits in row 3 (A) resp. row 4 (B), column G – directly next to Start/End of Cycle resp. the Stage Address Continuous/Freeze gate.
+
+### Panel Layout (42HP, 7 columns spaced 27mm apart, 14mm row pitch)
 
 Since the panel-labeling session (plain code/NanoVG labels instead of SVG
 artwork, see [1.](#sec1)), the panel has a 5th column and a new, more
@@ -1384,27 +1433,33 @@ generous row pitch – the larger, more legible text (9pt instead of the
 initially too-small 6pt) needed more room, which Kinovice used as an
 opportunity to regroup a few jacks more sensibly. The ratcheting session
 added a 6th column (`colF`), since the 5-column version was already fully
-occupied by then and left no room for the three new ratchet inputs. 7 rows
-(`colA`=16mm … `colF`=151mm, `y`=20mm to 104mm in 14mm steps):
+occupied by then and left no room for the three new ratchet inputs. The
+"End of Stage Output" session added a 7th column (`colG`), for the same
+reason: the 36HP panel (7 rows × 6 columns) was already fully occupied by
+then. 7 rows (`colA`=16mm … `colG`=178mm, `y`=20mm to 104mm in 14mm
+steps):
 
-- **Row 1** (y=20): Clear (A) / Reset Values (B) / Preset Load, poly (C) / Run Gate A (D) / Run Gate B (E) – Run Gate sits here since this session instead of its own row, since it fits thematically with the other global housekeeping controls.
-- **Row 2** (y=34): Scale Major (A) / Scale Minor (B) / Scale Chromatic (C) / Key CV (D) / **Stage Range channel-select CV (E)**.
-- **Row 3** (y=48): Start of Cycle A (A) / End of Cycle A (B) / Start of Cycle B (C) / End of Cycle B (D) / **Stage Quantized Glide gate (E)**.
-- **Row 4** (y=62): Strobe A/SEXT (A) / Strobe B/SEXT (B) / Address Memory Recall A (C) / Address Memory Recall B (D) / **Voltage External channel-select CV (E)** – Recall A/B sits here since the panel-labeling session instead of its own row (Kinovice's wish: Recall next to Strobe).
-- **Row 5** (y=76): Advance A (A) / Advance B (B) / Stage Skip (C) / Stage First (D) / Stage Last (E) / **Ratchet phase offset (F, new)**.
-- **Row 6** (y=90): Stage Stop (A) / Stage Sustain (B) / Stage Enable (C) / Stage Pulse1 (D) / Stage Pulse2 (E) / **Ratchet Enable (F, new)**.
-- **Row 7** (y=104): Stage Slope (A) / Stage Mute (B) / Address Memory Store A (C) / Address Memory Store B (D) / Time External channel-select CV (E) / **Ratchet Count (F, new)**.
+- **Row 1** (y=20): Clear (A) / Reset Values (B) / Preset Load, poly (C) / Run Gate A (D) / Run Gate B (E) / Stage Address CV (F) – Run Gate sits here since this session instead of its own row, since it fits thematically with the other global housekeeping controls.
+- **Row 2** (y=34): Scale Major (A) / Scale Minor (B) / Scale Chromatic (C) / Key CV (D) / Stage Range channel-select CV (E) / Stage Address Int/Ext gate (F).
+- **Row 3** (y=48): Start of Cycle A (A) / End of Cycle A (B) / Start of Cycle B (C) / End of Cycle B (D) / Stage Quantized Glide gate (E) / Stage Address Continuous gate (F) / **EOS A (G, new)**.
+- **Row 4** (y=62): Strobe A/SEXT (A) / Strobe B/SEXT (B) / Address Memory Recall A (C) / Address Memory Recall B (D) / Voltage External channel-select CV (E) / Stage Address Freeze gate (F) / **EOS B (G, new)** – Recall A/B sits here since the panel-labeling session instead of its own row (Kinovice's wish: Recall next to Strobe).
+- **Row 5** (y=76): Advance A (A) / Advance B (B) / Stage Skip (C) / Stage First (D) / Stage Last (E) / Ratchet phase offset (F).
+- **Row 6** (y=90): Stage Stop (A) / Stage Sustain (B) / Stage Enable (C) / Stage Pulse1 (D) / Stage Pulse2 (E) / Ratchet Enable (F).
+- **Row 7** (y=104): Stage Slope (A) / Stage Mute (B) / Address Memory Store A (C) / Address Memory Store B (D) / Time External channel-select CV (E) / Ratchet Count (F).
 
 Both channel-select CV inputs (`STAGE_VOLTEXT_CH_POLY_INPUT` in row 4,
 `STAGE_TIMEEXT_CH_POLY_INPUT` in row 7) have occupied the only two
 previously unused column-E slots since the panel-labeling session. The
-three new ratchet inputs occupy the newly created column F in rows 5–7
-(rows 1–4 deliberately leave column F empty rather than filling it for
-its own sake). Color coding by function: System (gray) / Musical (violet)
-/ Section A (blue) / Section B (orange) / Stage Modifier (teal),
-consistent across all rows. Still open: visual collision check of the
-labels directly in Rack (positioning was checked numerically but not yet
-confirmed on screen).
+three ratchet inputs occupy the column F created during the ratcheting
+session, in rows 5–7. The four stage-address poly overrides (CV/Int-Ext/
+Continuous from an earlier session this documentation previously did not
+cover, plus the Freeze gate) fill column F in rows 1–4 – column F is now
+occupied in all 7 rows. The new column G is so far only occupied in rows
+3/4 (EOS A/B) – rows 1/2/5–7 currently leave column G empty. Color coding
+by function: System (gray) / Musical (violet) / Section A (blue) /
+Section B (orange) / Stage Modifier (teal), consistent across all rows.
+Still open: visual collision check of the labels directly in Rack
+(positioning was checked numerically but not yet confirmed on screen).
 
 ### Important implementation note: continuous vs. one-time edge detection
 
@@ -1649,6 +1704,17 @@ effect – this is intentional (Continuous addresses the stage directly, a
 timer concept doesn't apply there), not broken. The `addrContOnA/B` state
 is also persisted via JSON: a preset saved with Continuous active
 reactivates Continuous automatically on load.
+
+### 10.8b Freeze jumps across multiple stages on release instead of catching up smoothly
+
+`STAGE_ADDR_FREEZE_POLY_INPUT` only suppresses the `jumpToStage()` call
+while the gate is high – the address CV is still evaluated normally every
+frame. When the gate falls low again, `currentStage` therefore jumps
+directly to wherever the CV has arrived by then, potentially across
+several stages. This is intentional, not a bug: Continuous has no
+step-by-step catch-up to begin with, Freeze only delays the next jump that
+would happen anyway (see [4.3](#sec4-3)). A smooth re-catch (glide instead
+of jump) would be a separate, not yet implemented feature.
 
 ### 10.9 Multiple First/Last segments: Reset always jumps to the first segment
 
@@ -2106,8 +2172,8 @@ button next to Slope, and the Shape/Curve/Time-Range/Range block.
 
 <a id="fig3"></a>
 
-#### Figure 3 – Amilcare Panel (36HP)
-*[[#Figure 3 – Amilcare Panel (36HP)|Obsidian]]*
+#### Figure 3 – Amilcare Panel (42HP)
+*[[#Figure 3 – Amilcare Panel (42HP)|Obsidian]]*
 
 ![Amilcare Panel](figures/Marf248TriggerExpander_Panel.svg)<br>
 Referenced from [6.](#sec6) · [[#6. Amilcare – Trigger Expander|Obsidian]]. All 6 columns × 7 rows plus the LINK light,

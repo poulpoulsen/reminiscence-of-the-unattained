@@ -41,18 +41,15 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 	Marf248TriggerExpanderWidget(Marf248TriggerExpander* module) {
 		setModule(module);
 
-		// 12HP -> 18HP -> 24HP -> 30HP -> 36HP (diese Session, "Ratcheting"):
-		// die groessere, lesbarere Schrift (siehe PanelLabel-Kommentar oben)
-		// braucht mehr Platz - sowohl in der Hoehe (weniger, dafuer hoehere
-		// Reihen) als auch in der Breite (jetzt 6. Spalte, da 30HP/5 Spalten
-		// bereits vollstaendig belegt war und fuer die zwei neuen Ratchet-
-		// Eingaenge (STAGE_RATCHET_POLY_INPUT/STAGE_RATCHET_COUNT_POLY_INPUT)
-		// kein Platz mehr uebrig liess). Hoehe ist bei Rack-Modulen fix
+		// 12HP -> 18HP -> 24HP -> 30HP -> 36HP -> 42HP (diese Session, "End of
+		// Stage Output"): 7. Spalte fuer EOS_A/B_OUTPUT, da Reihe 1-7/Spalte
+		// A-F bereits vollstaendig belegt war (siehe Kommentare unten) und
+		// kein einzelner Slot mehr frei blieb. Hoehe ist bei Rack-Modulen fix
 		// (RACK_GRID_HEIGHT), also bleibt weiterhin nur die Breite als
 		// Stellschraube. FALLS diese Verbreiterung im Case zu eng wird:
 		// Alternative waere zweizeilige Labels bei 24HP belassen - dann
 		// bitte Rueckmeldung, das ist ein separater Umbau.
-		const float HP = 36.f;
+		const float HP = 42.f;
 		box.size = Vec(HP * RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
 
 		PanelBackground* panelBg = new PanelBackground;
@@ -81,6 +78,11 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		// Belegt in Reihe 5/6/7 (siehe dort), Reihen 1-4 lassen colF
 		// bewusst leer statt krampfhaft aufzufuellen.
 		float colF = 151.f;
+		// 7. Spalte (Session "End of Stage Output"), gleicher 27mm-Pitch wie
+		// A-F. Nur in Reihe 3/4 belegt (EOS_A/B_OUTPUT, siehe dort), Reihen
+		// 1-2 und 5-7 lassen colG bewusst leer statt krampfhaft aufzufuellen
+		// - gleiches Prinzip wie bei colF oben.
+		float colG = 178.f;
 
 		// Link-Licht mittig ueber allen 5 Spalten, Label daneben statt
 		// darunter (spart die Zeile, die sonst mit Reihe 1 kollidieren
@@ -124,6 +126,13 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		addLabel(Vec(colD, y), "RUN GATE A", COLOR_SECTION_A);
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colE, y)), module, Marf248TriggerExpander::RUN_GATE_B_INPUT));
 		addLabel(Vec(colE, y), "RUN GATE B", COLOR_SECTION_B);
+		// Spalte F (Session "Stage Address Poly-Overrides"): Adress-CV,
+		// volles Override von Int/Ext-Knob-Wert beider Sections in einem
+		// Poly-Kabel (siehe STAGE_ADDR_POLY_INPUT-Kommentar im Header).
+		// Spalte F war in Reihe 1-4 bisher komplett leer (siehe Kommentar
+		// bei box.size oben).
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colF, y)), module, Marf248TriggerExpander::STAGE_ADDR_POLY_INPUT));
+		addLabel(Vec(colF, y), "ADDR CV", COLOR_STAGEMOD);
 
 		// Reihe 2: Scale Major/Minor/Chromatic + Key CV (Musical, violett).
 		y += stepY;
@@ -142,6 +151,10 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		// Scale/Key.
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colE, y)), module, Marf248TriggerExpander::STAGE_RANGE_POLY_INPUT));
 		addLabel(Vec(colE, y), "RANGE CV", COLOR_STAGEMOD);
+		// Spalte F (Session "Stage Address Poly-Overrides"): Int/Ext-Quelle
+		// als Gate, siehe STAGE_ADDR_INTEXT_POLY_INPUT-Kommentar im Header.
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colF, y)), module, Marf248TriggerExpander::STAGE_ADDR_INTEXT_POLY_INPUT));
+		addLabel(Vec(colF, y), "ADDR INT/EXT", COLOR_STAGEMOD);
 
 		// Reihe 3: Start-/End-of-Cycle, Section A dann B (Outputs).
 		y += stepY;
@@ -159,6 +172,14 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		// Modifier-CVs).
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colE, y)), module, Marf248TriggerExpander::STAGE_QUANTGLIDE_POLY_INPUT));
 		addLabel(Vec(colE, y), "QUANT GLIDE", COLOR_STAGEMOD);
+		// Spalte F (Session "Stage Address Poly-Overrides"): Continuous als
+		// Gate, siehe STAGE_ADDR_CONTINUOUS_POLY_INPUT-Kommentar im Header.
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colF, y)), module, Marf248TriggerExpander::STAGE_ADDR_CONTINUOUS_POLY_INPUT));
+		addLabel(Vec(colF, y), "ADDR CONT", COLOR_STAGEMOD);
+		// Spalte G (Session "End of Stage Output"): EOS Section A, thematisch
+		// hier eingeordnet, direkt neben SOC/EOC A-B (gleiche Reihe).
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colG, y)), module, Marf248TriggerExpander::EOS_A_OUTPUT));
+		addLabel(Vec(colG, y), "EOS A", COLOR_SECTION_A);
 
 		// Reihe 4: SEXT (externe Strobe A/B) + Address Memory Recall A/B
 		// direkt daneben (Kinovice-Wunsch: Recall A neben Strobe B, Recall B
@@ -166,7 +187,13 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		// dieses Kommentars) - jetzt belegt mit der Voltage-External-
 		// Kanalwahl-CV (Session "VOLT_EXT/TIME_EXT-Kanalwahl per CV"), da
 		// hier thematisch am naechsten zur bisherigen Recall/Strobe-Reihe.
-		// Run Gate A/B sitzt seit vorheriger Aenderung in Reihe 1.
+		// Run Gate A/B sitzt seit vorheriger Aenderung in Reihe 1. Spalte F
+		// war hier bislang bewusst frei gelassen (siehe aeltere Fassung
+		// dieses Kommentars) - jetzt belegt mit dem Freeze-Gate (Session
+		// "Continuous Freeze"), direkt unter ADDR CONT in Reihe 3: thematisch
+		// zusammengehoerig (Freeze wirkt nur, solange Continuous aktiv ist,
+		// siehe STAGE_ADDR_FREEZE_POLY_INPUT-Kommentar im Header). Damit ist
+		// Spalte F in Reihe 1-4 komplett belegt.
 		y += stepY;
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colA, y)), module, Marf248TriggerExpander::STROBE_A_INPUT));
 		addLabel(Vec(colA, y), "STROBE A", COLOR_SECTION_A);
@@ -178,6 +205,12 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		addLabel(Vec(colD, y), "ADDR RECALL B", COLOR_SECTION_B);
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colE, y)), module, Marf248TriggerExpander::STAGE_VOLTEXT_CH_POLY_INPUT));
 		addLabel(Vec(colE, y), "VOLT EXT CH", COLOR_STAGEMOD);
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colF, y)), module, Marf248TriggerExpander::STAGE_ADDR_FREEZE_POLY_INPUT));
+		addLabel(Vec(colF, y), "ADDR FREEZE", COLOR_STAGEMOD);
+		// Spalte G (Session "End of Stage Output"): EOS Section B, direkt
+		// unter EOS A aus Reihe 3.
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colG, y)), module, Marf248TriggerExpander::EOS_B_OUTPUT));
+		addLabel(Vec(colG, y), "EOS B", COLOR_SECTION_B);
 
 		// Reihe 5: Advance A/B + Skip/First/Last (Stage-Adress-Modifier).
 		y += stepY;

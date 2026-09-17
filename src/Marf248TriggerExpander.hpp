@@ -221,6 +221,53 @@ struct Marf248TriggerExpander : Module {
 		// Kein Panel-Gegenstueck in dieser Session, gleiches Muster wie die
 		// beiden anderen Ratchet-Eingaenge oben.
 		STAGE_RATCHET_OFFSET_POLY_INPUT,
+		// Stage Address CV (Poly, Kanal 1 = Section A, Kanal 2 = Section B,
+		// Session "Stage Address Poly-Overrides"): direkte Adress-Override-CV
+		// fuer beide Sections in einem einzigen Poly-Kabel, analog zum
+		// Override-Prinzip der Stage-Modifier-Eingaenge oben (STAGE_SKIP_
+		// POLY_INPUT etc.) - Kanal-Spannung 0-10V wird linear auf Stage 1-16
+		// abgebildet (identische Formel wie die bestehende STAGE_ADDR_EXT_A/
+		// B_INPUT-CV in Marf248.cpp: v/10*NUM_STAGES). Bewusst volles
+		// Override: solange die Buchse gepatcht ist (isConnected()), umgeht
+		// dieser Wert sowohl den Panel-Adressknopf ALS AUCH die Int/Ext-Logik
+		// und die vorhandene STAGE_ADDR_EXT_A/B_INPUT-CV komplett - unabhaengig
+		// vom aktuellen Int/Ext-Zustand (Kinovice-Entscheidung: volles
+		// Override wie bei den uebrigen Stage-Modifier-Poly-Eingaengen). Ohne
+		// Kabel bleibt das bisherige Verhalten (Int-Knob bzw. bestehende
+		// Ext-CV) unveraendert.
+		STAGE_ADDR_POLY_INPUT,
+		// Stage Address Int/Ext-Quelle als Gate (Poly, Kanal 1 = Section A,
+		// Kanal 2 = Section B): identisches Pegel-Override-Prinzip wie die
+		// Stage-Modifier-Gates oben (>= GATE_THRESHOLD [2V] erzwingt Ext,
+		// darunter erzwingt Int), uebersteuert bei gepatchtem Kabel den
+		// jeweiligen Panel-Taster (STAGE_ADDR_MODE_A/B_PARAM in Marf248.cpp)
+		// komplett, solange die Buchse verbunden ist (isConnected()). Ohne
+		// Kabel bleibt der zuletzt per Klick gesetzte Zustand erhalten -
+		// identisches Rueckfall-Verhalten wie alle anderen Poly-Gate-
+		// Overrides. Unabhaengig von STAGE_ADDR_CONTINUOUS_POLY_INPUT unten
+		// (Kinovice-Bestaetigung: Continuous wirkt mit Int UND Ext
+		// gleichermassen, kein gegenseitiger Ausschluss).
+		STAGE_ADDR_INTEXT_POLY_INPUT,
+		// Stage Address Continuous als Gate (Poly, Kanal 1 = Section A,
+		// Kanal 2 = Section B): identisches Prinzip wie STAGE_ADDR_INTEXT_
+		// POLY_INPUT oben, uebersteuert STAGE_ADDR_CONT_A/B_PARAM. Siehe
+		// Kommentar dort zur Unabhaengigkeit von Int/Ext.
+		STAGE_ADDR_CONTINUOUS_POLY_INPUT,
+		// Stage Address Freeze als Gate (Poly, Kanal 1 = Section A, Kanal 2 =
+		// Section B, Session "Continuous Freeze"): haelt currentStage der
+		// jeweiligen Section fest, solange das Gate high ist (>=
+		// ADDR_GATE_THRESHOLD [2V], identischer Pegelvergleich wie
+		// STAGE_ADDR_CONTINUOUS_POLY_INPUT oben) - die Phasor-/Adress-CV am
+		// STAGE_ADDR_POLY_INPUT laeuft dabei ungebremst weiter, wird aber
+		// ignoriert, bis das Gate wieder low geht (siehe Afg::
+		// applyStageAddress() in Marf248.hpp). Nur wirksam, waehrend
+		// Continuous fuer diese Section aktiv ist (addrContOnA/B) - ausserhalb
+		// von Continuous hat Freeze keinen Effekt, da dort ohnehin ueber
+		// Start/Stop/Sustain/Enable pausiert wird. Kein eigener Panel-Taster
+		// (reines Expander-Feature, analog zu STAGE_RATCHET_POLY_INPUT), kein
+		// gespeicherter Zustand noetig, da rein pegelbasiertes Override wie
+		// STAGE_ADDR_CONTINUOUS_POLY_INPUT.
+		STAGE_ADDR_FREEZE_POLY_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
@@ -232,6 +279,16 @@ struct Marf248TriggerExpander : Module {
 		END_CYCLE_A_OUTPUT,
 		START_CYCLE_B_OUTPUT,
 		END_CYCLE_B_OUTPUT,
+		// End of Stage (EOS, Session "End of Stage Output"): feuert bei
+		// JEDEM Stage-Verlassen der jeweiligen Section - Timer-Ablauf,
+		// Skip, Advance-Trigger, Continuous-Adresswechsel UND manuelle
+		// Sprünge (Strobe, Reset, Addr-Memory-Recall) - siehe Afg::eosGen
+		// in Marf248.hpp. Ans Ende des Enums angehängt statt zwischen die
+		// bestehenden Cycle-Outputs einsortiert, um deren Indizes (und
+		// damit bestehende Patch-Kabel) nicht zu verschieben - gleiches
+		// Prinzip wie bei ADVANCE_A/B_INPUT weiter oben.
+		EOS_A_OUTPUT,
+		EOS_B_OUTPUT,
 		OUTPUTS_LEN
 	};
 	enum LightId {
@@ -280,11 +337,17 @@ struct Marf248TriggerExpander : Module {
 		configInput(STAGE_RATCHET_POLY_INPUT, "Stage Ratchet enable gate (poly, ch. 1-16 = stage 1-16, no panel counterpart)");
 		configInput(STAGE_RATCHET_COUNT_POLY_INPUT, "Stage Ratchet count CV (poly, ch. 1-16 = stage 1-16, 8 zones of 1.25V = count 1-8, unpatched = ratchet has no effect)");
 		configInput(STAGE_RATCHET_OFFSET_POLY_INPUT, "Stage Ratchet phase offset CV (poly, ch. 1-16 = stage 1-16, 0-10V = 0-100% shift toward stage end, unpatched = 0%)");
+		configInput(STAGE_ADDR_POLY_INPUT, "Stage Address CV (poly, ch.1 = Section A, ch.2 = Section B, 0-10V = stage 1-16, full override of Int/Ext logic and panel knob while connected)");
+		configInput(STAGE_ADDR_INTEXT_POLY_INPUT, "Stage Address Int/Ext source gate (poly, ch.1 = Section A, ch.2 = Section B, high = Ext, overrides panel button while connected)");
+		configInput(STAGE_ADDR_CONTINUOUS_POLY_INPUT, "Stage Address Continuous gate (poly, ch.1 = Section A, ch.2 = Section B, high = Continuous on, overrides panel button while connected)");
+		configInput(STAGE_ADDR_FREEZE_POLY_INPUT, "Stage Address Freeze gate (poly, ch.1 = Section A, ch.2 = Section B, high = hold current stage while Continuous is active)");
 
 		configOutput(START_CYCLE_A_OUTPUT, "Section A Start of Cycle trigger");
 		configOutput(END_CYCLE_A_OUTPUT, "Section A End of Cycle trigger");
 		configOutput(START_CYCLE_B_OUTPUT, "Section B Start of Cycle trigger");
 		configOutput(END_CYCLE_B_OUTPUT, "Section B End of Cycle trigger");
+		configOutput(EOS_A_OUTPUT, "Section A End of Stage trigger");
+		configOutput(EOS_B_OUTPUT, "Section B End of Stage trigger");
 	}
 
 	// Prueft jeden Frame selbststaendig, ob (noch) ein Marf248 unmittelbar
@@ -304,6 +367,8 @@ struct Marf248TriggerExpander : Module {
 			outputs[END_CYCLE_A_OUTPUT].setVoltage(0.f);
 			outputs[START_CYCLE_B_OUTPUT].setVoltage(0.f);
 			outputs[END_CYCLE_B_OUTPUT].setVoltage(0.f);
+			outputs[EOS_A_OUTPUT].setVoltage(0.f);
+			outputs[EOS_B_OUTPUT].setVoltage(0.f);
 		}
 		lights[LINK_LIGHT].setBrightness(linked ? 1.f : 0.f);
 	}

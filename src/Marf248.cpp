@@ -1939,16 +1939,47 @@ struct Marf248 : Module {
 		// da Continuous running=false setzt und dies noch im selben Frame
 		// die Zeitablauf-Logik dort pausieren soll (siehe Afg::
 		// applyStageAddress()).
+		// Trigger-Expander-Overrides fuer Stage Address (Session "Stage
+		// Address Poly-Overrides"): STAGE_ADDR_INTEXT_POLY_INPUT/
+		// STAGE_ADDR_CONTINUOUS_POLY_INPUT (Kanal 0 = Section A) uebersteuern
+		// bei gepatchtem Kabel die jeweiligen Panel-Taster komplett, sind
+		// aber unabhaengig voneinander (Kinovice-Bestaetigung: Continuous
+		// wirkt mit Int UND Ext gleichermassen) - siehe Kommentar in
+		// Marf248TriggerExpander.hpp. Ohne Kabel greift wie bisher der
+		// Panel-Taster (Klick-Toggle).
+		const float ADDR_GATE_THRESHOLD = 2.f;
+		// Panel-Trigger IMMER verarbeiten (nicht in einem else-Zweig
+		// uebersprungen lassen) - sonst verliert der SchmittTrigger eine
+		// Flanke, falls waehrend gepatchtem Override-Kabel geklickt wird,
+		// und das raecht sich als "Phantom-Klick" beim spaeteren Auskabeln.
+		// Gleiches Prinzip wie bei allen Stage-Modifier-Poly-Overrides
+		// (STAGE_SKIP_POLY_INPUT etc.): Klick-Verarbeitung + CV-Override
+		// unconditional danach, CV gewinnt einfach durch Ausfuehrungs-
+		// reihenfolge.
 		if (addrModeATrigger.process(params[STAGE_ADDR_MODE_A_PARAM].getValue())) {
 			addrExtA = !addrExtA;
+		}
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_INTEXT_POLY_INPUT).isConnected()) {
+			addrExtA = trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_INTEXT_POLY_INPUT).getPolyVoltage(0) >= ADDR_GATE_THRESHOLD;
 		}
 		if (addrContATrigger.process(params[STAGE_ADDR_CONT_A_PARAM].getValue())) {
 			addrContOnA = !addrContOnA;
 		}
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_CONTINUOUS_POLY_INPUT).isConnected()) {
+			addrContOnA = trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_CONTINUOUS_POLY_INPUT).getPolyVoltage(0) >= ADDR_GATE_THRESHOLD;
+		}
 		lights[STAGE_ADDR_MODE_A_LIGHT].setBrightness(addrExtA ? 1.f : 0.f);
 		lights[STAGE_ADDR_CONT_A_LIGHT].setBrightness(addrContOnA ? 1.f : 0.f);
 		int addrValueA;
-		if (addrExtA) {
+		// STAGE_ADDR_POLY_INPUT (Kanal 0 = Section A) ist ein volles
+		// Override: umgeht bei gepatchtem Kabel sowohl Int-Knob als auch
+		// Ext-Zweig komplett, unabhaengig vom aktuellen addrExtA-Zustand
+		// (Kinovice-Entscheidung, siehe Header-Kommentar).
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_POLY_INPUT).isConnected()) {
+			float v = rack::clamp(trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_POLY_INPUT).getPolyVoltage(0), 0.f, 10.f);
+			addrValueA = (int) rack::clamp(v / 10.f * NUM_STAGES, 0.f, (float) (NUM_STAGES - 1));
+		}
+		else if (addrExtA) {
 			// Kanalwahl A-D per eigener CV (0-10V in 4 gleich grossen Zonen,
 			// analog zur Zonenlogik bei Volt/Time External) - unverbunden
 			// faellt auf Kanal A (Index 0) zurueck, damit bestehende Mono-
@@ -1980,18 +2011,33 @@ struct Marf248 : Module {
 		if (resetA) addrResetAFlash.trigger(0.15f);
 		lights[STAGE_ADDR_STROBE_A_LIGHT].setBrightness(addrStrobeAFlash.process(args.sampleTime) ? 1.f : 0.f);
 		lights[STAGE_ADDR_RESET_A_LIGHT].setBrightness(addrResetAFlash.process(args.sampleTime) ? 1.f : 0.f);
-		afgA.applyStageAddress(addrContOnA, addrValueA, strobeA, resetA, stageModifier);
+		// Freeze A (Session "Continuous Freeze", Kanal 0 = Section A): reiner
+		// Pegel-Override wie STAGE_ADDR_CONTINUOUS_POLY_INPUT oben, kein
+		// eigener Panel-Taster/Zustand noetig - siehe Kommentar im Header.
+		bool freezeA = trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_FREEZE_POLY_INPUT).getPolyVoltage(0) >= ADDR_GATE_THRESHOLD;
+		afgA.applyStageAddress(addrContOnA, addrValueA, strobeA, resetA, stageModifier, freezeA);
 
+		// Siehe Kommentar bei Section A oben, analog (Kanal 1 = Section B).
 		if (addrModeBTrigger.process(params[STAGE_ADDR_MODE_B_PARAM].getValue())) {
 			addrExtB = !addrExtB;
+		}
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_INTEXT_POLY_INPUT).isConnected()) {
+			addrExtB = trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_INTEXT_POLY_INPUT).getPolyVoltage(1) >= ADDR_GATE_THRESHOLD;
 		}
 		if (addrContBTrigger.process(params[STAGE_ADDR_CONT_B_PARAM].getValue())) {
 			addrContOnB = !addrContOnB;
 		}
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_CONTINUOUS_POLY_INPUT).isConnected()) {
+			addrContOnB = trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_CONTINUOUS_POLY_INPUT).getPolyVoltage(1) >= ADDR_GATE_THRESHOLD;
+		}
 		lights[STAGE_ADDR_MODE_B_LIGHT].setBrightness(addrExtB ? 1.f : 0.f);
 		lights[STAGE_ADDR_CONT_B_LIGHT].setBrightness(addrContOnB ? 1.f : 0.f);
 		int addrValueB;
-		if (addrExtB) {
+		if (trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_POLY_INPUT).isConnected()) {
+			float v = rack::clamp(trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_POLY_INPUT).getPolyVoltage(1), 0.f, 10.f);
+			addrValueB = (int) rack::clamp(v / 10.f * NUM_STAGES, 0.f, (float) (NUM_STAGES - 1));
+		}
+		else if (addrExtB) {
 			// Siehe Kommentar bei addrChA oben, analog fuer Section B.
 			int addrChB = 0;
 			if (inputs[STAGE_ADDR_EXT_CHANNEL_B_INPUT].isConnected()) {
@@ -2014,9 +2060,12 @@ struct Marf248 : Module {
 		if (resetB) addrResetBFlash.trigger(0.15f);
 		lights[STAGE_ADDR_STROBE_B_LIGHT].setBrightness(addrStrobeBFlash.process(args.sampleTime) ? 1.f : 0.f);
 		lights[STAGE_ADDR_RESET_B_LIGHT].setBrightness(addrResetBFlash.process(args.sampleTime) ? 1.f : 0.f);
-		afgB.applyStageAddress(addrContOnB, addrValueB, strobeB, resetB, stageModifier);
+		// Freeze B: siehe Kommentar bei freezeA oben, analog (Kanal 1 =
+		// Section B).
+		bool freezeB = trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_FREEZE_POLY_INPUT).getPolyVoltage(1) >= ADDR_GATE_THRESHOLD;
+		afgB.applyStageAddress(addrContOnB, addrValueB, strobeB, resetB, stageModifier, freezeB);
 
-		float vA, tA, apA, p1A, p2A, scA, ecA, rgA;
+		float vA, tA, apA, p1A, p2A, scA, ecA, rgA, eosA;
 		afgA.process(args.sampleTime, resolvedVoltage, resolvedTimeA, stageModifier, stageCurvePower,
 			stageRatchetCount, stageWarpBlend, stageRatchetOffset,
 			currentKey, currentScale,
@@ -2031,7 +2080,7 @@ struct Marf248 : Module {
 			// Trigger-Expander andockt - identisches Muster wie RUN_GATE_A oben.
 			trigExp && trigExp->getInput(Marf248TriggerExpander::ADVANCE_A_INPUT).isConnected(),
 			trigExp ? trigExp->getInput(Marf248TriggerExpander::ADVANCE_A_INPUT).getVoltage() : 0.f,
-			&vA, &tA, &apA, &p1A, &p2A, &scA, &ecA, &rgA);
+			&vA, &tA, &apA, &p1A, &p2A, &scA, &ecA, &rgA, &eosA);
 		outputs[VOUT_A_OUTPUT].setVoltage(vA);
 		outputs[TOUT_A_OUTPUT].setVoltage(tA);
 		outputs[APOUT_A_OUTPUT].setVoltage(apA);
@@ -2048,7 +2097,7 @@ struct Marf248 : Module {
 		lights[P1_ACTIVE_A_LIGHT].setBrightness(p1A > 0.f ? 1.f : 0.f);
 		lights[P2_ACTIVE_A_LIGHT].setBrightness(p2A > 0.f ? 1.f : 0.f);
 
-		float vB, tB, apB, p1B, p2B, scB, ecB, rgB;
+		float vB, tB, apB, p1B, p2B, scB, ecB, rgB, eosB;
 		afgB.process(args.sampleTime, resolvedVoltage, resolvedTimeB, stageModifier, stageCurvePower,
 			stageRatchetCount, stageWarpBlend, stageRatchetOffset,
 			currentKey, currentScale,
@@ -2063,7 +2112,7 @@ struct Marf248 : Module {
 			// Trigger-Expander andockt - identisches Muster wie RUN_GATE_B oben.
 			trigExp && trigExp->getInput(Marf248TriggerExpander::ADVANCE_B_INPUT).isConnected(),
 			trigExp ? trigExp->getInput(Marf248TriggerExpander::ADVANCE_B_INPUT).getVoltage() : 0.f,
-			&vB, &tB, &apB, &p1B, &p2B, &scB, &ecB, &rgB);
+			&vB, &tB, &apB, &p1B, &p2B, &scB, &ecB, &rgB, &eosB);
 		outputs[VOUT_B_OUTPUT].setVoltage(vB);
 		outputs[TOUT_B_OUTPUT].setVoltage(tB);
 		outputs[APOUT_B_OUTPUT].setVoltage(apB);
@@ -2161,6 +2210,10 @@ struct Marf248 : Module {
 			trigExp->getOutput(Marf248TriggerExpander::END_CYCLE_A_OUTPUT).setVoltage(ecA);
 			trigExp->getOutput(Marf248TriggerExpander::START_CYCLE_B_OUTPUT).setVoltage(scB);
 			trigExp->getOutput(Marf248TriggerExpander::END_CYCLE_B_OUTPUT).setVoltage(ecB);
+			// End of Stage je Section direkt in die Expander-Ausgaenge
+			// schreiben (siehe Afg::process()/Afg::eosGen in Marf248.hpp).
+			trigExp->getOutput(Marf248TriggerExpander::EOS_A_OUTPUT).setVoltage(eosA);
+			trigExp->getOutput(Marf248TriggerExpander::EOS_B_OUTPUT).setVoltage(eosB);
 		}
 
 		// Marf248CvExpander: Gate A/B, Kanal i high sobald die jeweilige

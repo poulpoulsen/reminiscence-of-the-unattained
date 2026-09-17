@@ -41,7 +41,7 @@ RGB-Status-LED, Stage-Number-Broadcast inkl. Undo/Redo).
    - [Voltage-Signalpfad: Range, Quantize, Slew](#sec4-4) · [[#4.4 Voltage-Signalpfad: Range, Quantize, Slew|Obsidian]]
    - [Time-Signalpfad: Time Range, External Time, Time-CV, Time Multiplier](#sec4-5) · [[#4.5 Time-Signalpfad: Time Range, External Time, Time-CV, Time Multiplier|Obsidian]]
    - [Sustain / Enable / Stop](#sec4-6) · [[#4.6 Sustain / Enable / Stop|Obsidian]]
-   - [Pulse-Ausgänge: APOUT, P1/P2OUT, Start-/End-of-Cycle](#sec4-7) · [[#4.7 Pulse-Ausgänge: APOUT, P1/P2OUT, Start-/End-of-Cycle|Obsidian]]
+   - [Pulse-Ausgänge: APOUT, EOS, P1/P2OUT, Start-/End-of-Cycle](#sec4-7) · [[#4.7 Pulse-Ausgänge: APOUT, EOS, P1/P2OUT, Start-/End-of-Cycle|Obsidian]]
    - [Preset-System (Pickup/Catch)](#sec4-8) · [[#4.8 Preset-System (Pickup/Catch)|Obsidian]]
    - [Adress-Speicher (Address Memory)](#sec4-9) · [[#4.9 Adress-Speicher (Address Memory)|Obsidian]]
    - [Clock-quantisiertes Advance](#sec4-10) · [[#4.10 Clock-quantisiertes Advance|Obsidian]]
@@ -527,6 +527,22 @@ muss, damit die normale Zeitablauflogik im selben Frame pausiert):
   Adressierung) und wird z.B. im Cookbook-"String Patch" bewusst für
   Glide-Verhalten genutzt. Start/Stop ist im Continuous-Modus nicht
   anwendbar (`running` bleibt unwirksam).
+- **Freeze** (**neu**, nur am Trigger-Expander, `STAGE_ADDR_FREEZE_POLY_INPUT`):
+  hält `currentStage` fest, solange das Gate high ist – die Adress-CV
+  (z.B. ein Phasor) läuft dabei ungebremst weiter, `jumpToStage()` wird im
+  Continuous-Zweig aber unterdrückt, bis das Gate wieder low geht. `elapsed`
+  läuft während des Freeze unabhängig davon weiter (siehe Continuous-Absatz
+  oben) – eine gerade laufende Slope-Rampe zur zuletzt adressierten Stage
+  läuft also sauber zu Ende, statt hart auf dem aktuellen Wert
+  abzubrechen. Beim Loslassen (Gate wieder low) springt `currentStage`
+  direkt zu der Adresse, an der die CV inzwischen angekommen ist – auch
+  über mehrere Stages hinweg, falls sich die CV währenddessen stark
+  bewegt hat. Das ist kein Fehlverhalten, sondern folgt zwingend aus der
+  direkten Adressierung: `addr` wird jeden Frame frisch aus der Spannung
+  berechnet, es gibt kein schrittweises Nachlaufen (siehe Kinovice-Test,
+  bestätigt). Nur wirksam, während Continuous für die jeweilige Section
+  aktiv ist; außerhalb von Continuous hat das Gate keine Wirkung, da dort
+  bereits Start/Stop/Sustain/Enable zum Pausieren zur Verfügung stehen.
 - **Strobe**: einmaliger Sprung auf die aktuelle Adresse (`jumpToStage()`),
   danach läuft der normale Ablauf/Slew unverändert weiter. Wird im
   Continuous-Zweig durch das frühe `return` bewusst ignoriert.
@@ -699,11 +715,27 @@ Nachholen nach Ende der Haltung.
 
 <a id="sec4-7"></a>
 
-### 4.7 Pulse-Ausgänge: APOUT, P1/P2OUT, Start-/End-of-Cycle
+### 4.7 Pulse-Ausgänge: APOUT, EOS, P1/P2OUT, Start-/End-of-Cycle
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
 - **APOUT** (`allPulseGen`): feuert bei **jedem** Stage-Eintritt (auch bei
   Wiedereintritt ohne Indexwechsel), 1ms-Trigger.
+- **EOS** (`eosGen`, **neu**, "End of Stage", nur am Trigger-Expander
+  verfügbar): feuert ebenfalls bei **jedem** Stage-Eintritt, ausgelöst an
+  denselben Stellen wie `allPulseGen` (`advanceStage()` **und**
+  `jumpToStage()`) – manuelle Sprünge (Strobe-Taster, Reset, Address-Memory-
+  Recall) lösen EOS also identisch zu APOUT aus, nicht nur der automatische
+  Zeitablauf. Bleibt im Unterschied zu APOUT **unbeeinflusst von
+  `MOD_MUTE`**, da es sich um einen strukturellen Übergangsmarker handelt
+  statt eines programmierten Output-Pulses wie P1/P2/APOUT – analoges
+  Prinzip zu Start-/End-of-Cycle (siehe unten), die ebenfalls keinem Mute
+  unterliegen. Feuert **zeitgleich** mit APOUT, nicht davor, da beide
+  Generatoren im selben Sample innerhalb von
+  `advanceStage()`/`jumpToStage()` ausgelöst werden – dieser
+  Gleichzeitigkeit bewusst keine 1-Sample-Verzögerung der übrigen
+  Stage-Trigger hinzugefügt (Kinovice-Entscheidung, per Test verifiziert):
+  Stage-Ende und Stage-Start fallen in einem sample-basierten System auf
+  denselben diskreten Zeitpunkt, ein Zwischenschritt existiert nicht.
 - **P1OUT/P2OUT**: feuern, wenn die aktuelle Stage `MOD_PULSE1`/`MOD_PULSE2`
   gesetzt hat. Erkennung per **kontinuierlicher Flankenerkennung** (nicht
   nur einmalig beim Eintritt): `resetPulseEdgeState()` setzt beim
@@ -1196,10 +1228,10 @@ Aktiviert Pickup für einen neuen Zielwert (Preset-Load).
 Liefert pro Frame den effektiv zu nutzenden Wert (Ziel oder physischer Reglerwert), erkennt Überkreuzung.
 
 **`Afg::jumpToStage(stage, mod)`**<br>
-Sofortiger Sprung auf eine konkrete Stage (Reset/Strobe/Continuous/Adress-Speicher-Recall), Rampen-Start bleibt der zuletzt ausgegebene Wert.
+Sofortiger Sprung auf eine konkrete Stage (Reset/Strobe/Continuous/Adress-Speicher-Recall), Rampen-Start bleibt der zuletzt ausgegebene Wert. **Erweitert**: triggert zusätzlich `eosGen` (End of Stage), ungeachtet von `MOD_MUTE`, siehe [4.7](#sec4-7).
 
-**`Afg::applyStageAddress(continuous, addr, strobe, reset, mod)`**<br>
-Verarbeitet Reset/Continuous/Strobe-Adressierung, siehe [4.3](#sec4-3).
+**`Afg::applyStageAddress(continuous, addr, strobe, reset, mod, frozen)`**<br>
+Verarbeitet Reset/Continuous/Strobe/Freeze-Adressierung, siehe [4.3](#sec4-3).
 
 **`Afg::findLowestFirst(mod)`**<br>
 **Neu**: findet die `MOD_FIRST`-Stage mit dem niedrigsten Index (unabhängig von `currentStage`) – für Reset, damit bei mehreren First/Last-Segmenten immer das allererste Segment angefahren wird.
@@ -1208,13 +1240,13 @@ Verarbeitet Reset/Continuous/Strobe-Adressierung, siehe [4.3](#sec4-3).
 Ring-Suche nach der nächsten `MOD_FIRST`- bzw. `MOD_LAST`-Stage für den automatischen Wrap-Around beim Forward-/Reverse-Ablauf.
 
 **`Afg::advanceStage(mod)`**<br>
-Kernlogik für den nächsten Stage-Schritt (Forward/Reverse/Pendulum, Skip-Behandlung), siehe [4.2](#sec4-2).
+Kernlogik für den nächsten Stage-Schritt (Forward/Reverse/Pendulum, Skip-Behandlung), siehe [4.2](#sec4-2). **Erweitert**: triggert wie `jumpToStage()` zusätzlich `eosGen`, siehe [4.7](#sec4-7).
 
 **`Afg::resetPulseEdgeState()`**<br>
 Setzt die Flanken-Vorwerte für P1/P2/First/Last zurück (bei jedem Stage-(Wieder-)Eintritt). **Erweitert**: setzt zusätzlich `ratchetIndex` und `ratchetWasActive` zurück, siehe [4.13](#sec4-13).
 
 **`Afg::process(...)`**<br>
-Hauptverarbeitung einer Section pro Sample: Start/Stop, Run-Gate, Advance, Sustain/Enable/Stop-Logik, automatischer Zeitablauf, Voltage-/Zeit-Ausgabe, alle Puls-Ausgänge inkl. Ratcheting (siehe [4.13](#sec4-13)). Nimmt die bereits aufgelösten Stage-Arrays (Spannung, Zeit, Modifier, Curve-Power, **Ratchet-Count, Warp-Blend, Ratchet-Offset**) sowie Key/Scale und Start/Stop/Run-Gate/Advance-Eingaben entgegen.
+Hauptverarbeitung einer Section pro Sample: Start/Stop, Run-Gate, Advance, Sustain/Enable/Stop-Logik, automatischer Zeitablauf, Voltage-/Zeit-Ausgabe, alle Puls-Ausgänge inkl. Ratcheting (siehe [4.13](#sec4-13)). Nimmt die bereits aufgelösten Stage-Arrays (Spannung, Zeit, Modifier, Curve-Power, **Ratchet-Count, Warp-Blend, Ratchet-Offset**) sowie Key/Scale und Start/Stop/Run-Gate/Advance-Eingaben entgegen. Signatur um einen `float* outEos`-Ausgabeparameter erweitert (EOS-Pulsspannung, siehe [4.7](#sec4-7)).
 
 ### `Marf248.cpp`
 
@@ -1306,17 +1338,20 @@ Baut das komplette 146HP-Panel auf: Rahmen, Spalten-Geometrie (inkl. VOUT/Refere
 ## 6. Amilcare – Trigger-Expander
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
-36HP-Expander (Entwicklungsverlauf: 12HP → 18HP für die Stage-Modifier-
+42HP-Expander (Entwicklungsverlauf: 12HP → 18HP für die Stage-Modifier-
 Poly-CVs → 24HP für Advance → 30HP für die Panel-Beschriftungs-Session,
 die eine 5. Spalte sowie größere, besser lesbare Schrift brauchte → 36HP
 für die Ratcheting-Session, die eine 6. Spalte für die drei neuen
-Ratchet-Eingänge brauchte, siehe Panel-Layout unten). Reiner
+Ratchet-Eingänge brauchte → 42HP für die Session "End of Stage Output",
+die eine 7. Spalte für die beiden neuen EOS-Ausgänge brauchte, da das
+36HP-Panel zu diesem Zeitpunkt bereits vollständig belegt war (7 Reihen ×
+6 Spalten), siehe Panel-Layout unten). Reiner
 Jack-Träger ohne eigene DSP-Logik –
 die gesamte Verarbeitung findet in `Marf248::process()` statt, sobald das
 Modul als linker oder rechter Nachbar erkannt wird (`LINK_LIGHT` zeigt den
 Andock-Status).
 
-*[Siehe [Abbildung 3](#fig3) für das vollständige Panel mit allen beschrifteten Buchsen · [[#Abbildung 3 – Amilcare Panel (36HP)|Obsidian]]]*
+*[Siehe [Abbildung 3](#fig3) für das vollständige Panel mit allen beschrifteten Buchsen · [[#Abbildung 3 – Amilcare Panel (42HP)|Obsidian]]]*
 
 ### Eingänge
 
@@ -1374,6 +1409,18 @@ Ratchet-Sub-Trigger-Count, siehe [4.13](#sec4-13). Acht Zonen à 1,25V im 0–10
 **`STAGE_RATCHET_OFFSET_POLY_INPUT`** *(**Neu**, Poly-CV (16 Kanäle = Stage 1–16))*<br>
 Ratchet-Phasen-Offset, siehe [4.13](#sec4-13). Direkte lineare 0–10V → 0–100%-Zuordnung (kein Zonen-Raster wie Count), verschiebt die Sub-Trigger-Phase additiv Richtung Stage-Ende (gedeckelt, kein Wraparound). Nicht gepatcht = 0% (keine Verschiebung). Sitzt in Reihe 5, Spalte F.
 
+**`STAGE_ADDR_POLY_INPUT`** *(Poly-CV (Kanal 1 = Section A, Kanal 2 = Section B))*<br>
+Volles Override der Stage-Adresse: umgeht bei gepatchtem Kabel sowohl den Panel-Knob als auch die Int/Ext-Logik komplett, unabhängig vom aktuellen `STAGE_ADDR_MODE_A/B`-Zustand. 0–10V = Stage 1–16, linear. Wird selbst von Continuous/Freeze mitverwendet (siehe [4.3](#sec4-3)). Sitzt in Reihe 1, Spalte F.
+
+**`STAGE_ADDR_INTEXT_POLY_INPUT`** *(Poly-Gate (Kanal 1 = Section A, Kanal 2 = Section B))*<br>
+Pegel-Override (Schwelle `ADDR_GATE_THRESHOLD = 2V`) für den Int/Ext-Panel-Taster (`STAGE_ADDR_MODE_A/B_PARAM`). Unabhängig von `STAGE_ADDR_CONTINUOUS_POLY_INPUT` (Continuous wirkt mit Int **und** Ext gleichermaßen, kein gegenseitiger Ausschluss). Sitzt in Reihe 2, Spalte F.
+
+**`STAGE_ADDR_CONTINUOUS_POLY_INPUT`** *(Poly-Gate (Kanal 1 = Section A, Kanal 2 = Section B))*<br>
+Identisches Pegel-Override-Prinzip wie oben, überschreibt `STAGE_ADDR_CONT_A/B_PARAM`. Siehe [4.3](#sec4-3) für das Continuous-Verhalten selbst. Sitzt in Reihe 3, Spalte F.
+
+**`STAGE_ADDR_FREEZE_POLY_INPUT`** *(**Neu**, Poly-Gate (Kanal 1 = Section A, Kanal 2 = Section B))*<br>
+Hält `currentStage` fest, solange das Gate high ist (Schwelle 2V, identischer Pegelvergleich wie `STAGE_ADDR_CONTINUOUS_POLY_INPUT`), siehe [4.3](#sec4-3) für das vollständige Verhalten inkl. des Sprungs beim Loslassen. Nur wirksam, während Continuous für die jeweilige Section aktiv ist. Kein eigener Panel-Taster (reines Expander-Feature, analog zu `STAGE_RATCHET_POLY_INPUT`), kein gespeicherter Zustand nötig. Sitzt in Reihe 4, Spalte F.
+
 ### Ausgänge
 
 **`START_CYCLE_A/B_OUTPUT`**<br>
@@ -1382,7 +1429,10 @@ Feuert (1ms-Trigger), wenn Section A/B eine `MOD_FIRST`-markierte Stage erreicht
 **`END_CYCLE_A/B_OUTPUT`**<br>
 Analog für `MOD_LAST`.
 
-### Panel-Layout (36HP, 6 Spalten à 27mm Abstand, 14mm-Zeilenraster)
+**`EOS_A_OUTPUT` / `EOS_B_OUTPUT`** *(**Neu**, "End of Stage")*<br>
+Feuert (1ms-Trigger) bei **jedem** Stage-Eintritt der jeweiligen Section – ausgelöst an denselben Stellen wie APOUT (`advanceStage()` **und** `jumpToStage()`), siehe [4.7](#sec4-7) für das vollständige Verhalten (inkl. Gleichzeitigkeit mit APOUT und Unabhängigkeit von `MOD_MUTE`). Sitzt in Reihe 3 (A) bzw. Reihe 4 (B), Spalte G – direkt neben Start-/End-of-Cycle bzw. dem Stage-Address-Continuous/Freeze-Gate.
+
+### Panel-Layout (42HP, 7 Spalten à 27mm Abstand, 14mm-Zeilenraster)
 
 Seit der Panel-Beschriftungs-Session (reine Code/NanoVG-Labels statt
 SVG-Artwork, siehe [1.](#sec1)) hat das Panel eine 5. Spalte und ein
@@ -1392,27 +1442,34 @@ Kinovice zum Anlass nahm, gleichzeitig einige Buchsen sinnvoller
 zusammenzugruppieren. Die Ratcheting-Session hat eine 6. Spalte (`colF`)
 ergänzt, da die 5-Spalten-Version zu diesem Zeitpunkt bereits vollständig
 belegt war und für die drei neuen Ratchet-Eingänge kein Platz mehr übrig
-ließ. 7 Reihen (`colA`=16mm … `colF`=151mm, `y`=20mm bis
-104mm in 14mm-Schritten):
+ließ. Die Session "End of Stage Output" hat eine 7. Spalte (`colG`)
+ergänzt, aus demselben Grund: das 36HP-Panel (7 Reihen × 6 Spalten) war zu
+diesem Zeitpunkt bereits vollständig belegt. 7 Reihen (`colA`=16mm …
+`colG`=178mm, `y`=20mm bis 104mm in 14mm-Schritten):
 
-- **Reihe 1** (y=20): Clear (A) / Reset Values (B) / Preset Load, Poly (C) / Run Gate A (D) / Run Gate B (E) – Run Gate sitzt seit dieser Session hier statt in einer eigenen Reihe, da es thematisch zu den übrigen globalen Housekeeping-Controls passt.
-- **Reihe 2** (y=34): Scale Major (A) / Scale Minor (B) / Scale Chromatic (C) / Key CV (D) / **Stage-Range-Kanalwahl-CV (E)**.
-- **Reihe 3** (y=48): Start of Cycle A (A) / End of Cycle A (B) / Start of Cycle B (C) / End of Cycle B (D) / **Stage-Quantized-Glide-Gate (E)**.
-- **Reihe 4** (y=62): Strobe A/SEXT (A) / Strobe B/SEXT (B) / Address Memory Recall A (C) / Address Memory Recall B (D) / **Voltage-External-Kanalwahl-CV (E)** – Recall A/B sitzt seit der Panel-Beschriftungs-Session hier statt in einer eigenen Reihe (Kinovice-Wunsch: Recall neben Strobe).
-- **Reihe 5** (y=76): Advance A (A) / Advance B (B) / Stage Skip (C) / Stage First (D) / Stage Last (E) / **Ratchet-Phasen-Offset (F, neu)**.
-- **Reihe 6** (y=90): Stage Stop (A) / Stage Sustain (B) / Stage Enable (C) / Stage Pulse1 (D) / Stage Pulse2 (E) / **Ratchet Enable (F, neu)**.
-- **Reihe 7** (y=104): Stage Slope (A) / Stage Mute (B) / Address Memory Store A (C) / Address Memory Store B (D) / Time-External-Kanalwahl-CV (E) / **Ratchet Count (F, neu)**.
+- **Reihe 1** (y=20): Clear (A) / Reset Values (B) / Preset Load, Poly (C) / Run Gate A (D) / Run Gate B (E) / Stage-Address-CV (F) – Run Gate sitzt seit dieser Session hier statt in einer eigenen Reihe, da es thematisch zu den übrigen globalen Housekeeping-Controls passt.
+- **Reihe 2** (y=34): Scale Major (A) / Scale Minor (B) / Scale Chromatic (C) / Key CV (D) / Stage-Range-Kanalwahl-CV (E) / Stage-Address Int/Ext-Gate (F).
+- **Reihe 3** (y=48): Start of Cycle A (A) / End of Cycle A (B) / Start of Cycle B (C) / End of Cycle B (D) / Stage-Quantized-Glide-Gate (E) / Stage-Address-Continuous-Gate (F) / **EOS A (G, neu)**.
+- **Reihe 4** (y=62): Strobe A/SEXT (A) / Strobe B/SEXT (B) / Address Memory Recall A (C) / Address Memory Recall B (D) / Voltage-External-Kanalwahl-CV (E) / Stage-Address-Freeze-Gate (F) / **EOS B (G, neu)** – Recall A/B sitzt seit der Panel-Beschriftungs-Session hier statt in einer eigenen Reihe (Kinovice-Wunsch: Recall neben Strobe).
+- **Reihe 5** (y=76): Advance A (A) / Advance B (B) / Stage Skip (C) / Stage First (D) / Stage Last (E) / Ratchet-Phasen-Offset (F).
+- **Reihe 6** (y=90): Stage Stop (A) / Stage Sustain (B) / Stage Enable (C) / Stage Pulse1 (D) / Stage Pulse2 (E) / Ratchet Enable (F).
+- **Reihe 7** (y=104): Stage Slope (A) / Stage Mute (B) / Address Memory Store A (C) / Address Memory Store B (D) / Time-External-Kanalwahl-CV (E) / Ratchet Count (F).
 
 Beide Kanalwahl-CV-Eingänge (`STAGE_VOLTEXT_CH_POLY_INPUT` in Reihe
 4, `STAGE_TIMEEXT_CH_POLY_INPUT` in Reihe 7) belegen seit der Panel-
 Beschriftungs-Session die einzigen beiden bis dahin leeren Spalte-E-Plätze
-im 30HP-Panel. Die drei neuen Ratchet-Eingänge belegen die neu geschaffene
-Spalte F in den Reihen 5–7 (Reihen 1–4 lassen Spalte F bewusst leer statt
-krampfhaft aufzufüllen). Farbcodierung nach Funktion: System (Grau) /
-Musical (Violett) / Section A (Blau) / Section B (Orange) / Stage-Modifier
-(Türkis), durchgängig über alle Reihen. Noch offen: visuelle
-Kollisionsprüfung der Labels direkt in Rack (die Positionierung wurde
-numerisch geprüft, aber nicht am Bildschirm bestätigt).
+im 30HP-Panel. Die drei Ratchet-Eingänge belegen die in der Ratcheting-
+Session neu geschaffene Spalte F in den Reihen 5–7. Die vier
+Stage-Address-Poly-Overrides (CV/Int-Ext/Continuous aus einer früheren,
+in dieser Dokumentation zuvor nicht erfassten Session, plus das Freeze-
+Gate) füllen Spalte F in den Reihen 1–4 – damit ist Spalte F in allen 7
+Reihen belegt. Die neue Spalte G ist bislang nur in Reihe 3/4 belegt (EOS
+A/B) – Reihen 1/2/5–7 lassen Spalte G aktuell noch frei. Farbcodierung
+nach Funktion: System (Grau) / Musical (Violett) / Section A (Blau) /
+Section B (Orange) / Stage-Modifier (Türkis), durchgängig über alle
+Reihen. Noch offen: visuelle Kollisionsprüfung der Labels direkt in Rack
+(die Positionierung wurde numerisch geprüft, aber nicht am Bildschirm
+bestätigt).
 
 ### Wichtiger Implementierungshinweis: kontinuierliche statt einmalige Flankenerkennung
 
@@ -1662,6 +1719,18 @@ Stage direkt, ein Timer-Konzept ist dort nicht anwendbar), nicht defekt.
 Der Zustand `addrContOnA/B` wird zudem per JSON persistiert: ein Preset,
 das mit aktivem Continuous gespeichert wurde, reaktiviert Continuous beim
 Laden automatisch.
+
+### 10.8b Freeze springt beim Loslassen über mehrere Stages statt sanft nachzuziehen
+
+`STAGE_ADDR_FREEZE_POLY_INPUT` unterdrückt während des Gates nur den
+`jumpToStage()`-Aufruf – die Adress-CV wird trotzdem jeden Frame normal
+ausgewertet. Fällt das Gate wieder auf low, springt `currentStage` daher
+direkt zu der Adresse, die die CV inzwischen erreicht hat, auch über
+mehrere Stages hinweg. Das ist beabsichtigt und kein Bug: Continuous kennt
+grundsätzlich kein schrittweises Nachlaufen, Freeze verzögert nur den
+ohnehin unvermeidlichen nächsten Sprung (siehe [4.3](#sec4-3)). Ein
+sanftes Wiedereinfangen (Glide statt Sprung) wäre ein separates, noch
+nicht umgesetztes Feature.
 
 ### 10.9 Mehrere First/Last-Segmente: Reset springt immer zum ersten Segment
 
@@ -2132,8 +2201,8 @@ Range-Block.
 
 <a id="fig3"></a>
 
-#### Abbildung 3 – Amilcare Panel (36HP)
-*[[#Abbildung 3 – Amilcare Panel (36HP)|Obsidian]]*
+#### Abbildung 3 – Amilcare Panel (42HP)
+*[[#Abbildung 3 – Amilcare Panel (42HP)|Obsidian]]*
 
 ![Amilcare Panel](figures/Marf248TriggerExpander_Panel.svg)<br>
 Referenziert aus [6.](#sec6) · [[#6. Amilcare – Trigger-Expander|Obsidian]]. Alle 6 Spalten × 7 Reihen plus das LINK-

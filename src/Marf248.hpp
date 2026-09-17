@@ -691,6 +691,20 @@ struct Afg {
 	// Jack auf dem Hauptpanel.
 	dsp::PulseGenerator startCycleGen;
 	dsp::PulseGenerator endCycleGen;
+	// End of Stage (EOS, Session "End of Stage Output"): feuert bei JEDEM
+	// Stage-Verlassen - automatischer Zeitablauf, Skip, Advance-Trigger,
+	// Continuous-Adresswechsel UND manuelle Sprünge (Strobe, Reset, Addr-
+	// Memory-Recall) - identisches Prinzip wie allPulseGen (jeder Aufruf
+	// von advanceStage()/jumpToStage(), unabhängig von der Ursache), aber
+	// bewusst OHNE MOD_MUTE-Gate, analog zu startCycleGen/endCycleGen:
+	// struktureller Marker, kein programmierter "Output Pulse" wie P1/P2/
+	// APOUT (Kinovice-Entscheidung). Bei Ratcheting feuert EOS trotzdem nur
+	// einmal pro voller Stage, da der Ratchet-Block selbst nie
+	// advanceStage() aufruft (nur P1/P2-Sub-Trigger, siehe dortiger
+	// Kommentar) - keine Sonderbehandlung noetig. Nur relevant fuer den
+	// optionalen Trigger-Expander (EOS_A/B_OUTPUT), kein eigener Jack auf
+	// dem Hauptpanel.
+	dsp::PulseGenerator eosGen;
 
 	// Retrigger-Luecke fuer den CV-Expander (Marf248CvExpander, Gate A/B):
 	// feuert bei JEDEM Stage-Eintritt (auch ohne Indexwechsel, siehe
@@ -784,6 +798,10 @@ struct Afg {
 		if (!(stageModifier[currentStage] & MOD_MUTE)) {
 			allPulseGen.trigger(1e-3f);
 		}
+		// EOS (siehe Member-Deklaration oben): feuert bei JEDEM Sprung ueber
+		// jumpToStage() - Reset, Strobe, Continuous-Adresswechsel, Addr-
+		// Memory-Recall - bewusst ohne MOD_MUTE-Gate (Kinovice-Entscheidung).
+		eosGen.trigger(1e-3f);
 		// Strobe erneut auf dieselbe Adresse) - bei einem echten Sprung auf
 		// eine andere Stage ist die Gate-Adressierung ohnehin schon high auf
 		// dem neuen Index, keine Luecke noetig (siehe Spec-Praezisierung).
@@ -806,8 +824,21 @@ struct Afg {
 	//          internal clock").
 	//   Strobe: einmaliger Sprung auf die aktuelle Adresse, danach laeuft
 	//          der normale Zeitablauf/Slew wieder wie gewohnt weiter.
+	// frozen (Session "Continuous Freeze", siehe STAGE_ADDR_FREEZE_POLY_INPUT
+	// in Marf248TriggerExpander.hpp): nur im continuous-Zweig relevant. Haelt
+	// currentStage fest, indem der jumpToStage()-Aufruf bei geaendertem addr
+	// unterdrueckt wird - die eingehende Adress-CV (Phasor o.ae.) wird also
+	// weiterhin ausgewertet (addr aendert sich normal), aber ignoriert,
+	// solange frozen true ist. elapsed laeuft in process() unabhaengig davon
+	// weiter (siehe dortiger continuousActive-Block) - eine zum Zeitpunkt des
+	// Einfrierens bereits laufende Slope-Rampe zur zuletzt adressierten Stage
+	// laeuft also sauber zu Ende, statt hart auf dem aktuellen Wert
+	// abzubrechen (Kinovice-Entscheidung, analog zur bestehenden
+	// Continuous+Slope-Begruendung weiter unten). Ausserhalb von continuous
+	// bleibt frozen wirkungslos (Start/Stop/Sustain/Enable decken das dort
+	// bereits ab).
 	void applyStageAddress(bool continuous, int addr, bool strobePressed, bool resetPressed,
-	                        const int stageModifier[NUM_STAGES]) {
+	                        const int stageModifier[NUM_STAGES], bool frozen) {
 		// Fuer den Auto-Advance-Guard und die Glide-Berechnung in process()
 		// IMMER aktuell halten, unabhaengig davon, welcher Zweig unten
 		// tatsaechlich greift (auch wenn z.B. resetPressed vorrangig behandelt
@@ -820,7 +851,7 @@ struct Afg {
 			return;
 		}
 		if (continuous) {
-			if (addr != currentStage) {
+			if (!frozen && addr != currentStage) {
 				// jumpToStage() setzt voltageFrom = voltageOut und elapsed = 0 -
 				// exakt der Ausgangspunkt fuer eine normale Rampe. Frueher wurde
 				// elapsed hier stattdessen sofort auf "fertig" gezwungen
@@ -832,6 +863,8 @@ struct Afg {
 				// bewusst fuer Glide-Verhalten kombiniert. Der eigentliche
 				// Rampen-Fortschritt (elapsed += sampleTime) passiert jetzt
 				// kontinuierlich in process(), siehe dortigen Kommentar.
+				// Bei frozen==true wird dieser Aufruf bewusst uebersprungen -
+				// siehe Freeze-Kommentar oben.
 				jumpToStage(addr, stageModifier);
 			}
 			// Start/Stop-Konzept ist im Continuous-Modus nicht anwendbar (siehe
@@ -1058,6 +1091,12 @@ struct Afg {
 		if (!(stageModifier[currentStage] & MOD_MUTE)) {
 			allPulseGen.trigger(1e-3f);
 		}
+		// EOS (siehe Member-Deklaration oben): feuert bei JEDEM Sprung ueber
+		// advanceStage() - Timer-Ablauf, Skip, Advance-Trigger - bewusst
+		// ohne MOD_MUTE-Gate (Kinovice-Entscheidung). Bei Ratcheting nur
+		// einmal pro voller Stage, da der Ratchet-Block advanceStage() nie
+		// selbst aufruft.
+		eosGen.trigger(1e-3f);
 		// Wendepunkt-Wiederholung, next==currentStage von oben) - bei einem
 		// normalen Schritt auf eine andere Stage braucht es keine Luecke,
 		// die Gate-Adressierung wechselt dort ohnehin den Kanal (siehe
@@ -1093,7 +1132,8 @@ struct Afg {
 	             bool advanceConnected, float advanceVoltage,
 	             float* outVoltage, float* outTime, float* outAllPulse,
 	             float* outP1, float* outP2,
-	             float* outStartCycle, float* outEndCycle, float* outRegateGap) {
+	             float* outStartCycle, float* outEndCycle, float* outRegateGap,
+	             float* outEos) {
 		// Button togglet Start/Stop (daher der Name "Start/Stop"-Button).
 		// CV-Inputs bleiben reine Start- bzw. Stop-Pulse, wie im Original.
 		if (runButtonTrigger.process(runButtonValue)) {
@@ -1481,5 +1521,6 @@ struct Afg {
 		*outStartCycle = startCycleGen.process(sampleTime) ? 10.f : 0.f;
 		*outEndCycle = endCycleGen.process(sampleTime) ? 10.f : 0.f;
 		*outRegateGap = regateGen.process(sampleTime) ? 1.f : 0.f;
+		*outEos = eosGen.process(sampleTime) ? 10.f : 0.f;
 	}
 };
