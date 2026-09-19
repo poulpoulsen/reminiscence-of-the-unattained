@@ -2,10 +2,12 @@
 
 VCV Rack C++ port of the Buchla/Tiptop 248t MARF (Multiple Arbitrary
 Function Generator). This documentation describes the main module
-**Sofonisba** and the two expander modules **Amilcare** (Trigger Expander, 30HP)
-and **Bianca** (CV Expander, 12HP): every control, every input/output, the
-internal signal processing, the most important C++ functions, and the
-known pitfalls in how the features interact.
+**Sofonisba**, its compact variant **Lucia** (single-stage slot, same
+engine, see [13](#sec13)), and the two expander modules **Amilcare**
+(Trigger Expander, 30HP) and **Bianca** (CV Expander, 12HP): every
+control, every input/output, the internal signal processing, the most
+important C++ functions, and the known pitfalls in how the features
+interact.
 
 References: Tiptop Audio 248t manual, the "MARF Book" (Buchla 248-1602
 documentation, maxl0rd), Suzanne Ciani Cookbook, V2.66 firmware changelog.
@@ -58,7 +60,14 @@ undo/redo).
 10. [Known Pitfalls in Feature Interaction](#sec10) · [[#10. Known Pitfalls in Feature Interaction|Obsidian]]
 11. [Design Decisions & Scope Boundaries](#sec11) · [[#11. Design Decisions & Scope Boundaries|Obsidian]]
 12. [Cross-Compile Workflow](#sec12) · [[#12. Cross-Compile Workflow|Obsidian]]
-13. [List of Figures](#figures) · [[#List of Figures|Obsidian]]
+13. [Lucia – Compact Version (Single-Stage Slot)](#sec13) · [[#13. Lucia – Compact Version (Single-Stage Slot)|Obsidian]]
+    - [Concept and Motivation](#sec13-1) · [[#13.1 Concept and Motivation|Obsidian]]
+    - [Architecture: same engine, second model](#sec13-2) · [[#13.2 Architecture: same engine, second model|Obsidian]]
+    - [Panel Layout](#sec13-3) · [[#13.3 Panel Layout|Obsidian]]
+    - [Operating Concept: Select + Activate](#sec13-4) · [[#13.4 Operating Concept: Select + Activate|Obsidian]]
+    - [Persistence](#sec13-5) · [[#13.5 Persistence|Obsidian]]
+    - [Known Limitations](#sec13-6) · [[#13.6 Known Limitations|Obsidian]]
+14. [List of Figures](#figures) · [[#List of Figures|Obsidian]]
 
 ---
 
@@ -1548,21 +1557,37 @@ yet visually confirmed on screen.
 ## 8. Expander Mechanism (Inter-Module Communication)
 *[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
 
-Both expanders detect `Marf248` to their left **or** right
-(`getLeftExpander()`/`getRightExpander()`, compared via `getModel() ==
-modelMarf248`) and show this via a green `LINK_LIGHT`. As long as no
-Sofonisba is docked, the expanders reset their own outputs to 0V every
+Both expanders detect a main module to their left **or** right
+(`getLeftExpander()`/`getRightExpander()`) and show this via a green
+`LINK_LIGHT`. Detection runs via `dynamic_cast<Marf248Host*>` (session
+"Expander detection with dynamic_cast", see [13.2](#sec13-2)), **no
+longer** via a model comparison (`getModel() == modelMarf248`) as an
+earlier version of this documentation described – the model comparison
+would not have recognized the compact variant Lucia (own registered
+model `Marf248Compact`, but the same underlying `Module` type) as a
+valid host. `Marf248Host` is a slim marker interface in `Marf248.hpp`
+(virtual destructor only, for RTTI) that `Marf248` additionally
+implements (`struct Marf248 : Module, Marf248Host`) – necessary because
+`struct Marf248` itself is defined entirely in `Marf248.cpp` and would
+otherwise be an incomplete type for `dynamic_cast`. As long as no main
+module is docked, the expanders reset their own outputs to 0V every
 frame (preventing hanging voltages when removed or moved away).
 
 Conversely, `Marf248::process()` looks every frame for a
-`Marf248TriggerExpander` or `Marf248CvExpander` as a direct neighbor and
-reads/writes that module's parameters/inputs/outputs directly via
+`Marf248TriggerExpander` or `Marf248CvExpander` as a direct neighbor
+(likewise via `dynamic_cast<Marf248TriggerExpander*>`/
+`dynamic_cast<Marf248CvExpander*>`, same session) and reads/writes that
+module's parameters/inputs/outputs directly via
 `getParam()`/`getInput()`/`getOutput()` – with no message-passing, since
-the expanders themselves have no processing of their own. Both expander
-types can be docked independently of each other (none, one, or both at
-once); if an expander is missing, the associated modulation simply falls
-away (e.g. Curve CV/Time CV = 0, no poly-gate overrides, no Advance, no
-Address Memory).
+the expanders themselves have no processing of their own. This direction
+(main module detects expander) was uncritical for Lucia coexistence,
+since Amilcare/Bianca themselves don't change – only the reverse
+direction (expander detects main module) was the actual blocker, see
+above. Both expander types can be docked independently of each other
+(none, one, or both at once); if an expander is missing, the associated
+modulation simply falls away (e.g. Curve CV/Time CV = 0, no poly-gate
+overrides, no Advance, no Address Memory). Both Sofonisba and Lucia are
+recognized equally as a host by Amilcare/Bianca.
 
 External CV inputs are generally handled such that, with unused channels
 left unpatched, the behavior without an expander is preserved exactly
@@ -2063,6 +2088,54 @@ trigger contexts with different Rack default behavior.
   reversible. Two separate undo mechanisms were needed, since bit
   modifiers (`stageModifier[]`) and continuous controls (engine params)
   are stored differently, see [4.14](#sec4-14).
+- **Lucia name**: named after Lucia Anguissola, regarded as the most
+  talented painter among the four painting sisters of Sofonisba
+  Anguissola (Kinovice decision, session "Kompaktversion Marf248 – Panel
+  & Model-Registrierung").
+- **One shared stage slot instead of one per section** – the original
+  concept-document assumption "one slot per section" assumed Voltage/
+  Time/Range/Curve were separate params per section. Code inspection
+  disproved that: `STAGE_VOLTAGE_PARAM` etc. are each a single array over
+  `NUM_STAGES`, shared module-wide between Section A and B (see
+  [3.4](#sec3-4)). A second slot for Section B would in reality write the
+  same params as the slot for Section A – no second editing context, just
+  two controls for the same value. Corrected to exactly one
+  `pendingStage`/`displayedStage` pair for both sections, see
+  [13.4](#sec13-4).
+- **`pendingStage`/`displayedStage` are deliberately not a param** –
+  Pickup/Catch, the VCV history system, and preset recall should not
+  affect or retroactively change pure GUI navigation. Persisted instead
+  via `dataToJson()`/`dataFromJson()`, analogous to `currentKey`/
+  `currentScale`. Both fields live on `struct Marf248` itself (not the
+  widget), so they're also present on the 146HP full version, simply
+  unused there.
+- **The select knob and activate button are standalone widgets with no
+  param binding** (`StageSelectKnob`/`StageActivateButton`, own mouse
+  handling instead of a `ParamQuantity`) – a direct consequence of the
+  previous decision: since GUI navigation isn't a param, its controls
+  can't run through the Rack param engine either.
+- **Activate-button color shows the activation state, not the mouse
+  click** (Kinovice feedback after first test) – red while `pendingStage`
+  differs from `displayedStage`, green once both match, the same
+  condition as the center-digit coloring in the select knob. Stays green
+  on repeated clicks as long as the stage doesn't change, by design.
+- **Lucia uses the same `struct Marf248` engine as Sofonisba, a second
+  registered model** (`modelMarf248Compact`/slug `Marf248Compact`, lives
+  in `Marf248.cpp` instead of its own `.cpp` file to reuse the widget
+  helpers defined locally there, such as `StageSlider`/`RangeKnob`/
+  `TrangeButton`) – no duplicated DSP code, both panel variants stay in
+  sync through one shared code path. This required the `Marf248Host`
+  switch of the expander detection first, see [8](#sec8) and
+  [13.2](#sec13-2).
+- **Lucia's panel layout is a 1:1 carry-over from `Marf248Widget` rather
+  than a fresh design** (Section A/B controls/jacks/outputs, Ext column,
+  presets column, Global Clear/Reset/AutoFill) – deliberate choice
+  against introducing new, untested coordinates for already-proven
+  elements. Only change: the 16-fold `xStep` repetition of the stage
+  column is replaced by a single, visibility-driven slot (see
+  [13.3](#sec13-3)). Jacks and outputs column widths were widened
+  relative to the full version (20→24mm and 12→16mm respectively,
+  Kinovice feedback "BPM column too narrow" / fitting the select knob).
 
 ---
 
@@ -2127,6 +2200,157 @@ unzip plugin-build/Marf248-<version>-lin-x64.vcvplugin -d <Rack plugin folder>
 there first, then restart Rack.
 
 ---
+
+<a id="sec13"></a>
+
+## 13. Lucia – Compact Version (Single-Stage Slot)
+*[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
+
+Lucia is a second panel variant of Sofonisba, independently selectable in
+the VCV Rack browser – named after Lucia Anguissola, regarded as the most
+talented painter among the four painting sisters of the painter Sofonisba
+Anguissola (see [11](#sec11)). Instead of showing 16 stage columns per
+section in parallel, Lucia displays exactly **one** stage at a time –
+selection via a knob, commit via a separate activate button. Lucia exists
+**in addition to** Sofonisba, not as a replacement; both variants can be
+used simultaneously in the same patch.
+
+<a id="sec13-1"></a>
+
+### 13.1 Concept and Motivation
+
+The Sofonisba panel shows all 16 stages of each section side by side
+(146HP) – that costs substantial panel space. Lucia reduces the display
+to one active stage slot; the remaining 15 stages keep running unchanged
+in the background. The display is purely an editing/observation view, no
+intervention into the sequence – the sequencing itself (`Afg::process()`,
+see [4.1](#sec4-1)) is entirely unaffected by Lucia's panel.
+
+<a id="sec13-2"></a>
+
+### 13.2 Architecture: same engine, second model
+
+Lucia uses the **same** `struct Marf248` class (identical DSP logic,
+params, `process()`) as Sofonisba – only `ModuleWidget` and panel differ.
+`plugin.cpp` registers a second `Model` for this:
+
+```cpp
+Model* modelMarf248Compact = createModel<Marf248, Marf248CompactWidget>("Marf248Compact");
+```
+
+`Marf248CompactWidget` deliberately lives inside `Marf248.cpp` itself
+rather than its own `.cpp` file, to reuse the widget helpers defined
+locally there (`StageSlider`, `RangeKnob`, `TrangeButton`,
+`StageCurveTrimpot`, `StageModBroadcastButton`, `HDivider`,
+`TempoBpmDisplay`, `StageFrame`, `PanelBackground`) without duplicating or
+exporting them.
+
+**Prerequisite: expander detection switched to `dynamic_cast`.**
+Amilcare/Bianca originally detected the main module via `getModel() ==
+modelMarf248` – that would not have accepted Lucia (own model
+`modelMarf248Compact`) as a valid host, even though both instantiate the
+same underlying class. Switched to `dynamic_cast<Marf248Host*>` (session
+"Expander detection with dynamic_cast"): `Marf248Host` is a slim marker
+interface in `Marf248.hpp` (virtual destructor only, for RTTI) that
+`Marf248` additionally implements (`struct Marf248 : Module,
+Marf248Host`) – necessary since `struct Marf248` itself is defined
+entirely in `Marf248.cpp` and would otherwise be an incomplete type for
+`dynamic_cast`. Details in [8](#sec8).
+
+<a id="sec13-3"></a>
+
+### 13.3 Panel Layout
+
+Left to right (identical order and geometry to Sofonisba, carried over
+1:1 from `Marf248Widget` – see [3.1](#sec3-1) for the detailed values):
+
+1. **Ext column** (EXT A–D, module-wide shared external CV sources)
+2. **Section A**: controls (Time Multiplier, Run, Mode, Pendulum, Stage
+   Address), jacks (Start/Stop, Time-Mult CV, live BPM display,
+   Beats-Factor CV, Pulse 1/2 Out, All-Pulses Out, Address CV), outputs
+   (VOUT/TOUT/TIME)
+3. **The one stage slot** (Voltage/Time sliders, all modifier buttons,
+   Shape/Curve/TRange/Range – the same widget set as a single stage
+   column on Sofonisba)
+4. **Section B**: mirrors Section A
+5. **Presets column**: Load/Save, Scale/Key, 12 preset slots
+
+**Deviations from the 1:1 carry-over** (Kinovice feedback after first
+test):
+- Jacks column width 20→24mm (the 22mm-wide live BPM display extended
+  past the 20mm frame)
+- Outputs column width (VOUT/TOUT/TIME) 12→16mm, Section A's frame
+  extended to the module bottom – room for the select knob + activate
+  button (see [13.4](#sec13-4)), directly below TIME
+- Global Clear/Reset/AutoFill are centered over the one stage slot (8mm
+  instead of 12mm pitch, so all three fit within the 32mm frame width)
+
+Panel width is computed from the actual space needed by all columns
+rather than a fixed value.
+
+<a id="sec13-4"></a>
+
+### 13.4 Operating Concept: Select + Activate
+
+Two-step principle, to avoid flicker while browsing:
+
+1. **Select** (`StageSelectKnob`, in Section A's VOUT/TOUT/TIME column):
+   dragging changes only `module->pendingStage` (0–15), no visibility
+   change yet. The center digit shows the selected index (1–16) – green
+   once `pendingStage == displayedStage`, amber otherwise.
+2. **Activate** (`StageActivateButton`, directly below): transfers
+   `pendingStage → module->displayedStage` → a deliberate, discrete
+   switch moment instead of continuous switching while turning the knob.
+   Button color shows the same activation state as the knob digit: red
+   while `pendingStage` differs from `displayedStage`, green once both
+   match – stays green on repeated clicks as long as the stage doesn't
+   change.
+
+**Exactly one shared pair for both sections**, not one per section:
+`STAGE_VOLTAGE_PARAM`, `STAGE_TIME_PARAM`, `STAGE_RANGE_PARAM`,
+`STAGE_CURVE_PARAM`, and all modifier bits are each a single array over
+`NUM_STAGES`, shared module-wide between Section A and B (see
+[3.4](#sec3-4)) – a second, independent slot for Section B would in
+reality write the same params as the slot for Section A. The two
+stage-active LEDs (A green/B red, visible on the stage slot and again
+further up) independently show whether the respective section is
+*currently* playing the displayed stage (`afgA.currentStage`/
+`afgB.currentStage`) – unaffected by select/activate.
+
+Technically: all 16 stage widget sets (params + lights) are created once
+at the same panel position when the panel is built, and collected into
+`stageWidgets[i]`; `Marf248CompactWidget::step()` sets
+`widget->visible = (i == module->displayedStage)` per frame for each set
+– a trivial, cheap operation with no RTKit relevance, since it's a pure
+GUI layer outside `process()`.
+
+<a id="sec13-5"></a>
+
+### 13.5 Persistence
+
+`pendingStage`/`displayedStage` (int, 0–15) are members on `struct
+Marf248` itself, not widget state – deliberately **not a param**:
+Pickup/Catch, the VCV history system, and preset recall should not
+affect or retroactively change pure GUI navigation (see [11](#sec11)).
+Persisted via `dataToJson()`/`dataFromJson()`, analogous to
+`currentKey`/`currentScale` (see [9](#sec9)), with a clamp to
+`0..NUM_STAGES-1` against invalid values from older or manually edited
+patch files. Since both fields live on `struct Marf248`, they're also
+present on the 146HP full version – simply unused there, no behavioral
+change for existing Sofonisba patches.
+
+<a id="sec13-6"></a>
+
+### 13.6 Known Limitations
+
+- **No follow mode**: the displayed slot changes only through the manual
+  select/activate pair, regardless of which stage the sequencer is
+  actually playing. An optional follow switch (display automatically
+  tracks `afgA.currentStage`/`afgB.currentStage`) is noted for a future
+  extension, retrofittable without changing the base architecture.
+- Panel geometry is the 1:1 carry-over from Sofonisba (see
+  [13.3](#sec13-3)) plus the already-tested adjustments listed there –
+  not designed from scratch for 32mm-stage-slot proportions.
 
 <a id="figures"></a>
 

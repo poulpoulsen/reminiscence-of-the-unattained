@@ -132,7 +132,7 @@ struct StageRangeQuantity : ParamQuantity {
 	}
 };
 
-struct Marf248 : Module {
+struct Marf248 : Module, Marf248Host {
 	enum ParamId {
 		ENUMS(STAGE_VOLTAGE_PARAM, NUM_STAGES),
 		ENUMS(STAGE_TIME_PARAM, NUM_STAGES),
@@ -660,6 +660,39 @@ struct Marf248 : Module {
 	Afg afgA;
 	Afg afgB;
 
+	// Single-Stage-Slot-Anzeige fuer die Kompaktversion "Lucia" (Session
+	// "Kompaktversion Marf248 - Panel & Model-Registrierung", Konzept
+	// "GUI-Vereinfachung auf einzelnen Stage"). GENAU EIN Paar fuer beide
+	// Sections gemeinsam (nicht je eines pro Section) - Voltage/Time/
+	// Range/Curve/alle Modifier-Bits sind stage-zentrale Arrays ueber
+	// NUM_STAGES, nicht separat pro Section (siehe STAGE_VOLTAGE_PARAM
+	// etc. oben sowie fruehere Session-Klaerung "Modulstruktur mit zwei
+	// Sektionen und gemeinsamen Stages") - ein zweiter, unabhaengiger
+	// Slot fuer Section B wuerde real auf dieselben Params schreiben wie
+	// der Slot fuer Section A, also keinen zweiten Bearbeitungskontext
+	// ergeben.
+	//
+	// pendingStage: per Auswahl-Knob angewaehlter, noch nicht uebernommener
+	// Index (0-15). displayedStage: per Aktivieren-Button tatsaechlich
+	// uebernommener, sichtbarer Index (0-15) - bestimmt in
+	// Marf248CompactWidget::step(), welches der 16 Stage-Widget-Sets
+	// visible=true ist.
+	//
+	// Bewusst KEIN Param (Kinovice-Entscheidung im Konzeptdokument):
+	// Pickup/Catch, VCV History System und Preset-Recall wuerden sonst
+	// die reine GUI-Navigation beeinflussen bzw. rueckwirkend veraendern
+	// - unerwuenscht, da die Anzeige ausschliesslich durch bewusste
+	// Nutzerinteraktion mit Auswahl-Knob + Aktivieren-Button wechseln
+	// soll. Persistenz stattdessen ueber dataToJson()/dataFromJson()
+	// unten, analog zu currentKey/currentScale.
+	//
+	// Auch auf der 146HP-Vollversion vorhanden (gleicher Module-Typ,
+	// siehe Marf248Host) - dort schlicht ungenutzt, da Marf248Widget
+	// diese Felder nicht referenziert. Kein Verhaltensunterschied fuer
+	// bestehende Patches.
+	int pendingStage = 0;
+	int displayedStage = 0;
+
 	Marf248() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 
@@ -980,14 +1013,9 @@ struct Marf248 : Module {
 		// SEXT-Trigger (externe Strobe-Pulse) bereits kennen muss, bevor
 		// applyStageAddress() aufgerufen wird. Sucht links UND rechts, damit
 		// der Expander auf beiden Seiten andocken kann.
-		Module* leftNeighbor = getLeftExpander().module;
-		Module* rightNeighbor = getRightExpander().module;
-		Module* trigExp = nullptr;
-		if (leftNeighbor && leftNeighbor->getModel() == modelMarf248TriggerExpander) {
-			trigExp = leftNeighbor;
-		}
-		else if (rightNeighbor && rightNeighbor->getModel() == modelMarf248TriggerExpander) {
-			trigExp = rightNeighbor;
+		Marf248TriggerExpander* trigExp = dynamic_cast<Marf248TriggerExpander*>(getLeftExpander().module);
+		if (!trigExp) {
+			trigExp = dynamic_cast<Marf248TriggerExpander*>(getRightExpander().module);
 		}
 
 		// Global Clear: momentary Taster, loescht die Programmierung aller 16
@@ -1519,14 +1547,9 @@ struct Marf248 : Module {
 		// in resolvedTime[i] einfliessen muss, lange bevor der Trigger-
 		// Expander-Block erreicht wird. Derselbe cvExp-Zeiger wird weiter
 		// unten erneut verwendet, um die Gate-A/B-Outputs zu schreiben.
-		Module* cvLeftNeighbor = getLeftExpander().module;
-		Module* cvRightNeighbor = getRightExpander().module;
-		Module* cvExp = nullptr;
-		if (cvLeftNeighbor && cvLeftNeighbor->getModel() == modelMarf248CvExpander) {
-			cvExp = cvLeftNeighbor;
-		}
-		else if (cvRightNeighbor && cvRightNeighbor->getModel() == modelMarf248CvExpander) {
-			cvExp = cvRightNeighbor;
+		Marf248CvExpander* cvExp = dynamic_cast<Marf248CvExpander*>(getLeftExpander().module);
+		if (!cvExp) {
+			cvExp = dynamic_cast<Marf248CvExpander*>(getRightExpander().module);
 		}
 
 		// Attenuverter/Offset/Input-Referenz fuer die additive Stage-Time-CV
@@ -2225,8 +2248,7 @@ struct Marf248 : Module {
 		// afgA/afgB.regateGen in diesem Frame aktiv ist (siehe rgA/rgB oben,
 		// gesetzt bei Stage-Wiedereintritt ohne Indexwechsel).
 		if (cvExp) {
-			Marf248CvExpander* cvExpTyped = dynamic_cast<Marf248CvExpander*>(cvExp);
-			bool gapEnabled = cvExpTyped && cvExpTyped->regateGapEnabled;
+			bool gapEnabled = cvExp->regateGapEnabled;
 			bool gapActiveA = gapEnabled && rgA > 0.5f;
 			bool gapActiveB = gapEnabled && rgB > 0.5f;
 
@@ -2311,6 +2333,11 @@ struct Marf248 : Module {
 		json_object_set_new(rootJ, "beatsFactorAutoB", json_boolean(beatsFactorAutoB));
 		json_object_set_new(rootJ, "currentKey", json_integer(currentKey));
 		json_object_set_new(rootJ, "currentScale", json_integer(currentScale));
+
+		// Single-Stage-Slot-Anzeige (Kompaktversion "Lucia", siehe
+		// Member-Deklaration oben) - reiner GUI-Zustand, kein Param.
+		json_object_set_new(rootJ, "pendingStage", json_integer(pendingStage));
+		json_object_set_new(rootJ, "displayedStage", json_integer(displayedStage));
 
 		// Preset-Slots: nur belegte Slots werden mit vollem Inhalt
 		// gespeichert, leere Slots nur mit used=false (keine Notwendigkeit,
@@ -2422,6 +2449,19 @@ struct Marf248 : Module {
 		json_t* currentScaleJ = json_object_get(rootJ, "currentScale");
 		if (currentScaleJ) {
 			currentScale = json_integer_value(currentScaleJ);
+		}
+
+		// Single-Stage-Slot-Anzeige (Kompaktversion "Lucia", siehe
+		// Member-Deklaration oben). Clamp auf 0..NUM_STAGES-1 gegen
+		// haendisch editierte oder aus einer aelteren/anderen Fassung
+		// stammende Patch-Dateien mit ungueltigem Wert.
+		json_t* pendingStageJ = json_object_get(rootJ, "pendingStage");
+		if (pendingStageJ) {
+			pendingStage = rack::clamp((int) json_integer_value(pendingStageJ), 0, NUM_STAGES - 1);
+		}
+		json_t* displayedStageJ = json_object_get(rootJ, "displayedStage");
+		if (displayedStageJ) {
+			displayedStage = rack::clamp((int) json_integer_value(displayedStageJ), 0, NUM_STAGES - 1);
 		}
 
 		json_t* presetsJ = json_object_get(rootJ, "presets");
@@ -4157,4 +4197,658 @@ struct Marf248Widget : ModuleWidget {
 };
 
 
+// ---------------------------------------------------------------------
+// Kompaktversion "Lucia": Single-Stage-Slot-Panel (Konzept "GUI-
+// Vereinfachung auf einzelnen Stage", Session "Kompaktversion Marf248 -
+// Panel & Model-Registrierung"). Nutzt denselben Module-Typ wie
+// Sofonisba (struct Marf248) - siehe Marf248Host/dynamic_cast-Vorarbeit,
+// nur das Panel/ModuleWidget unterscheidet sich: statt 16 parallelen
+// Stage-Spalten wird NUR EINE angezeigt (fuer beide Sections gemeinsam,
+// siehe pendingStage/displayedStage-Kommentar bei den Member-
+// Deklarationen oben - Voltage/Time/Range/Curve/alle Modifier-Bits sind
+// stage-zentrale Arrays, nicht getrennt pro Section).
+//
+// Bewusste Code-Duplikation der Pro-Stage-Widget-Erzeugung statt
+// Refaktor von Marf248Widget: die bestehende, bereits getestete
+// Vollversion bleibt komplett unberuehrt - gleiche Begruendung wie bei
+// PanelBackground in den Expander-Dateien (siehe dortige Kommentare).
+// Die Y-Offsets/Konstanten (sliderColOffsetX, voltSliderY, timeSliderY,
+// stageLedY, buttonColOffsets, buttonRowsY, shapeCurveY, trangeY,
+// rangeY, frameWidthMM/frameTopMM/frameBottomMM) sind 1:1 aus der
+// bereits getesteten Stage-Spalte von Marf248Widget uebernommen - EIN
+// Slot statt 16, aber intern unveraendertes, bewaehrtes Layout (kein
+// vertikales Zusammenquetschen, keine neue Ueberlappungsgefahr). Der
+// Auswahl-Knob/Aktivieren-Button sitzt stattdessen in einer separaten
+// Spalte LINKS neben dem Stage-Slot, ausserhalb von dessen Y-Raster.
+//
+// Stand dieser Session: Panel enthaelt Auswahl/Aktivieren + den
+// vollstaendigen Single-Stage-Slot (alle Voltage/Time/Range/Curve/
+// Modifier-Widgets, identisch zur Vollversion). Die uebrigen, nicht
+// stage-bezogenen Bedienelemente (Run/Address/Presets/Scale-Key/Time
+// Mult/Outputs/Jacks) sind noch NICHT uebernommen - eigene Folge-Session
+// (Panel ist bewusst erstmal schmal/unvollstaendig, um diesen Kernteil
+// unabhaengig lokal testen zu koennen, siehe Projekt-Session-Prinzip
+// "ein Feature pro Session").
+// ---------------------------------------------------------------------
+
+// Auswahl-Knob mit Zentrums-Ziffernanzeige (1-16). KEIN Param/ParamWidget
+// (Kinovice-Entscheidung im Konzeptdokument): Pickup/Catch, VCV History
+// System und Preset-Recall sollen die reine GUI-Navigation nicht
+// beeinflussen. Schreibt daher direkt auf ein Modul-Member
+// (module->pendingStage), eigenes Maus-Handling statt Rack-Param-Engine
+// - Drag-Verhalten (Vorzeichen, Sperren des System-Cursors) analog zu
+// StageSlider::onDragMove() oben, aber diskrete 16-Stufen-Rasterung
+// statt kontinuierlichem Wert.
+struct StageSelectKnob : OpaqueWidget {
+	Marf248* module = nullptr;
+	float dragAccumPx = 0.f;
+
+	StageSelectKnob() {
+		box.size = mm2px(Vec(14.f, 14.f));
+	}
+
+	void onButton(const ButtonEvent& e) override {
+		OpaqueWidget::onButton(e);
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			e.consume(this);
+		}
+	}
+
+	void onDragStart(const DragStartEvent& e) override {
+		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
+			return;
+		dragAccumPx = 0.f;
+		APP->window->cursorLock();
+	}
+
+	void onDragEnd(const DragEndEvent& e) override {
+		APP->window->cursorUnlock();
+	}
+
+	void onDragMove(const DragMoveEvent& e) override {
+		if (!module)
+			return;
+		// 4mm Mausweg pro Stage-Schritt (grob, unkritisch bei nur 16
+		// diskreten Stufen) - Maus nach oben = Wert steigt, wie bei
+		// StageSlider.
+		dragAccumPx -= e.mouseDelta.y;
+		float pxPerStep = mm2px(4.f);
+		while (dragAccumPx >= pxPerStep) {
+			module->pendingStage = std::min(module->pendingStage + 1, NUM_STAGES - 1);
+			dragAccumPx -= pxPerStep;
+		}
+		while (dragAccumPx <= -pxPerStep) {
+			module->pendingStage = std::max(module->pendingStage - 1, 0);
+			dragAccumPx += pxPerStep;
+		}
+	}
+
+	void draw(const DrawArgs& args) override {
+		float r = box.size.x / 2.f;
+		Vec c = Vec(r, r);
+
+		nvgBeginPath(args.vg);
+		nvgCircle(args.vg, c.x, c.y, r - 1.f);
+		nvgFillColor(args.vg, nvgRGB(40, 40, 44));
+		nvgFill(args.vg);
+		nvgStrokeColor(args.vg, nvgRGBA(90, 90, 100, 200));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+
+		// Zentrums-Ziffer: gruen sobald pendingStage == displayedStage
+		// (also der angewaehlte Wert bereits der sichtbare/aktive ist -
+		// Kinovice-Entscheidung "im Knob anzeigen ob aktiv"), sonst
+		// amber (gleiche Akzentfarbe wie StageSlider/TrangeButton/
+		// RangeKnob, fuer ein einheitliches Erscheinungsbild).
+		int pending = module ? module->pendingStage : 0;
+		int displayed = module ? module->displayedStage : 0;
+		bool isActive = (pending == displayed);
+		NVGcolor textColor = isActive ? nvgRGB(90, 220, 110) : nvgRGB(235, 170, 60);
+
+		std::shared_ptr<window::Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/fonts/Nunito-Bold.ttf"));
+		if (font && font->handle >= 0) {
+			nvgFontFaceId(args.vg, font->handle);
+			nvgFontSize(args.vg, 15.f);
+			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+			nvgFillColor(args.vg, textColor);
+			std::string label = string::f("%d", pending + 1);
+			nvgText(args.vg, c.x, c.y, label.c_str(), NULL);
+		}
+	}
+};
+
+// Aktivieren-Button: uebertraegt module->pendingStage -> module->
+// displayedStage. Ebenfalls bewusst kein Param, gleiche Begruendung wie
+// beim Auswahl-Knob oben (reine GUI-Navigation, kein History-Eintrag).
+struct StageActivateButton : OpaqueWidget {
+	Marf248* module = nullptr;
+	bool pressed = false;
+
+	StageActivateButton() {
+		box.size = mm2px(Vec(8.f, 8.f));
+	}
+
+	void onButton(const ButtonEvent& e) override {
+		OpaqueWidget::onButton(e);
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			pressed = true;
+			if (module) {
+				module->displayedStage = module->pendingStage;
+			}
+			e.consume(this);
+		}
+		else if (e.action == GLFW_RELEASE && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			pressed = false;
+		}
+	}
+
+	void draw(const DrawArgs& args) override {
+		// Farbe zeigt den AKTIVIERUNGSZUSTAND, nicht den Maus-Klick
+		// (Kinovice-Wunsch): rot solange die Auswahl (pendingStage) noch
+		// nicht uebernommen ist, gruen sobald sie mit der sichtbaren Stage
+		// (displayedStage) uebereinstimmt - dieselbe Bedingung wie die
+		// Zentrumsziffer-Faerbung in StageSelectKnob::draw() oben, fuer ein
+		// einheitliches Bild zwischen Knob und Button.
+		bool isActive = module && (module->pendingStage == module->displayedStage);
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, 1.5f);
+		nvgFillColor(args.vg, isActive ? nvgRGB(90, 220, 110) : nvgRGB(220, 70, 70));
+		nvgFill(args.vg);
+		nvgStrokeColor(args.vg, nvgRGBA(90, 90, 100, 200));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+	}
+};
+
+struct Marf248CompactWidget : ModuleWidget {
+	// Label-Helfer 1:1 aus Marf248Widget uebernommen (siehe dortige
+	// Kommentare - hier nicht wiederholt, da wortidentisch). Eigene Kopie
+	// statt gemeinsamer Basisklasse, da ModuleWidget-Subklassen in VCV
+	// Rack keine gemeinsame Zwischenklasse ueblich ist und der Aufwand
+	// einer eigenen Basisklasse fuer drei Zeilen nicht lohnt.
+	void addLabelBelow(Vec posMM, float yOffsetMM, const std::string& text, NVGcolor color, float fontSize = 9.f) {
+		addChild(new PanelLabel(posMM + Vec(0.f, yOffsetMM), text, color, fontSize, NVG_ALIGN_CENTER | NVG_ALIGN_TOP));
+	}
+
+	void addLabelSide(Vec posMM, float xOffsetMM, float dir, const std::string& text, NVGcolor color, float fontSize = 6.5f) {
+		int align = (dir >= 0.f) ? (NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE) : (NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+		addChild(new PanelLabel(posMM + Vec(dir * xOffsetMM, 0.f), text, color, fontSize, align));
+	}
+
+	void addLabelVertical(Vec posMM, float xOffsetMM, const std::string& text, NVGcolor color, float fontSize) {
+		addChild(new PanelLabel(posMM + Vec(xOffsetMM, 0.f), text, color, fontSize,
+		                        NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE, -90.f));
+	}
+
+	// Freistehendes Label ohne Element-Bezug (fuer STAGE/AKTIV-
+	// Beschriftung des neuen Auswahl-Blocks) - in Marf248Widget nicht
+	// noetig, da dort jedes Label an ein konkretes Element gekoppelt ist.
+	void addLabel(Vec posMM, const std::string& text, NVGcolor color, float fontSize = 9.f) {
+		addChild(new PanelLabel(posMM, text, color, fontSize, NVG_ALIGN_CENTER | NVG_ALIGN_TOP));
+	}
+
+	// Fuer jede der 16 Stages ALLE zugehoerigen Widgets (Params + Lights)
+	// an derselben Panel-Position - Sichtbarkeit wird in step() anhand
+	// von module->displayedStage umgeschaltet (siehe dort).
+	std::vector<Widget*> stageWidgets[NUM_STAGES];
+
+	Marf248CompactWidget(Marf248* module) {
+		setModule(module);
+
+		// Geometrie-Konstanten und Spaltenpositionen 1:1 aus Marf248Widget
+		// uebernommen (siehe dortige ausfuehrliche Kommentare - hier nicht
+		// wiederholt), MIT EINER Ausnahme: xStep/die 16-fache Wiederholung
+		// entfaellt komplett, es gibt nur den einen Stage-Slot bei xStart.
+		// colBOutputs/colBJacks/colBControls/colPresets ruecken dadurch
+		// deutlich naeher an Section A heran als auf der 146HP-Vollversion.
+		const float frameWidthMM = 32.f;
+		const float frameTopMM = 12.f;
+		const float frameBottomMM = 126.f;
+		// gapControlsToJacks/gapJacksToOutputs (Kompaktversion-Anpassung,
+		// Kinovice-Feedback "BPM-Spalte zu schmal"): jacksFrameWidthMM und
+		// outputsFrameWidthMM unten wurden gegenueber der Vollversion
+		// verbreitert (BPM-Anzeige ist 22mm breit, Auswahl-Knob + Aktivieren-
+		// Button brauchen mehr als die urspruenglichen 12mm) - die Gaps
+		// wurden entsprechend mitgezogen, um ca. 2mm Luft zu den
+		// Nachbarspalten zu behalten (gleiches Prinzip wie in der
+		// Vollversion, nur mit den neuen, groesseren Rahmenbreiten
+		// gegengerechnet).
+		const float gapControlsToJacks = 21.f;
+		const float gapJacksToOutputs = 22.f;
+		const float gapOutputsToStage = 26.f;
+		// 12 -> 16mm (Kinovice-Feedback "Auswahl-Knob soll in die VOUT/
+		// TOUT-Spalte, die muss dafuer breiter werden"): Platz fuer den
+		// 14mm-Auswahl-Knob (Radius 7mm, passt jetzt mit 1mm Luft) und den
+		// 8mm-Aktivieren-Button, siehe deren neue Platzierung weiter unten.
+		const float outputsFrameWidthMM = 16.f;
+		const float controlsFrameWidthMM = 14.f;
+		// 20 -> 24mm (Kinovice-Feedback "BPM-Spalte zu schmal"):
+		// TempoBpmDisplay ist 22mm breit (siehe deren Platzierung weiter
+		// unten) und ragte bei 20mm Rahmenbreite links/rechts ueber den
+		// Rahmen hinaus.
+		const float jacksFrameWidthMM = 24.f;
+
+		float colExt = 18.f;
+		const float colToControlsGap = 19.f;
+		float colAControls = colExt + colToControlsGap;
+		float colAJacks = colAControls + gapControlsToJacks;
+		float colAOutputs = colAJacks + gapJacksToOutputs;
+		// xStart: Position des EINEN Stage-Slots (entspricht der
+		// bisherigen Position von Stage 1 auf der Vollversion).
+		float xStart = colAOutputs + gapOutputsToStage;
+		// Kompaktversion-spezifisch: Section B folgt direkt auf den einen
+		// Slot (ein gapOutputsToStage-Abstand), statt nach 15 weiteren
+		// xStep-Schritten wie auf der Vollversion.
+		float colBOutputs = xStart + gapOutputsToStage;
+		float colBJacks = colBOutputs + gapJacksToOutputs;
+		float colBControls = colBJacks + gapControlsToJacks;
+		float colPresets = colBControls + colToControlsGap;
+
+		const float presetFrameWidthMM = 20.f;
+		const float presetFrameTopMM = 12.f;
+		const float presetFrameBottomMM = 127.f;
+
+		// HP aus dem tatsaechlichen Platzbedarf ableiten statt fixem Wert -
+		// Kompaktversion ist deutlich schmaler als die 146HP-Vollversion,
+		// aber die genaue Breite haengt von allen Spaltenabstaenden oben
+		// ab. +2HP Sicherheitsmarge fuer die Preset-Rahmenkante.
+		int hpInt = (int) (colPresets / 5.08f) + 2;
+		const float HP = (float) hpInt;
+		box.size = Vec(HP * RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
+
+		PanelBackground* panelBg = new PanelBackground;
+		panelBg->box.size = box.size;
+		addChild(panelBg);
+
+		PanelBorder* panelBorder = new PanelBorder;
+		panelBorder->box.size = box.size;
+		addChild(panelBorder);
+
+		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
+		// --- External-CV-Spalte ganz links: 1:1 aus Marf248Widget
+		// (vier modulweit geteilte EXT-A/B/C/D-Eingaenge).
+		const float extFrameWidthMM = 20.f;
+		const float extFrameTopMM = 12.f;
+		// Wie in Marf248Widget (108mm) - Auswahl-Knob/Aktivieren-Button
+		// sitzen jetzt stattdessen in der VOUT/TOUT-Spalte (Kinovice-
+		// Feedback, siehe dortige Platzierung weiter unten), diese Spalte
+		// bleibt daher unveraendert.
+		const float extFrameBottomMM = 108.f;
+		StageFrame* extFrame = new StageFrame;
+		extFrame->box.pos = mm2px(Vec(colExt - extFrameWidthMM / 2.f, extFrameTopMM));
+		extFrame->box.size = mm2px(Vec(extFrameWidthMM, extFrameBottomMM - extFrameTopMM));
+		addChild(extFrame);
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colExt, 22)), module, Marf248::EXT_A_INPUT));
+		addLabelBelow(Vec(colExt, 22), 5.5f, "EXT A", COLOR_STAGEMOD, 10.f);
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colExt, 44)), module, Marf248::EXT_B_INPUT));
+		addLabelBelow(Vec(colExt, 44), 5.5f, "EXT B", COLOR_STAGEMOD, 10.f);
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colExt, 66)), module, Marf248::EXT_C_INPUT));
+		addLabelBelow(Vec(colExt, 66), 5.5f, "EXT C", COLOR_STAGEMOD, 10.f);
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(colExt, 88)), module, Marf248::EXT_D_INPUT));
+		addLabelBelow(Vec(colExt, 88), 5.5f, "EXT D", COLOR_STAGEMOD, 10.f);
+
+		// --- Jacks-Rahmen Section A/B: 1:1 aus Marf248Widget.
+		const float jacksFrameTopMM = 12.f;
+		const float jacksFrameBottomMM = 121.f;
+		float jacksColsFrame[2] = {colAJacks, colBJacks};
+		for (int s = 0; s < 2; s++) {
+			StageFrame* jacksFrame = new StageFrame;
+			jacksFrame->box.pos = mm2px(Vec(jacksColsFrame[s] - jacksFrameWidthMM / 2.f, jacksFrameTopMM));
+			jacksFrame->box.size = mm2px(Vec(jacksFrameWidthMM, jacksFrameBottomMM - jacksFrameTopMM));
+			addChild(jacksFrame);
+		}
+
+		// --- Outputs-Rahmen (VOUT/TOUT/TIME) Section A/B: 1:1 aus
+		// Marf248Widget, ABER Section-A-Rahmen (Kinovice-Feedback) nach
+		// unten verlaengert, da darunter jetzt Auswahl-Knob + Aktivieren-
+		// Button fuer den Single-Stage-Slot sitzen (siehe unten) - Section
+		// B bleibt bei der urspruenglichen Hoehe, da dort nichts
+		// dazukommt.
+		const float outputsFrameTopMM = 12.f;
+		const float outputsFrameBottomMM = 61.f;
+		const float outputsFrameBottomMM_A = 126.f;
+		float outputsColsFrame[2] = {colAOutputs, colBOutputs};
+		float outputsColsFrameBottom[2] = {outputsFrameBottomMM_A, outputsFrameBottomMM};
+		for (int s = 0; s < 2; s++) {
+			StageFrame* outputsFrame = new StageFrame;
+			outputsFrame->box.pos = mm2px(Vec(outputsColsFrame[s] - outputsFrameWidthMM / 2.f, outputsFrameTopMM));
+			outputsFrame->box.size = mm2px(Vec(outputsFrameWidthMM, outputsColsFrameBottom[s] - outputsFrameTopMM));
+			addChild(outputsFrame);
+		}
+
+		// Auswahl-Knob + Aktivieren-Button fuer den Single-Stage-Slot:
+		// jetzt in der (verbreiterten, siehe outputsFrameWidthMM oben)
+		// VOUT/TOUT/TIME-Spalte von Section A, direkt unter TIME (y=49) -
+		// Kinovice-Feedback, naeher am eigentlichen Stage-Slot als die
+		// vorherige Platzierung in der Ext-Spalte. pendingStage/
+		// displayedStage gelten modulweit fuer beide Sections (siehe
+		// Member-Kommentar in Marf248), daher genuegt EINE Instanz hier,
+		// keine zweite in der Section-B-Spalte noetig. Erster Entwurf,
+		// lokal gegenchecken.
+		addLabel(Vec(colAOutputs, 70.f), "STAGE", COLOR_STAGEMOD, 7.f);
+		StageSelectKnob* selectKnob = new StageSelectKnob;
+		selectKnob->module = module;
+		selectKnob->box.pos = mm2px(Vec(colAOutputs, 84.f)).minus(selectKnob->box.size.div(2));
+		addChild(selectKnob);
+		addLabel(Vec(colAOutputs, 95.f), "AKTIVIEREN", COLOR_STAGEMOD, 6.f);
+		StageActivateButton* activateBtn = new StageActivateButton;
+		activateBtn->module = module;
+		activateBtn->box.pos = mm2px(Vec(colAOutputs, 106.f)).minus(activateBtn->box.size.div(2));
+		addChild(activateBtn);
+
+		// --- Section A und B: identischer Aufbau, 1:1 aus Marf248Widget
+		// uebernommen (Param-/Input-/Output-Id-Arrays, Zuordnung siehe
+		// dortige Kommentare).
+		float controlsCols[2] = {colAControls, colBControls};
+		float jacksCols[2] = {colAJacks, colBJacks};
+		float outputsCols[2] = {colAOutputs, colBOutputs};
+		int runParams[2] = {Marf248::RUN_A_PARAM, Marf248::RUN_B_PARAM};
+		int runLights[2] = {Marf248::RUN_A_LIGHT, Marf248::RUN_B_LIGHT};
+		int modeParams[2] = {Marf248::MODE_A_PARAM, Marf248::MODE_B_PARAM};
+		int modeLights[2] = {Marf248::MODE_A_LIGHT, Marf248::MODE_B_LIGHT};
+		int pendulumParams[2] = {Marf248::PENDULUM_A_PARAM, Marf248::PENDULUM_B_PARAM};
+		int pendulumLights[2] = {Marf248::PENDULUM_A_LIGHT, Marf248::PENDULUM_B_LIGHT};
+		int startInputs[2] = {Marf248::START_A_INPUT, Marf248::START_B_INPUT};
+		int stopInputs[2] = {Marf248::STOP_A_INPUT, Marf248::STOP_B_INPUT};
+		int voutOutputs[2] = {Marf248::VOUT_A_OUTPUT, Marf248::VOUT_B_OUTPUT};
+		int toutOutputs[2] = {Marf248::TOUT_A_OUTPUT, Marf248::TOUT_B_OUTPUT};
+		int timeStaticOutputs[2] = {Marf248::TIMESTATIC_A_OUTPUT, Marf248::TIMESTATIC_B_OUTPUT};
+		int apoutOutputs[2] = {Marf248::APOUT_A_OUTPUT, Marf248::APOUT_B_OUTPUT};
+		int p1ActiveLights[2] = {Marf248::P1_ACTIVE_A_LIGHT, Marf248::P1_ACTIVE_B_LIGHT};
+		int p1Outputs[2] = {Marf248::P1OUT_A_OUTPUT, Marf248::P1OUT_B_OUTPUT};
+		int p2ActiveLights[2] = {Marf248::P2_ACTIVE_A_LIGHT, Marf248::P2_ACTIVE_B_LIGHT};
+		int p2Outputs[2] = {Marf248::P2OUT_A_OUTPUT, Marf248::P2OUT_B_OUTPUT};
+		int addrKnobParams[2] = {Marf248::STAGE_ADDR_KNOB_A_PARAM, Marf248::STAGE_ADDR_KNOB_B_PARAM};
+		int addrModeParams[2] = {Marf248::STAGE_ADDR_MODE_A_PARAM, Marf248::STAGE_ADDR_MODE_B_PARAM};
+		int addrModeLights[2] = {Marf248::STAGE_ADDR_MODE_A_LIGHT, Marf248::STAGE_ADDR_MODE_B_LIGHT};
+		int addrContParams[2] = {Marf248::STAGE_ADDR_CONT_A_PARAM, Marf248::STAGE_ADDR_CONT_B_PARAM};
+		int addrContLights[2] = {Marf248::STAGE_ADDR_CONT_A_LIGHT, Marf248::STAGE_ADDR_CONT_B_LIGHT};
+		int addrStrobeParams[2] = {Marf248::STAGE_ADDR_STROBE_A_PARAM, Marf248::STAGE_ADDR_STROBE_B_PARAM};
+		int addrResetParams[2] = {Marf248::STAGE_ADDR_RESET_A_PARAM, Marf248::STAGE_ADDR_RESET_B_PARAM};
+		int addrStrobeLights[2] = {Marf248::STAGE_ADDR_STROBE_A_LIGHT, Marf248::STAGE_ADDR_STROBE_B_LIGHT};
+		int addrResetLights[2] = {Marf248::STAGE_ADDR_RESET_A_LIGHT, Marf248::STAGE_ADDR_RESET_B_LIGHT};
+		int addrExtInputs[2] = {Marf248::STAGE_ADDR_EXT_A_INPUT, Marf248::STAGE_ADDR_EXT_B_INPUT};
+		int addrExtChannelInputs[2] = {Marf248::STAGE_ADDR_EXT_CHANNEL_A_INPUT, Marf248::STAGE_ADDR_EXT_CHANNEL_B_INPUT};
+		int timeMultParams[2] = {Marf248::TIME_MULT_A_PARAM, Marf248::TIME_MULT_B_PARAM};
+		int timeMultAttenParams[2] = {Marf248::TIME_MULT_ATTEN_A_PARAM, Marf248::TIME_MULT_ATTEN_B_PARAM};
+		int timeMultCvInputs[2] = {Marf248::TIME_MULT_CV_A_INPUT, Marf248::TIME_MULT_CV_B_INPUT};
+		int beatsFactorParams[2] = {Marf248::BEATS_FACTOR_A_PARAM, Marf248::BEATS_FACTOR_B_PARAM};
+		int beatsFactorCvInputs[2] = {Marf248::BEATS_FACTOR_CV_A_INPUT, Marf248::BEATS_FACTOR_CV_B_INPUT};
+
+		for (int s = 0; s < 2; s++) {
+			float ctrl = controlsCols[s];
+			float jack = jacksCols[s];
+			float outCol = outputsCols[s];
+
+			const float controlsFrameTopMM = 12.f;
+			const float controlsFrameBottomMM = 120.f;
+			StageFrame* controlsFrame = new StageFrame;
+			controlsFrame->box.pos = mm2px(Vec(ctrl - controlsFrameWidthMM / 2.f, controlsFrameTopMM));
+			controlsFrame->box.size = mm2px(Vec(controlsFrameWidthMM, controlsFrameBottomMM - controlsFrameTopMM));
+			addChild(controlsFrame);
+
+			addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(ctrl, 20)), module, timeMultParams[s]));
+			addParam(createParamCentered<Trimpot>(mm2px(Vec(ctrl, 30)), module, timeMultAttenParams[s]));
+			addParam(createParamCentered<BeatsFactorTrimpot>(mm2px(Vec(ctrl, 38)), module, beatsFactorParams[s]));
+
+			HDivider* divTimeMultRun = new HDivider;
+			divTimeMultRun->box.pos = mm2px(Vec(ctrl - 4.f, 44.f));
+			divTimeMultRun->box.size = mm2px(Vec(8.f, 0.f));
+			addChild(divTimeMultRun);
+
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 50)), module, runParams[s]));
+			addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(mm2px(Vec(ctrl, 50)), module, runLights[s]));
+
+			HDivider* divRunMode = new HDivider;
+			divRunMode->box.pos = mm2px(Vec(ctrl - 4.f, 58.f));
+			divRunMode->box.size = mm2px(Vec(8.f, 0.f));
+			addChild(divRunMode);
+
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 64)), module, modeParams[s]));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 64)), module, modeLights[s]));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 72)), module, pendulumParams[s]));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 72)), module, pendulumLights[s]));
+
+			HDivider* divModeAddr = new HDivider;
+			divModeAddr->box.pos = mm2px(Vec(ctrl - 4.f, 77.f));
+			divModeAddr->box.size = mm2px(Vec(8.f, 0.f));
+			addChild(divModeAddr);
+
+			addParam(createParamCentered<Trimpot>(mm2px(Vec(ctrl, 83)), module, addrKnobParams[s]));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 91)), module, addrModeParams[s]));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 91)), module, addrModeLights[s]));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 99)), module, addrContParams[s]));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 99)), module, addrContLights[s]));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 107)), module, addrStrobeParams[s]));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 107)), module, addrStrobeLights[s]));
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(ctrl, 115)), module, addrResetParams[s]));
+			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(ctrl, 115)), module, addrResetLights[s]));
+
+			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(jack, 20)), module, startInputs[s]));
+			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(jack, 28)), module, stopInputs[s]));
+
+			HDivider* divStartTimeMult = new HDivider;
+			divStartTimeMult->box.pos = mm2px(Vec(jack - 9.f, 33.f));
+			divStartTimeMult->box.size = mm2px(Vec(18.f, 0.f));
+			addChild(divStartTimeMult);
+			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(jack, 41)), module, timeMultCvInputs[s]));
+
+			TempoBpmDisplay* bpmDisplay = new TempoBpmDisplay;
+			bpmDisplay->box.size = mm2px(Vec(22.f, 9.f));
+			bpmDisplay->box.pos = mm2px(Vec(jack, 51)).minus(bpmDisplay->box.size.div(2));
+			bpmDisplay->module = dynamic_cast<Marf248*>(module);
+			bpmDisplay->section = s;
+			addChild(bpmDisplay);
+
+			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(jack, 63)), module, beatsFactorCvInputs[s]));
+
+			HDivider* divOutPulse = new HDivider;
+			divOutPulse->box.pos = mm2px(Vec(jack - 9.f, 68.f));
+			divOutPulse->box.size = mm2px(Vec(18.f, 0.f));
+			addChild(divOutPulse);
+			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(jack, 76)), module, p1Outputs[s]));
+			addChild(createLightCentered<PulseRingLight>(mm2px(Vec(jack, 76)), module, p1ActiveLights[s]));
+			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(jack, 84)), module, p2Outputs[s]));
+			addChild(createLightCentered<PulseRingLight>(mm2px(Vec(jack, 84)), module, p2ActiveLights[s]));
+
+			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(jack, 92)), module, apoutOutputs[s]));
+
+			HDivider* divApoutAddr = new HDivider;
+			divApoutAddr->box.pos = mm2px(Vec(jack - 9.f, 97.f));
+			divApoutAddr->box.size = mm2px(Vec(18.f, 0.f));
+			addChild(divApoutAddr);
+			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(jack, 105)), module, addrExtInputs[s]));
+			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(jack, 113)), module, addrExtChannelInputs[s]));
+
+			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(outCol, 20)), module, voutOutputs[s]));
+			addLabelBelow(Vec(outCol, 20), 5.5f, "VOUT", (s == 0 ? COLOR_SECTION_A : COLOR_SECTION_B), 10.f);
+			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(outCol, 34.5f)), module, toutOutputs[s]));
+			addLabelBelow(Vec(outCol, 34.5f), 5.5f, "TOUT", (s == 0 ? COLOR_SECTION_A : COLOR_SECTION_B), 10.f);
+			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(outCol, 49)), module, timeStaticOutputs[s]));
+			addLabelBelow(Vec(outCol, 49), 5.5f, "TIME", (s == 0 ? COLOR_SECTION_A : COLOR_SECTION_B), 10.f);
+		}
+
+		// --- Single-Stage-Slot bei xStart: 1:1-Layout aus Marf248Widget
+		// (siehe dortige Kommentare), aber nur EIN x statt 16 realer
+		// Spalten - alle 16 Widget-Sets uebereinander, Sichtbarkeit steuert
+		// step() unten.
+		const float sliderColOffsetX = -10.f;
+		const float voltSliderY = 42.f;
+		const float timeSliderY = 98.f;
+		const float stageLedY = 13.f;
+		const float buttonColOffsets[2] = {2.f, 10.f};
+		const float buttonRowsY[8] = {20.f, 28.f, 36.f, 44.f, 52.f, 60.f, 68.f, 76.f};
+		const float shapeCurveOffsetX = 6.f;
+		const float shapeCurveY = 88.f;
+		const float trangeOffsetX = 6.f;
+		const float trangeY = 100.f;
+		const float rangeOffsetX = 6.f;
+		const float rangeY = 115.f;
+
+		float x = xStart;
+		float sliderX = x + sliderColOffsetX;
+
+		StageFrame* frame = new StageFrame;
+		frame->box.pos = mm2px(Vec(x - frameWidthMM / 2.f, frameTopMM));
+		frame->box.size = mm2px(Vec(frameWidthMM, frameBottomMM - frameTopMM));
+		addChild(frame);
+
+		for (int i = 0; i < NUM_STAGES; i++) {
+			ParamWidget* voltSlider = createParamCentered<StageSlider>(mm2px(Vec(sliderX, voltSliderY)), module, Marf248::STAGE_VOLTAGE_PARAM + i);
+			addParam(voltSlider);
+			stageWidgets[i].push_back(voltSlider);
+
+			ParamWidget* timeSlider = createParamCentered<StageSlider>(mm2px(Vec(sliderX, timeSliderY)), module, Marf248::STAGE_TIME_PARAM + i);
+			addParam(timeSlider);
+			stageWidgets[i].push_back(timeSlider);
+
+			app::LightWidget* stageLedA = createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(sliderX - 1.5f, stageLedY)), module, Marf248::STAGE_LIGHT_A + i);
+			addChild(stageLedA);
+			stageWidgets[i].push_back(stageLedA);
+			app::LightWidget* stageLedB = createLightCentered<MediumLight<RedLight>>(mm2px(Vec(sliderX + 1.5f, stageLedY)), module, Marf248::STAGE_LIGHT_B + i);
+			addChild(stageLedB);
+			stageWidgets[i].push_back(stageLedB);
+
+			auto addModBtn = [&](ParamWidget* w, app::LightWidget* l) {
+				addParam(w);
+				stageWidgets[i].push_back(w);
+				addChild(l);
+				stageWidgets[i].push_back(l);
+			};
+
+			addModBtn(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[0])), module, Marf248::STAGE_PULSE1_PARAM + i),
+			          createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[0])), module, Marf248::STAGE_PULSE1_LIGHT + i));
+			addModBtn(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[0])), module, Marf248::STAGE_PULSE2_PARAM + i),
+			          createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[0])), module, Marf248::STAGE_PULSE2_LIGHT + i));
+
+			addModBtn(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[1])), module, Marf248::STAGE_SKIP_PARAM + i),
+			          createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[1])), module, Marf248::STAGE_SKIP_LIGHT + i));
+			addModBtn(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[1])), module, Marf248::STAGE_MUTE_PARAM + i),
+			          createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[1])), module, Marf248::STAGE_MUTE_LIGHT + i));
+
+			addModBtn(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[2])), module, Marf248::STAGE_STOP_PARAM + i),
+			          createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[2])), module, Marf248::STAGE_STOP_LIGHT + i));
+			addModBtn(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[2])), module, Marf248::STAGE_SUSTAIN_PARAM + i),
+			          createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[2])), module, Marf248::STAGE_SUSTAIN_LIGHT + i));
+
+			addModBtn(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[3])), module, Marf248::STAGE_ENABLE_PARAM + i),
+			          createLightCentered<SmallLight<RedLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[3])), module, Marf248::STAGE_ENABLE_LIGHT + i));
+
+			addModBtn(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[4])), module, Marf248::STAGE_FIRST_PARAM + i),
+			          createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[4])), module, Marf248::STAGE_FIRST_LIGHT + i));
+			addModBtn(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[4])), module, Marf248::STAGE_LAST_PARAM + i),
+			          createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[4])), module, Marf248::STAGE_LAST_LIGHT + i));
+
+			addModBtn(createParamCentered<StageModBroadcastButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[5])), module, Marf248::STAGE_SLOPE_PARAM + i),
+			          createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[5])), module, Marf248::STAGE_SLOPE_LIGHT + i));
+			addModBtn(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[5])), module, Marf248::STAGE_QUANTGLIDE_PARAM + i),
+			          createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[5])), module, Marf248::STAGE_QUANTGLIDE_LIGHT + i));
+
+			addModBtn(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[6])), module, Marf248::STAGE_QUANT_PARAM + i),
+			          createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[6])), module, Marf248::STAGE_QUANT_LIGHT + i));
+			addModBtn(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[6])), module, Marf248::STAGE_VOLTEXT_PARAM + i),
+			          createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[6])), module, Marf248::STAGE_VOLTEXT_LIGHT + i));
+
+			addModBtn(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[7])), module, Marf248::STAGE_TIMEEXT_PARAM + i),
+			          createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + buttonColOffsets[0], buttonRowsY[7])), module, Marf248::STAGE_TIMEEXT_LIGHT + i));
+			addModBtn(createParamCentered<LEDButton>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[7])), module, Marf248::STAGE_NORMALIZE_PARAM + i),
+			          createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(x + buttonColOffsets[1], buttonRowsY[7])), module, Marf248::STAGE_NORMALIZE_LIGHT + i));
+
+			ParamWidget* shapeBtn = createParamCentered<LEDButton>(mm2px(Vec(x + shapeCurveOffsetX + 4.f, shapeCurveY)), module, Marf248::STAGE_SHAPE_PARAM + i);
+			addParam(shapeBtn);
+			stageWidgets[i].push_back(shapeBtn);
+			app::LightWidget* shapeExpLight = createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + shapeCurveOffsetX + 1.f, shapeCurveY)), module, Marf248::STAGE_SHAPE_EXP_LIGHT + i);
+			addChild(shapeExpLight);
+			stageWidgets[i].push_back(shapeExpLight);
+			app::LightWidget* shapeLogLight = createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(x + shapeCurveOffsetX + 7.f, shapeCurveY)), module, Marf248::STAGE_SHAPE_LOG_LIGHT + i);
+			addChild(shapeLogLight);
+			stageWidgets[i].push_back(shapeLogLight);
+			ParamWidget* curveTrim = createParamCentered<StageCurveTrimpot>(mm2px(Vec(x + shapeCurveOffsetX - 4.f, shapeCurveY)), module, Marf248::STAGE_CURVE_PARAM + i);
+			addParam(curveTrim);
+			stageWidgets[i].push_back(curveTrim);
+
+			TrangeButton* trangeBtn = createParamCentered<TrangeButton>(mm2px(Vec(x + trangeOffsetX, trangeY)), module, Marf248::STAGE_TRANGE_PARAM + i);
+			Vec trangeCenter = trangeBtn->box.getCenter();
+			trangeBtn->box.size = mm2px(Vec(9.f, 9.f));
+			trangeBtn->box.pos = trangeCenter.minus(trangeBtn->box.size.div(2));
+			addParam(trangeBtn);
+			stageWidgets[i].push_back(trangeBtn);
+
+			ParamWidget* rangeKnob = createParamCentered<RangeKnob>(mm2px(Vec(x + rangeOffsetX, rangeY)), module, Marf248::STAGE_RANGE_PARAM + i);
+			addParam(rangeKnob);
+			stageWidgets[i].push_back(rangeKnob);
+		}
+
+		// --- Global Clear/Reset/AutoFill: zentriert ueber dem EINEN
+		// Stage-Slot (statt ueber 16 Spalten gemittelt wie auf der
+		// Vollversion) - 8mm-Pitch um xStart herum statt 12mm-Pitch ab
+		// colClear, damit alle drei Buttons innerhalb der 32mm-Rahmenbreite
+		// bleiben.
+		addParam(createParamCentered<LEDButton>(mm2px(Vec(xStart - 8.f, 6)), module, Marf248::CLEAR_PARAM));
+		addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(xStart - 8.f, 6)), module, Marf248::CLEAR_LIGHT));
+		addParam(createParamCentered<LEDButton>(mm2px(Vec(xStart, 6)), module, Marf248::RESET_VALUES_PARAM));
+		addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(xStart, 6)), module, Marf248::RESET_VALUES_LIGHT));
+		addParam(createParamCentered<LEDButton>(mm2px(Vec(xStart + 8.f, 6)), module, Marf248::AUTOFILL_PARAM));
+		addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(xStart + 8.f, 6)), module, Marf248::AUTOFILL_LIGHT));
+
+		// --- Preset-Spalte ganz rechts: 1:1 aus Marf248Widget.
+		StageFrame* presetFrame = new StageFrame;
+		presetFrame->box.pos = mm2px(Vec(colPresets - presetFrameWidthMM / 2.f, presetFrameTopMM));
+		presetFrame->box.size = mm2px(Vec(presetFrameWidthMM, presetFrameBottomMM - presetFrameTopMM));
+		addChild(presetFrame);
+
+		addLabelVertical(Vec(colPresets, (20.f + 44.f) / 2.f), 6.f, "PRESETS", COLOR_SYSTEM, 16.f);
+
+		addParam(createParamCentered<LEDButton>(mm2px(Vec(colPresets, 20)), module, Marf248::LOAD_PARAM));
+		addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(colPresets, 20)), module, Marf248::LOAD_LIGHT));
+		addParam(createParamCentered<LEDButton>(mm2px(Vec(colPresets, 28)), module, Marf248::SAVE_PARAM));
+		addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(colPresets, 28)), module, Marf248::SAVE_LIGHT));
+
+		addParam(createParamCentered<LEDButton>(mm2px(Vec(colPresets, 36)), module, Marf248::SCALE_PARAM));
+		addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(colPresets, 36)), module, Marf248::SCALE_LIGHT));
+		addParam(createParamCentered<LEDButton>(mm2px(Vec(colPresets, 44)), module, Marf248::KEY_PARAM));
+		addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(colPresets, 44)), module, Marf248::KEY_LIGHT));
+
+		HDivider* divPresets = new HDivider;
+		divPresets->box.pos = mm2px(Vec(colPresets - 9.f, 49.f));
+		divPresets->box.size = mm2px(Vec(18.f, 0.f));
+		addChild(divPresets);
+
+		const float presetStartY = 55.f;
+		const float presetStepY = 6.f;
+
+		addLabelVertical(Vec(colPresets, (presetStartY + (presetStartY + 11.f * presetStepY)) / 2.f), 6.f, "PRESET NR", COLOR_SYSTEM, 16.f);
+
+		for (int p = 0; p < 12; p++) {
+			float y = presetStartY + p * presetStepY;
+			addParam(createParamCentered<LEDButton>(mm2px(Vec(colPresets, y)), module, Marf248::PRESET_PARAM + p));
+			addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(colPresets, y)), module, Marf248::PRESET_LIGHT + p));
+			addLabelSide(Vec(colPresets, y), 4.f, -1.f, std::to_string(p + 1), COLOR_SYSTEM, 13.f);
+		}
+	}
+
+	// Sichtbarkeit: genau ein Stage-Set (i == module->displayedStage) ist
+	// sichtbar, alle anderen 15 ausgeblendet - triviale, guenstige
+	// Pro-Frame-Operation ohne RTKit-Relevanz (reine GUI-Schicht
+	// ausserhalb von process(), siehe Konzeptdokument-Begruendung).
+	void step() override {
+		Marf248* module = dynamic_cast<Marf248*>(this->module);
+		if (module) {
+			for (int i = 0; i < NUM_STAGES; i++) {
+				bool vis = (i == module->displayedStage);
+				for (Widget* w : stageWidgets[i]) {
+					w->visible = vis;
+				}
+			}
+		}
+		ModuleWidget::step();
+	}
+};
+
+
 Model* modelMarf248 = createModel<Marf248, Marf248Widget>("Marf248");
+Model* modelMarf248Compact = createModel<Marf248, Marf248CompactWidget>("Marf248Compact");

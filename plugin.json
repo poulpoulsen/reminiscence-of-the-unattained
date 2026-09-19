@@ -17,6 +17,12 @@
       "tags": ["Sequencer", "Function generator", "Dual"]
     },
     {
+      "slug": "Marf248Compact",
+      "name": "Lucia",
+      "description": "Compact single-stage-slot variant of Sofonisba: same dual-section engine, one visible stage slot instead of 16 parallel columns",
+      "tags": ["Sequencer", "Function generator", "Dual"]
+    },
+    {
       "slug": "Marf248TriggerExpander",
       "name": "Amilcare",
       "description": "Trigger/CV expander for Sofonisba: Clear, Reset Values, 12 preset loads, Scale/Key select, Start/End of Cycle outputs",

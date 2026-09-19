@@ -1,5 +1,6 @@
 #pragma once
 #include "plugin.hpp"
+#include "Marf248.hpp"
 
 // modelMarf248 und modelMarf248TriggerExpander sind jetzt final in
 // plugin.hpp deklariert (siehe dort) - die frueheren lokalen extern-
@@ -359,8 +360,7 @@ struct Marf248TriggerExpander : Module {
 	void process(const ProcessArgs& args) override {
 		Module* left = getLeftExpander().module;
 		Module* right = getRightExpander().module;
-		bool linked = (left && left->getModel() == modelMarf248)
-			|| (right && right->getModel() == modelMarf248);
+		bool linked = dynamic_cast<Marf248Host*>(left) || dynamic_cast<Marf248Host*>(right);
 
 		if (!linked) {
 			outputs[START_CYCLE_A_OUTPUT].setVoltage(0.f);

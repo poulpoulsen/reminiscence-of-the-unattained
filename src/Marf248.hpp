@@ -13,6 +13,19 @@
 
 static const int NUM_STAGES = 16;
 
+// Marker-Interface fuer die Expander-Host-Erkennung (Amilcare/Bianca ->
+// Sofonisba, siehe Marf248TriggerExpander.hpp/Marf248CvExpander.hpp). Marf248
+// selbst ist vollstaendig in Marf248.cpp definiert (nicht im Header), daher
+// kann dort kein dynamic_cast<Marf248*> stehen - der Zieltyp muss fuer
+// dynamic_cast vollstaendig sichtbar sein. Marf248 implementiert dieses
+// Interface zusaetzlich (struct Marf248 : Module, Marf248Host), die Expander
+// casten nur gegen Marf248Host. Vorbereitet fuer die geplante Kompaktversion:
+// die wuerde ebenfalls Marf248Host implementieren und würde so automatisch
+// erkannt, ohne dass dieser Header angefasst werden muss.
+struct Marf248Host {
+	virtual ~Marf248Host() = default;
+};
+
 // Dauer der Retrigger-Luecke fuer den CV-Expander (Marf248CvExpander,
 // Gate A/B): wenn eine Section eine Stage OHNE Indexwechsel neu betritt
 // (Pendulum-Wendepunkt-Wiederholung, Strobe auf dieselbe Adresse, Sustain/

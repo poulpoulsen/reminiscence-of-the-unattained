@@ -12,6 +12,6 @@ LDFLAGS +=
 SOURCES += $(wildcard src/*.cpp)
 
 DISTRIBUTABLES += res
-DISTRIBUTABLES += LICENSE
+DISTRIBUTABLES += LICENSE.txt
 
 include $(RACK_DIR)/plugin.mk

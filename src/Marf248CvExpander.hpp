@@ -1,5 +1,6 @@
 #pragma once
 #include "plugin.hpp"
+#include "Marf248.hpp"
 
 // Marf248CvExpander: zweiter Expander fuer Marf248 (nach dem Trigger-
 // Expander), diesmal mit Poly-Kabeln statt Einzel-Jacks - passt fuer
@@ -131,8 +132,7 @@ struct Marf248CvExpander : Module {
 	void process(const ProcessArgs& args) override {
 		Module* left = getLeftExpander().module;
 		Module* right = getRightExpander().module;
-		bool linked = (left && left->getModel() == modelMarf248)
-			|| (right && right->getModel() == modelMarf248);
+		bool linked = dynamic_cast<Marf248Host*>(left) || dynamic_cast<Marf248Host*>(right);
 
 		if (!linked) {
 			outputs[GATE_A_OUTPUT].setChannels(16);
