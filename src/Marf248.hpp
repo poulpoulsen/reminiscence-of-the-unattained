@@ -626,8 +626,8 @@ struct Afg {
 	// koennte ein extern gehaltenes Trigger-Expander RUN_GATE die Stage
 	// zusaetzlich zur Adressierung weiterschalten - Doppelsteuerung) und
 	// b) trotzdem eine Slope-Rampe zum adressierten Zielwert laufen zu
-	// lassen (siehe MARF-Handbuch: "slope time is equal to the programmed
-	// interval time" - gilt laut Dokumentation auch bei externer/Continuous-
+	// lassen (die Slope-Zeit richtet sich nach der programmierten
+    // Stage-Zeit - gilt auch bei externer/Continuous-
 	// Adressierung, nicht nur im Timer-Betrieb).
 	bool continuousActive = false;
 	// Clock-quantisiertes Advance: true, solange ADVANCE_A/B_INPUT gepatcht
@@ -870,9 +870,8 @@ struct Afg {
 				// elapsed hier stattdessen sofort auf "fertig" gezwungen
 				// (elapsed = stageTimeHint/1e6f), wodurch Slope in Continuous
 				// wirkungslos war (Phase startete bereits bei 1.0) - siehe
-				// Session-Diskussion: das widerspricht sowohl dem MARF-Handbuch
-				// ("slope time is equal to the programmed interval time") als
-				// auch dem String-Patch aus dem Cookbook, der Continuous+Slope
+				// Session-Diskussion: das widerspricht sowohl den gefundenen Quellen
+				// als auch dem String-Patch aus dem Cookbook, der Continuous+Slope
 				// bewusst fuer Glide-Verhalten kombiniert. Der eigentliche
 				// Rampen-Fortschritt (elapsed += sampleTime) passiert jetzt
 				// kontinuierlich in process(), siehe dortigen Kommentar.
@@ -1301,8 +1300,8 @@ struct Afg {
 		// die Stage zusaetzlich zur Adressierung weiterschalten), aber elapsed
 		// laeuft trotzdem hoch, damit eine Slope-Rampe zum adressierten
 		// Zielwert fortschreiten kann (siehe applyStageAddress()-Kommentar und
-		// MARF-Handbuch: "slope time is equal to the programmed interval
-		// time" - gilt auch bei externer/Continuous-Adressierung). Bewusst
+		// Referenzdokumentation: Slope-Zeit richtet sich nach der programmierten
+        // Intervallzeit - gilt auch bei externer/Continuous-Adressierung). Bewusst
 		// OHNE Ruecksicht auf stageIsStop/heldBySustain/heldByEnable: diese
 		// Timer-Pausenkonzepte sind im Continuous-Betrieb nicht anwendbar,
 		// analog dazu, dass Continuous auch Skip bewusst ignoriert (siehe

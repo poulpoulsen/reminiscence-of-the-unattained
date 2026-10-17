@@ -105,7 +105,7 @@ Für die Kette:
   Variante, weniger invasiv): Int-Knob bleibt 0–15 **pro Block**, plus ein neuer "Block Select"
   Parameter/CV am Hauptmodul, der bestimmt, welcher der angedockten Blöcke gerade adressiert wird.
   Das vermeidet einen radikalen Umbau des bestehenden Address-Widgets und bleibt näher an der
-  Handbuch-Logik (die Original-Hardware kennt ohnehin keine 32-Stage-Betriebsart).
+  Referenzdokumentation Logik (die Original-Hardware kennt ohnehin keine 32-Stage-Betriebsart).
 - Ext-Kanal A–D (External Stage Address CV) bleibt unverändert 0–10V auf 0–15 gemappt; bei
   aktivem Block-Select würde dieselbe Spannung einfach auf den gewählten Block angewendet.
 - `totalStagesInChain` (aus der Message-Chain) wird zur Laufzeit ermittelt, damit das Hauptmodul

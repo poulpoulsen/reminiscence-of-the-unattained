@@ -393,8 +393,8 @@ struct Marf248 : Module, Marf248Host {
 		RESET_VALUES_LIGHT,
 		// Gleiches Blitz-Feedback-Muster fuer Auto-Fill (siehe AUTOFILL_PARAM).
 		AUTOFILL_LIGHT,
-		// Output LEDs (Manual "Output LEDs (Two Red LEDs): Display the gate
-		// outputs"): zeigen den tatsaechlichen P1OUT/P2OUT-Trigger in
+		// Output LEDs (siehe Referenzdokumentation, Abschnitt Ausgangs-LEDs):
+        // zeigen den tatsaechlichen P1OUT/P2OUT-Trigger in
 		// Echtzeit, unabhaengig von den STAGE_PULSE1/2_LIGHT oben (die
 		// zeigen nur den Programmierzustand der aktuellen Stage, nicht den
 		// Puls selbst).
@@ -1655,8 +1655,7 @@ struct Marf248 : Module, Marf248Host {
 			// Time Source External/Internal, analog zur Voltage Source.
 			// Fehlt am gewaehlten Kanal ein Patchkabel, faellt die Interval
 			// Time auf den schnellsten Wert des aktuellen Zeitbereichs
-			// zurueck (Manual: "the interval time defaults to the fastest
-			// value of the selected range").
+			// zurueck (so beschreibt es die Referenzdokumentation sinngemaess).
 			if (stageModifier[i] & MOD_TIME_EXT) {
 				// Wie beim Voltage-External-Modus dient die (jetzt bereits
 				// normalisierte 0..1) Slider-Position selbst als Kanalwahl
