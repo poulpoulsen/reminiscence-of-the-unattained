@@ -1,16 +1,22 @@
 # Kinovice reminiscence of the unattained – Technical Documentation
 
-VCV Rack C++ port of the Buchla/Tiptop 248t MARF (Multiple Arbitrary
-Function Generator). This documentation describes the main module
-**Sofonisba**, its compact variant **Lucia** (single-stage slot, same
-engine, see [13](#sec13)), and the two expander modules **Amilcare**
-(Trigger Expander, 30HP) and **Bianca** (CV Expander, 12HP): every
-control, every input/output, the internal signal processing, the most
+VCV Rack C++ implementation of a multiple arbitrary function generator,
+heavily inspired by the wonderful Buchla world of modules. This documentation describes the main module
+**Sofonisba**, its compact variant **Lucia**, and the two expander modules
+**Amilcare** (Trigger Expander, 42HP) and **Bianca** (CV Expander, 12HP):
+every control, every input/output, the internal signal processing, the most
 important C++ functions, and the known pitfalls in how the features
-interact.
+interact. The plugin comprises seven modules in total. The three others each
+have their own documentation: the quad function generator **Europa**
+(`Europa-Dokumentation_DE.md` / `Europa-Documentation_EN.md`), the polyphonic
+dual voltage processor **Minerva** (`Minerva-Dokumentation_DE.md` /
+`Minerva-Documentation_EN.md`) and the CV processor **Elena**
+(`Elena-Dokumentation_DE.md` / `Elena-Documentation_EN.md`).
 
-References: Tiptop Audio 248t manual, the "MARF Book" (Buchla 248-1602
-documentation, maxl0rd), Suzanne Ciani Cookbook, V2.66 firmware changelog.
+Sources: publicly available user documentation and community resources on the
+hardware that inspired this module family.
+
+**Notice:** The *Kinovice reminiscence of the unattained* plugin is an independent work, heavily inspired by the wonderful Buchla world of modules. It is not affiliated with, authorized by, or endorsed by Buchla, Tiptop Audio, or any other manufacturer. Product and company names mentioned are trademarks of their respective owners and are used only to describe which functional concepts inspired a module.
 
 Status: every feature described in this documentation has been live-tested
 and confirmed by Kinovice in a running Rack instance (including Address
@@ -37,6 +43,7 @@ undo/redo).
    - [Per-Section Controls (A/B)](#sec3-3) · [[#3.3 Per-Section Controls (A/B)|Obsidian]]
    - [Module-Wide Shared Elements](#sec3-4) · [[#3.4 Module-Wide Shared Elements|Obsidian]]
    - [Inputs/Outputs Overview](#sec3-5) · [[#3.5 Inputs/Outputs Overview|Obsidian]]
+   - [Lucia – Compact Version](#sec3-6) · [[#3.6 Lucia – Compact Version|Obsidian]]
 4. [Internal Signal Processing](#sec4) · [[#4. Internal Signal Processing|Obsidian]]
    - [The Afg Core (Section Sequencing)](#sec4-1) · [[#4.1 The Afg Core (Section Sequencing)|Obsidian]]
    - [Stage-Advance Logic: Forward / Reverse / Pendulum / Skip](#sec4-2) · [[#4.2 Stage-Advance Logic: Forward / Reverse / Pendulum / Skip|Obsidian]]
@@ -60,14 +67,7 @@ undo/redo).
 10. [Known Pitfalls in Feature Interaction](#sec10) · [[#10. Known Pitfalls in Feature Interaction|Obsidian]]
 11. [Design Decisions & Scope Boundaries](#sec11) · [[#11. Design Decisions & Scope Boundaries|Obsidian]]
 12. [Cross-Compile Workflow](#sec12) · [[#12. Cross-Compile Workflow|Obsidian]]
-13. [Lucia – Compact Version (Single-Stage Slot)](#sec13) · [[#13. Lucia – Compact Version (Single-Stage Slot)|Obsidian]]
-    - [Concept and Motivation](#sec13-1) · [[#13.1 Concept and Motivation|Obsidian]]
-    - [Architecture: same engine, second model](#sec13-2) · [[#13.2 Architecture: same engine, second model|Obsidian]]
-    - [Panel Layout](#sec13-3) · [[#13.3 Panel Layout|Obsidian]]
-    - [Operating Concept: Select + Activate](#sec13-4) · [[#13.4 Operating Concept: Select + Activate|Obsidian]]
-    - [Persistence](#sec13-5) · [[#13.5 Persistence|Obsidian]]
-    - [Known Limitations](#sec13-6) · [[#13.6 Known Limitations|Obsidian]]
-14. [List of Figures](#figures) · [[#List of Figures|Obsidian]]
+13. [List of Figures](#figures) · [[#List of Figures|Obsidian]]
 
 ---
 
@@ -76,14 +76,16 @@ undo/redo).
 ## 1. Architecture Overview
 *[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
 
-The project consists of three VCV Rack modules that together form a
-plugin:
+The plugin consists of seven VCV Rack modules. Four of them belong to the Sofonisba family and are described in this file, the other three (Europa, Minerva, Elena) each have their own documentation:
 
 **Marf248** *(`Marf248.hpp`, `Marf248.cpp`)*<br>
-Main module: two independent AFG sections (A/B) that share 16 common stages. Contains all of the DSP core logic.
+Main module **Sofonisba** (146HP): two independent AFG sections (A/B) that share 16 common stages. Contains all of the DSP core logic.
+
+**Marf248Compact** *(`Marf248.cpp`, `modelMarf248Compact`)*<br>
+Compact variant **Lucia** (about 40HP): the same `struct Marf248` and DSP engine with its own panel and only one visible stage slot, see [3.6](#sec3-6). Can sit next to Sofonisba in the same patch.
 
 **Marf248TriggerExpander** *(`Marf248TriggerExpander.hpp/.cpp`)*<br>
-Optional 30HP expander: additional trigger/gate inputs and outputs (Clear, Presets, Scale/Key, Start/End of Cycle, Run gates, Advance, Address Memory, stage-modifier CV including VOLT_EXT/TIME_EXT channel selection, SEXT).
+Optional 42HP expander: additional trigger/gate inputs and outputs (Clear, Presets, Scale/Key, Start/End of Cycle, Run gates, Advance, Address Memory, stage-modifier CV including VOLT_EXT/TIME_EXT channel selection, SEXT).
 
 **Marf248CvExpander** *(`Marf248CvExpander.hpp/.cpp`)*<br>
 Optional 12HP expander: polyphonic CV modulation of stage time and slew curve, plus polyphonic per-stage gate outputs.
@@ -105,8 +107,18 @@ The trigger-expander lookup deliberately sits right at the top of
 (external strobe pulses) must already know about the trigger expander
 before `applyStageAddress()` is called.
 
-All three modules are registered in `plugin.cpp`/`plugin.hpp`
-(`modelMarf248`, `modelMarf248TriggerExpander`, `modelMarf248CvExpander`).
+**Europa** *(`Europa.cpp`, `EnvGen4.hpp`, `modelEuropa`)*<br>
+Fifth module: quad function generator with VCA (four envelope generators with four stages each, 23HP). Own engine, technically independent of Sofonisba, see `Europa-Documentation_EN.md`.
+
+**Minerva** *(`Minerva.cpp`, `VoltageProc.hpp`, `modelMinerva`)*<br>
+Sixth module: polyphonic dual voltage processor (14HP) with two identical sections that each combine four voltages into one output voltage (attenuverter, crossfader, offset). Each of the 16 channels has its own knob values, one shared channel selector applies to both sections. Own engine, technically independent of Sofonisba, see `Minerva-Documentation_EN.md`.
+
+**Elena** *(`Elena.cpp`, `CvProcElena.hpp`, `modelElena`)*<br>
+Seventh module: digital CV processor (42HP) with A/B transformation sections (input select, transfer curve with optional breakpoint, adjustable per channel) and six slew limiters C–H with pulse output, in three blocks of two slewers each. Own engine, technically independent of Sofonisba, see `Elena-Documentation_EN.md`.
+
+All seven modules are registered in `plugin.cpp`/`plugin.hpp`
+(`modelMarf248`, `modelMarf248Compact`, `modelMarf248TriggerExpander`,
+`modelMarf248CvExpander`, `modelEuropa`, `modelMinerva`, `modelElena`).
 
 ---
 
@@ -219,10 +231,10 @@ Each of the 16 stage columns contains, from top to bottom:
 Programmed output voltage of the stage. In External mode (`MOD_VOLT_EXT`), the slider position instead selects the channel A–D (4 zones of 2.5V each). The tooltip shows volts, note name (when Quantize is active), or channel name (when External is active) – see `StageVoltageQuantity`. **Right-click number entry also accepts note names** (e.g. "C4", "C#4", "Db4" – note letter case-insensitive, accidental `#` or lowercase `b`, octave number required, reference 0V=C4) instead of plain volt values. Works regardless of the stage's Quantize state; falls back to normal numeric parsing on invalid input.
 
 **Time** (`STAGE_TIME_PARAM`) *(Vertical slider, normalized 0–1)*<br>
-Programmed stage time as a position **within** the selected Time Range bracket (TR1–4). The tooltip shows the Buchla Cookbook dial value (0–10, leading) with the exactly resolved number of seconds in parentheses afterward, e.g. `4.0 (0.132 s)` – see `StageTimeQuantity`. Right-click number entry still accepts the 0–10 dial value. In External mode (`MOD_TIME_EXT`), the position selects the channel A–D.
+Programmed stage time as a position **within** the selected Time Range bracket (TR1–4). The tooltip shows the classic dial value (0–10, leading) with the exactly resolved number of seconds in parentheses afterward, e.g. `4.0 (0.132 s)` – see `StageTimeQuantity`. Right-click number entry still accepts the 0–10 dial value. In External mode (`MOD_TIME_EXT`), the position selects the channel A–D.
 
 **Grip Value Readout** *(both sliders, printed directly on the grip)*<br>
-In addition to the tooltip, the slider grip shows the current value rounded to a whole number (0–10) directly on the panel – for Voltage the voltage level in volts, for Time the same Buchla Cookbook dial value shown in the tooltip (the leading number before the parentheses), since `pq->getDisplayValue()` returns the same 0–10 scale for both parameters. Font is ShareTechMono, gold outline (RGB 235,170,60) with a black fill, centered in the grip. In Quantize/External special modes the digit still shows the raw slider-position value (0–10), not the resolved meaning (note name or channel A–D) – the tooltip remains authoritative for those, since an abbreviated readout wouldn't reliably fit in the 8×6mm grip.
+In addition to the tooltip, the slider grip shows the current value rounded to a whole number (0–10) directly on the panel – for Voltage the voltage level in volts, for Time the same classic dial value shown in the tooltip (the leading number before the parentheses), since `pq->getDisplayValue()` returns the same 0–10 scale for both parameters. Font is ShareTechMono, gold outline (RGB 235,170,60) with a black fill, centered in the grip. In Quantize/External special modes the digit still shows the raw slider-position value (0–10), not the resolved meaning (note name or channel A–D) – the tooltip remains authoritative for those, since an abbreviated readout wouldn't reliably fit in the 8×6mm grip.
 
 **Two stage LEDs (`STAGE_LIGHT_A/B`)** *(Light)*<br>
 Indicate whether Section A or B is currently addressing this stage (green/red, side by side).
@@ -317,14 +329,14 @@ Stage Address channel-select CV input.
 
 **Outputs column** (its own narrow column between the Jacks column
 and the stage array): VOUT (voltage output), Reference (`TOUT_A/B_OUTPUT`,
-0–10V descending ramp over stage time, intended for downstream 292t LPGs),
+0–10V descending ramp over stage time, intended for downstream low-pass-gate style modules),
 Time (`TIMESTATIC_A/B_OUTPUT`, **new, session "Time/Reference-Output
 Separation"**: static CV 0–10V proportional to the raw interval-time
 slider position, independent of Time Range/external source/elapsed
 phase – placed directly below Reference, same 14.5mm pitch as VOUT→
 Reference; the outputs frame was extended for this from 12–44mm to
 12–56mm). **Naming correction:** the jack originally labeled "TOUT"
-actually computes what the manual calls the "Reference Output" ramp, not
+actually computes what the reference documentation calls the "Reference Output" ramp, not
 the static "Time Output" voltage – both functions now exist as separate
 jacks, see [4.5](#sec4-5).
 
@@ -340,13 +352,6 @@ mixing:
 - **Red** (R channel only): section stopped (button/pulse, a programmed
   stop stage, or Continuous addressing active).
 
-The underlying `stopA`/`holdA` logic (including the Advance-mode special
-case and Continuous override) came from unfinished groundwork in an
-earlier session (orphaned `HOLD_x_LIGHT`/`STOP_x_LIGHT` light IDs with no
-panel wiring) and was consolidated into the RGB variant in the "Status
-LED Green/Yellow/Red" session instead of wiring up the four separate
-lights.
-
 <a id="sec3-4"></a>
 
 ### 3.4 Module-Wide Shared Elements
@@ -355,7 +360,7 @@ lights.
 - **Global Clear** (`CLEAR_PARAM`, LED button, red flash light): resets
   all modifier bits, Range (→ Full), and Curve (→ center) on all 16
   stages. Also discards any pending preset pickups. Deliberately follows
-  only the subset described in the manual (Output Pulses, voltage
+  only the subset described in the reference documentation (Output Pulses, voltage
   programming, operating mode, Time Range) – the Voltage/Time controls
   themselves are left untouched. **Address Memory is left untouched by
   Global Clear** (see [4.9](#sec4-9)).
@@ -400,6 +405,30 @@ lights.
 | Time Multiplier CV | `TIME_MULT_CV_A/B_INPUT` (Tempo, V/Oct) | per section |
 | BEATS_FACTOR CV | `BEATS_FACTOR_CV_A/B_INPUT` (new) | per section |
 | Section outputs | `VOUT_A/B` (Voltage), `TOUT_A/B` (Reference, descending ramp), `TIMESTATIC_A/B` (Time, new, static CV), `APOUT_A/B`, `P1OUT_A/B`, `P2OUT_A/B` | per section |
+
+---
+
+<a id="sec3-6"></a>
+
+### 3.6 Lucia – Compact Version
+*[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
+
+**Lucia** is the compact variant of Sofonisba (named after the Anguissola sister regarded as the most talented painter of the family). It uses the same `struct Marf248` and therefore the same DSP engine, but has its own panel (`Marf248CompactWidget`, a second model `modelMarf248Compact`, slug `Marf248Compact`) with only **one visible stage slot** instead of 16 parallel stage columns. It is about 40HP wide (derived from the column spacing in the widget) instead of 146HP. Both versions can be in the same patch at once.
+
+**Panel structure**<br>
+From left to right: external-CV column (EXT A–D), Section A controls, Section A jacks, Section A outputs (with STAGE selection), the one stage slot, Section B outputs, Section B jacks, Section B controls and the preset column. All elements except the stage slot match the full version.
+
+**One shared stage slot**<br>
+`STAGE_VOLTAGE_PARAM`, `STAGE_TIME_PARAM`, `STAGE_RANGE_PARAM`, `STAGE_CURVE_PARAM` and all modifier bits are each **one** array across all 16 stages, not separate per section. A second slot for Section B would therefore write the same params as the one for Section A. Lucia therefore has exactly one slot for both sections, like the shared stage columns of the full version.
+
+**STAGE selection and AKTIVIEREN**<br>
+A selector knob (14 mm) with a center display and an activate button (8 mm) sit in the Section A output column. Dragging vertically preselects the stage (`pendingStage`), AKTIVIEREN accepts it (`displayedStage`). The number in the knob is green when preselection and display match, amber otherwise. The button is then green, otherwise red. Only after activating does the slot show the values of the chosen stage.
+
+**Not a param, JSON persistence**<br>
+`pendingStage` and `displayedStage` (int 0–15) are members of `struct Marf248` but deliberately **not Rack params**: pickup/catch, history and preset recall should not affect pure GUI navigation. They are stored via `dataToJson()`/`dataFromJson()` with clamping. The members also exist in the full version, unused there and with no difference in behavior.
+
+**Expanders**<br>
+Amilcare and Bianca dock to Lucia exactly as they do to Sofonisba, see [Section 8](#sec8).
 
 ---
 
@@ -532,10 +561,10 @@ ineffective so the normal playback logic pauses in the same frame):
   excursion. The actual ramp progress (`elapsed += sampleTime`) keeps
   running continuously in `process()` regardless, so a slew ramp toward
   the newly addressed target still progresses smoothly – this matches the
-  MARF manual ("slope time is equal to the programmed interval time",
-  confirmed by the firmware changelog to apply during external/Continuous
-  addressing as well) and is deliberately used, e.g., in the Cookbook
-  "String Patch" for glide behavior. Start/Stop has no effect in
+  behavior described in the reference documentation (slope time equal to the
+  programmed interval time, which also applies during external/Continuous
+  addressing) and is deliberately used for glide behavior, e.g., in
+  string-style patches. Start/Stop has no effect in
   Continuous mode (`running` remains ineffective).
 - **Freeze** (**new**, Trigger Expander only, `STAGE_ADDR_FREEZE_POLY_INPUT`):
   holds `currentStage` steady while the gate is high – the address CV
@@ -624,7 +653,7 @@ Order of the signal path (inside `Afg::process()`), per sample:
    and holds until the next boundary is crossed – producing an audible/
    visible staircase *within* a single stage transition, instead of a
    smooth ramp that only snaps at the very end (Kinovice feature, no
-   direct hardware precedent; on a real 248t/MARF the same effect is
+   direct hardware precedent; on comparable hardware the same effect is
    achieved by patching an external quantizer after VOUT). Works
    independently of `MOD_QUANT_OCT` – even if the endpoint itself isn't
    separately quantized, continuous re-quantization during the ramp
@@ -647,7 +676,7 @@ a normalized position 0–1 **within** the bracket selected by
 2. **External Time** (`MOD_TIME_EXT`): the (normalized) knob position
    selects the channel A–D (4 equally-sized zones). If the selected
    channel has no patch cable, the time falls back to the fastest value
-   in the bracket (per manual specification).
+   in the bracket (per the reference documentation).
 3. **Internal Time**: `resolvedTime[i] = timeRangeMin + stageTime[i] *
    timeRangeSpan`.
 4. **Additive stage-time CV** (CV expander, optional): added to the
@@ -662,27 +691,23 @@ a normalized position 0–1 **within** the bracket selected by
    factor semantics – full derivation in [4.12](#sec4-12).
 
 **Reference vs. Time Output (session "Time/Reference-Output Separation"):**
-The manual describes two separate jacks that were originally merged into
+The reference documentation describes two separate jacks that were originally merged into
 one in the code:
 
 - **Reference Output** (`TOUT_A/B_OUTPUT`, originally named "TOUT"):
   `(1.f - phase) * 10.f` – a ramp descending over the stage time,
-  intended as a control voltage for downstream 292t LPGs. Pure naming
+  intended as a control voltage for downstream low-pass-gate style modules. Pure naming
   correction of the `configOutput()` description, no behavioral change.
 - **Time Output** (`TIMESTATIC_A/B_OUTPUT`, **new**): `stageTime[stage] *
   10.f` – a static voltage proportional to the **raw** interval-time
   slider position of the currently addressed stage (0–1 → 0–10V),
   independent of Time Range, external source, or the running phase. The
-  chosen value range is based on a community first-hand account (an
-  original 248 hardware owner, ModWiggler forum: "you can use their
-  output voltages as different sequence stages (accessed via 'Time'
-  output …)") together with the manual's own wording, "proportional to
-  the interval time slider" (not "elapsed stage time") – both point to a
-  static, per-stage programmed value rather than a phase-dependent
-  signal. TipTop's own firmware source code is not public; the closest
-  available reference was the open 248r community implementation
-  (`wir35/marf`), which implements the same original Buchla
-  specification.
+  chosen value range follows the wording of the reference documentation,
+  which describes the output as proportional to the interval-time slider
+  position (not to the elapsed stage time) – this points to a static,
+  per-stage programmed value rather than a phase-dependent signal. No
+  firmware source code was available, so the value range is an
+  assumption.
 
 <a id="sec4-6"></a>
 
@@ -1009,10 +1034,10 @@ operated on the raw volt value while the tooltip showed BPM. Entering
 
 **Practical guidance**: BEATS_FACTOR=4 (default) means 1 stage = 1
 sixteenth note – at true 120 BPM that gives a 2s cycle time across all 16
-stages, often too fast for the MARF's typically slower function-generator
+stages, often too fast for the typically slower function-generator
 character. BEATS_FACTOR=8 (1 stage = 1 eighth note, 4s/cycle at 120 BPM)
 or 16 (1 stage = 1 quarter note/beat, 8s/cycle) tend to fit classic
-Cookbook patches better in practice.
+patches better in practice.
 
 ---
 
@@ -1022,7 +1047,7 @@ Cookbook patches better in practice.
 *[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
 
 Kinovice feature (Tangerine-Dream-style rhythmic sub-triggers per stage),
-no Buchla/Tiptop hardware equivalent. While active, it replaces the
+no hardware equivalent. While active, it replaces the
 continuous P1/P2 edge detection described in [4.7](#sec4-7) with N sub-
 triggers distributed across the stage time, either evenly or warped/offset
 (see below). The envelope/slew (`voltageOut`) is **completely unaffected**
@@ -1259,7 +1284,7 @@ Tooltip text of the Voltage knob: channel name in External mode, note name with 
 Right-click number entry: first tries to interpret the input as a note name via `noteNameToVoltage()` (always active, regardless of the stage's Quantize state); falls back to the existing numeric parsing incl. the comma fix (`normalizeDecimalComma()`) on failure. Fixes a bug where note names could not be entered even though `getDisplayValueString()` already displayed them correctly.
 
 **`StageTimeQuantity::getDisplayValue()` / `setDisplayValue()`**<br>
-**New**: converts the internal 0–1 raw value to/from the Buchla Cookbook dial convention (0–10) for display and right-click entry – the internal parameter value itself stays 0–1 (no breaking change for existing presets).
+**New**: converts the internal 0–1 raw value to/from the classic dial convention (0–10) for display and right-click entry – the internal parameter value itself stays 0–1 (no breaking change for existing presets).
 
 **`StageTimeQuantity::getDisplayValueString()`**<br>
 Tooltip text of the Time knob: shows the 0–10 dial value leading, followed by the number of seconds exactly resolved against the current Time Range in parentheses (e.g. `4.0 (0.132 s)`).
@@ -1557,37 +1582,33 @@ yet visually confirmed on screen.
 ## 8. Expander Mechanism (Inter-Module Communication)
 *[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
 
-Both expanders detect a main module to their left **or** right
+Both expanders detect Sofonisba **or Lucia** to their left **or** right
 (`getLeftExpander()`/`getRightExpander()`) and show this via a green
-`LINK_LIGHT`. Detection runs via `dynamic_cast<Marf248Host*>` (session
-"Expander detection with dynamic_cast", see [13.2](#sec13-2)), **no
-longer** via a model comparison (`getModel() == modelMarf248`) as an
-earlier version of this documentation described – the model comparison
-would not have recognized the compact variant Lucia (own registered
-model `Marf248Compact`, but the same underlying `Module` type) as a
-valid host. `Marf248Host` is a slim marker interface in `Marf248.hpp`
-(virtual destructor only, for RTTI) that `Marf248` additionally
-implements (`struct Marf248 : Module, Marf248Host`) – necessary because
-`struct Marf248` itself is defined entirely in `Marf248.cpp` and would
-otherwise be an incomplete type for `dynamic_cast`. As long as no main
-module is docked, the expanders reset their own outputs to 0V every
+`LINK_LIGHT`. Detection uses `dynamic_cast` against the slim marker
+interface `struct Marf248Host { virtual ~Marf248Host() = default; };` in
+`Marf248.hpp` (`Marf248 : Module, Marf248Host`), instead of comparing
+`getModel()` as before. Reason: Sofonisba and Lucia use the same `struct
+Marf248` with two different models, a model comparison would have detected
+only one of them. The interface is needed because `struct Marf248` is fully
+defined in `Marf248.cpp` and `dynamic_cast` needs the complete target type. As long as no
+Sofonisba is docked, the expanders reset their own outputs to 0V every
 frame (preventing hanging voltages when removed or moved away).
 
 Conversely, `Marf248::process()` looks every frame for a
-`Marf248TriggerExpander` or `Marf248CvExpander` as a direct neighbor
-(likewise via `dynamic_cast<Marf248TriggerExpander*>`/
-`dynamic_cast<Marf248CvExpander*>`, same session) and reads/writes that
-module's parameters/inputs/outputs directly via
+`Marf248TriggerExpander` or `Marf248CvExpander` (also via
+`dynamic_cast<Marf248TriggerExpander*>` / `<Marf248CvExpander*>`) as a direct neighbor and
+reads/writes that module's parameters/inputs/outputs directly via
 `getParam()`/`getInput()`/`getOutput()` – with no message-passing, since
-the expanders themselves have no processing of their own. This direction
-(main module detects expander) was uncritical for Lucia coexistence,
-since Amilcare/Bianca themselves don't change – only the reverse
-direction (expander detects main module) was the actual blocker, see
-above. Both expander types can be docked independently of each other
-(none, one, or both at once); if an expander is missing, the associated
-modulation simply falls away (e.g. Curve CV/Time CV = 0, no poly-gate
-overrides, no Advance, no Address Memory). Both Sofonisba and Lucia are
-recognized equally as a host by Amilcare/Bianca.
+the expanders themselves have no processing of their own. Both expander
+types can be docked independently of each other (none, one, or both at
+once); if an expander is missing, the associated modulation simply falls
+away (e.g. Curve CV/Time CV = 0, no poly-gate overrides, no Advance, no
+Address Memory).
+
+Only the **direct** left/right neighbor is checked, there is no chain
+search. Amilcare and Bianca must therefore dock on **different sides** of
+the main module. If both sit on the same side (Sofonisba – Amilcare –
+Bianca), the more distant one is not detected.
 
 External CV inputs are generally handled such that, with unused channels
 left unpatched, the behavior without an expander is preserved exactly
@@ -1839,7 +1860,7 @@ step 1 is not output, step 2 follows on the next clock; (3) Reset lands
 on step 1 and waits there until the next clock before outputting values.
 
 Our Reset (`STAGE_ADDR_RESET_A/B_PARAM`, [4.3](#sec4-3)) doesn't fit any
-of the three categories exactly, because MARF isn't a classic,
+of the three categories exactly, because this module isn't a classic,
 clock-per-step sequencer – it runs on an internal timer (`elapsed`)
 instead. `applyStageAddress()` treats Reset as the highest-priority,
 immediate branch, checked before Continuous/Strobe:
@@ -1960,7 +1981,7 @@ trigger contexts with different Rack default behavior.
   wider, never shorter.
 - **TR3 is the implicit default** (no bit set), following the same
   pattern as the Range/Shape/Slope defaults.
-- **Gate threshold is uniformly 2V** (not the manual-specified 5V for
+- **Gate threshold is uniformly 2V** (not the 5V specified in the reference documentation for
   Enable) – a deliberate project decision, potentially subject to later
   review.
 - **SIMD is used for the curve-power calculation** (session "CPU
@@ -2055,10 +2076,9 @@ trigger contexts with different Rack default behavior.
   `configOutput()` description was corrected – **no breaking change**,
   existing Reference patches continue to work unchanged.
 - **Time Output's value range (0–10V, proportional to the raw slider
-  position)** was derived, in the absence of public TipTop firmware
-  source code, from the original Buchla manual's own wording
-  ("proportional to the interval time slider") together with a community
-  first-hand account (see [4.5](#sec4-5)) – deliberately analogous to the
+  position)** was derived, in the absence of public firmware source code,
+  from the wording of the reference documentation (output proportional to
+  the interval-time slider, see [4.5](#sec4-5)) – deliberately analogous to the
   already-existing Voltage Output behavior, not 1V/oct-style or tied to
   the resolved number of seconds.
 - **Status LED as a single RGB light rather than four separate
@@ -2088,54 +2108,83 @@ trigger contexts with different Rack default behavior.
   reversible. Two separate undo mechanisms were needed, since bit
   modifiers (`stageModifier[]`) and continuous controls (engine params)
   are stored differently, see [4.14](#sec4-14).
-- **Lucia name**: named after Lucia Anguissola, regarded as the most
-  talented painter among the four painting sisters of Sofonisba
-  Anguissola (Kinovice decision, session "Kompaktversion Marf248 – Panel
-  & Model-Registrierung").
-- **One shared stage slot instead of one per section** – the original
-  concept-document assumption "one slot per section" assumed Voltage/
-  Time/Range/Curve were separate params per section. Code inspection
-  disproved that: `STAGE_VOLTAGE_PARAM` etc. are each a single array over
-  `NUM_STAGES`, shared module-wide between Section A and B (see
-  [3.4](#sec3-4)). A second slot for Section B would in reality write the
-  same params as the slot for Section A – no second editing context, just
-  two controls for the same value. Corrected to exactly one
-  `pendingStage`/`displayedStage` pair for both sections, see
-  [13.4](#sec13-4).
-- **`pendingStage`/`displayedStage` are deliberately not a param** –
-  Pickup/Catch, the VCV history system, and preset recall should not
-  affect or retroactively change pure GUI navigation. Persisted instead
-  via `dataToJson()`/`dataFromJson()`, analogous to `currentKey`/
-  `currentScale`. Both fields live on `struct Marf248` itself (not the
-  widget), so they're also present on the 146HP full version, simply
-  unused there.
-- **The select knob and activate button are standalone widgets with no
-  param binding** (`StageSelectKnob`/`StageActivateButton`, own mouse
-  handling instead of a `ParamQuantity`) – a direct consequence of the
-  previous decision: since GUI navigation isn't a param, its controls
-  can't run through the Rack param engine either.
-- **Activate-button color shows the activation state, not the mouse
-  click** (Kinovice feedback after first test) – red while `pendingStage`
-  differs from `displayedStage`, green once both match, the same
-  condition as the center-digit coloring in the select knob. Stays green
-  on repeated clicks as long as the stage doesn't change, by design.
-- **Lucia uses the same `struct Marf248` engine as Sofonisba, a second
-  registered model** (`modelMarf248Compact`/slug `Marf248Compact`, lives
-  in `Marf248.cpp` instead of its own `.cpp` file to reuse the widget
-  helpers defined locally there, such as `StageSlider`/`RangeKnob`/
-  `TrangeButton`) – no duplicated DSP code, both panel variants stay in
-  sync through one shared code path. This required the `Marf248Host`
-  switch of the expander detection first, see [8](#sec8) and
-  [13.2](#sec13-2).
-- **Lucia's panel layout is a 1:1 carry-over from `Marf248Widget` rather
-  than a fresh design** (Section A/B controls/jacks/outputs, Ext column,
-  presets column, Global Clear/Reset/AutoFill) – deliberate choice
-  against introducing new, untested coordinates for already-proven
-  elements. Only change: the 16-fold `xStep` repetition of the stage
-  column is replaced by a single, visibility-driven slot (see
-  [13.3](#sec13-3)). Jacks and outputs column widths were widened
-  relative to the full version (20→24mm and 12→16mm respectively,
-  Kinovice feedback "BPM column too narrow" / fitting the select knob).
+- **Lucia: one shared stage slot for both sections (Kinovice decision after
+  a code check):** the original assumption "one slot per section" was
+  corrected. The stage params are each one array across 16 stages, not
+  separate per section, a second slot would write the same params. See
+  [3.6](#sec3-6).
+- **`pendingStage`/`displayedStage` deliberately not a param:** pickup/catch,
+  history and preset recall should not affect GUI navigation. Persistence via
+  JSON with clamping. The same decision later applies to Europa's generator
+  selection.
+- **`dynamic_cast` instead of model comparison for expander detection
+  (Kinovice decision, 2026-09-19):** a code inspection disproved the
+  assumption that type checking was already in use. Both directions were
+  switched, using the marker interface `Marf248Host` so that Lucia uses the
+  same expanders without changing the expander headers. See
+  [Section 8](#sec8).
+- **Europa gets its own documentation and its own engine (Kinovice):** the
+  quad function generator shares no code with `Afg`, so the feature-complete
+  Sofonisba stays untouched (engine path B). Details in
+  `Europa-Documentation_EN.md`.
+- **Europa: free-running cycle as the third position of the LOOP switch
+  (Kinovice decision, 2026-10-01):** instead of a separate switch or a new
+  param. The values 0 (Off) and 1 (Gate) keep their meaning, saved patches
+  stay valid. Works in One-Shot only, the retrigger behavior is deliberately
+  left unchanged. Prompted by a public community thread on emulating envelope
+  generators from the Buchla world, the reference documentation is only the
+  source of the idea, the implementation is independent.
+- **Europa: rate CV on channel 5 of the TIME CV input (Kinovice decision,
+  2026-10-01):** bipolar, exponential (one octave per volt, limited to ±5 V)
+  and shape-preserving. On the existing poly input instead of a separate jack,
+  because the panel already had nine jack columns and old patches stay valid.
+  No global switch for unipolar CVs.
+- **Europa: OR outputs and panel at 23 HP (Kinovice decision, 2026-10-01):**
+  two outputs with the maximum of the ENV levels per pair (1+2, 3+4) before
+  the VCA, purely output-side. A column of its own on the right instead of a
+  tenth column in the grid or a context menu (which would have cost the
+  envelope outputs of generators 2 and 4). 22 HP was too narrow, 24 HP too
+  wide.
+- **Europa: quadrature coupling (Kinovice decision, 2026-10-01):** switchable
+  per pair, generator 2 or 4 starts at the end of the partner's attack
+  (rejected: beginning of release, end of cycle). Our own definition, because
+  the hardware behavior cannot be determined unambiguously from the reference
+  documentation. The follower's own gate is ignored, in Sustain it follows the
+  partner's gate. Details, tests and Rack results for all four Europa
+  extensions: `Europa-Documentation_EN.md`, Section 8.
+- **Minerva and Elena as separate modules (Kinovice decision, 2026-09-29):**
+  analog voltage computation (attenuverter, crossfader, offset) and digital
+  transfer-curve transformation with slew limiting are two different
+  functions, hence two modules instead of a hybrid. Both have their own
+  documentation and their own engines (`VoltageProc.hpp`, `CvProcElena.hpp`),
+  Sofonisba stays untouched.
+- **Minerva: one shared channel selector for both sections (Kinovice decision,
+  2026-09-29):** the module is polyphonic, each of the 16 channels has its own
+  knob values, and the channel selection applies to both sections together.
+  `pendingCh`/`displayedCh` are deliberately not params, as with Lucia and
+  Europa. The “+.5” switch (adds 5 V to Vb inside the crossfade) was
+  retrofitted later per section and channel, the params sit at the end of the
+  enum, old patches stay unchanged.
+- **Minerva: context-menu options module-wide, JSON only (Kinovice decision,
+  2026-09-30):** the range of the M knob is unlimited by default (knob −1…+2,
+  default 0.5; four-quadrant multiplication, ring modulation), switchable to
+  0…1. Output limiting is off by default, switchable to soft or hard with a
+  fixed level of ±12 V, the soft threshold is fixed at 0.9 · L = 10.8 V so the
+  0–10 V range stays undistorted. Both are not params, so saved patches stay
+  compatible.
+- **Elena: A/B per channel, slew sections global (Kinovice decision,
+  2026-09-29):** the A/B sections (input select, transfer curve with
+  breakpoint) are adjustable per channel as with Minerva. The slew sections
+  C–H have global controls shared per pair (C/D, E/F, G/H), because with slew
+  16 individual controls would bring little and multiply the number of params.
+  The signals stay polyphonic, and each slewer only acts on its own input.
+  Auto-pulse runs through a button of its own with an LED per pair instead of
+  the hold gesture of the original, because that is impractical in Rack and
+  its state would not be visible. A transfer-curve graphic replaces the LED
+  chain. The assignment of rate (exponential approach) and time (linear slope)
+  stays as given in the reference documentation, swapping them after
+  contradictory search-engine texts was rejected. Measurements in Rack matched
+  the calculation. Details: `Elena-Documentation_EN.md`, Section 9.
 
 ---
 
@@ -2178,8 +2227,8 @@ JOBS=$(nproc) make docker-build
 
 ```nu
 cd ~/vcvrack-sdk/rack-plugin-toolchain
-make -j8 docker-plugin-build-lin-x64 PLUGIN_DIR=/home/held/vcvrack-projects/marf248-vcv-cpp
-make -j8 docker-plugin-build-win-x64 PLUGIN_DIR=/home/held/vcvrack-projects/marf248-vcv-cpp
+make -j8 docker-plugin-build-lin-x64 PLUGIN_DIR=/pfad/zum/plugin-ordner
+make -j8 docker-plugin-build-win-x64 PLUGIN_DIR=/pfad/zum/plugin-ordner
 ```
 
 **Important:** the targets are named `-lin-x64`/`-win-x64`/`-mac-x64`/
@@ -2200,157 +2249,6 @@ unzip plugin-build/Marf248-<version>-lin-x64.vcvplugin -d <Rack plugin folder>
 there first, then restart Rack.
 
 ---
-
-<a id="sec13"></a>
-
-## 13. Lucia – Compact Version (Single-Stage Slot)
-*[↑ Back to Table of Contents](#toc) · [[#Table of Contents|Obsidian]]*
-
-Lucia is a second panel variant of Sofonisba, independently selectable in
-the VCV Rack browser – named after Lucia Anguissola, regarded as the most
-talented painter among the four painting sisters of the painter Sofonisba
-Anguissola (see [11](#sec11)). Instead of showing 16 stage columns per
-section in parallel, Lucia displays exactly **one** stage at a time –
-selection via a knob, commit via a separate activate button. Lucia exists
-**in addition to** Sofonisba, not as a replacement; both variants can be
-used simultaneously in the same patch.
-
-<a id="sec13-1"></a>
-
-### 13.1 Concept and Motivation
-
-The Sofonisba panel shows all 16 stages of each section side by side
-(146HP) – that costs substantial panel space. Lucia reduces the display
-to one active stage slot; the remaining 15 stages keep running unchanged
-in the background. The display is purely an editing/observation view, no
-intervention into the sequence – the sequencing itself (`Afg::process()`,
-see [4.1](#sec4-1)) is entirely unaffected by Lucia's panel.
-
-<a id="sec13-2"></a>
-
-### 13.2 Architecture: same engine, second model
-
-Lucia uses the **same** `struct Marf248` class (identical DSP logic,
-params, `process()`) as Sofonisba – only `ModuleWidget` and panel differ.
-`plugin.cpp` registers a second `Model` for this:
-
-```cpp
-Model* modelMarf248Compact = createModel<Marf248, Marf248CompactWidget>("Marf248Compact");
-```
-
-`Marf248CompactWidget` deliberately lives inside `Marf248.cpp` itself
-rather than its own `.cpp` file, to reuse the widget helpers defined
-locally there (`StageSlider`, `RangeKnob`, `TrangeButton`,
-`StageCurveTrimpot`, `StageModBroadcastButton`, `HDivider`,
-`TempoBpmDisplay`, `StageFrame`, `PanelBackground`) without duplicating or
-exporting them.
-
-**Prerequisite: expander detection switched to `dynamic_cast`.**
-Amilcare/Bianca originally detected the main module via `getModel() ==
-modelMarf248` – that would not have accepted Lucia (own model
-`modelMarf248Compact`) as a valid host, even though both instantiate the
-same underlying class. Switched to `dynamic_cast<Marf248Host*>` (session
-"Expander detection with dynamic_cast"): `Marf248Host` is a slim marker
-interface in `Marf248.hpp` (virtual destructor only, for RTTI) that
-`Marf248` additionally implements (`struct Marf248 : Module,
-Marf248Host`) – necessary since `struct Marf248` itself is defined
-entirely in `Marf248.cpp` and would otherwise be an incomplete type for
-`dynamic_cast`. Details in [8](#sec8).
-
-<a id="sec13-3"></a>
-
-### 13.3 Panel Layout
-
-Left to right (identical order and geometry to Sofonisba, carried over
-1:1 from `Marf248Widget` – see [3.1](#sec3-1) for the detailed values):
-
-1. **Ext column** (EXT A–D, module-wide shared external CV sources)
-2. **Section A**: controls (Time Multiplier, Run, Mode, Pendulum, Stage
-   Address), jacks (Start/Stop, Time-Mult CV, live BPM display,
-   Beats-Factor CV, Pulse 1/2 Out, All-Pulses Out, Address CV), outputs
-   (VOUT/TOUT/TIME)
-3. **The one stage slot** (Voltage/Time sliders, all modifier buttons,
-   Shape/Curve/TRange/Range – the same widget set as a single stage
-   column on Sofonisba)
-4. **Section B**: mirrors Section A
-5. **Presets column**: Load/Save, Scale/Key, 12 preset slots
-
-**Deviations from the 1:1 carry-over** (Kinovice feedback after first
-test):
-- Jacks column width 20→24mm (the 22mm-wide live BPM display extended
-  past the 20mm frame)
-- Outputs column width (VOUT/TOUT/TIME) 12→16mm, Section A's frame
-  extended to the module bottom – room for the select knob + activate
-  button (see [13.4](#sec13-4)), directly below TIME
-- Global Clear/Reset/AutoFill are centered over the one stage slot (8mm
-  instead of 12mm pitch, so all three fit within the 32mm frame width)
-
-Panel width is computed from the actual space needed by all columns
-rather than a fixed value.
-
-<a id="sec13-4"></a>
-
-### 13.4 Operating Concept: Select + Activate
-
-Two-step principle, to avoid flicker while browsing:
-
-1. **Select** (`StageSelectKnob`, in Section A's VOUT/TOUT/TIME column):
-   dragging changes only `module->pendingStage` (0–15), no visibility
-   change yet. The center digit shows the selected index (1–16) – green
-   once `pendingStage == displayedStage`, amber otherwise.
-2. **Activate** (`StageActivateButton`, directly below): transfers
-   `pendingStage → module->displayedStage` → a deliberate, discrete
-   switch moment instead of continuous switching while turning the knob.
-   Button color shows the same activation state as the knob digit: red
-   while `pendingStage` differs from `displayedStage`, green once both
-   match – stays green on repeated clicks as long as the stage doesn't
-   change.
-
-**Exactly one shared pair for both sections**, not one per section:
-`STAGE_VOLTAGE_PARAM`, `STAGE_TIME_PARAM`, `STAGE_RANGE_PARAM`,
-`STAGE_CURVE_PARAM`, and all modifier bits are each a single array over
-`NUM_STAGES`, shared module-wide between Section A and B (see
-[3.4](#sec3-4)) – a second, independent slot for Section B would in
-reality write the same params as the slot for Section A. The two
-stage-active LEDs (A green/B red, visible on the stage slot and again
-further up) independently show whether the respective section is
-*currently* playing the displayed stage (`afgA.currentStage`/
-`afgB.currentStage`) – unaffected by select/activate.
-
-Technically: all 16 stage widget sets (params + lights) are created once
-at the same panel position when the panel is built, and collected into
-`stageWidgets[i]`; `Marf248CompactWidget::step()` sets
-`widget->visible = (i == module->displayedStage)` per frame for each set
-– a trivial, cheap operation with no RTKit relevance, since it's a pure
-GUI layer outside `process()`.
-
-<a id="sec13-5"></a>
-
-### 13.5 Persistence
-
-`pendingStage`/`displayedStage` (int, 0–15) are members on `struct
-Marf248` itself, not widget state – deliberately **not a param**:
-Pickup/Catch, the VCV history system, and preset recall should not
-affect or retroactively change pure GUI navigation (see [11](#sec11)).
-Persisted via `dataToJson()`/`dataFromJson()`, analogous to
-`currentKey`/`currentScale` (see [9](#sec9)), with a clamp to
-`0..NUM_STAGES-1` against invalid values from older or manually edited
-patch files. Since both fields live on `struct Marf248`, they're also
-present on the 146HP full version – simply unused there, no behavioral
-change for existing Sofonisba patches.
-
-<a id="sec13-6"></a>
-
-### 13.6 Known Limitations
-
-- **No follow mode**: the displayed slot changes only through the manual
-  select/activate pair, regardless of which stage the sequencer is
-  actually playing. An optional follow switch (display automatically
-  tracks `afgA.currentStage`/`afgB.currentStage`) is noted for a future
-  extension, retrofittable without changing the base architecture.
-- Panel geometry is the 1:1 carry-over from Sofonisba (see
-  [13.3](#sec13-3)) plus the already-tested adjustments listed there –
-  not designed from scratch for 32mm-stage-slot proportions.
 
 <a id="figures"></a>
 
