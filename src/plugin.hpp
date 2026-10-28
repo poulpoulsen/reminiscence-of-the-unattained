@@ -19,3 +19,22 @@ extern Model* modelMarf248CvExpander;
 // (StageSlider, RangeKnob, TrangeButton, StageCurveTrimpot, ...)
 // mitzuverwenden, ohne sie zu duplizieren oder zu exportieren.
 extern Model* modelMarf248Compact;
+
+// Fuenftes Modul "Europa" (Quad Function Generator mit VCA), eigene
+// Datei src/Europa.cpp, Engine in src/EnvGen4.hpp.
+extern Model* modelEuropa;
+
+// Sechstes Modul "Minerva" (polyphoner Dual-Spannungsprozessor mit
+// Kanalwahl), eigene Datei src/Minerva.cpp,
+// Engine in src/VoltageProc.hpp.
+extern Model* modelMinerva;
+
+// Siebtes Modul "Elena" (digitaler CV-Prozessor:
+// A/B-Transformationssektionen plus sechs Slew-Limiter
+// C-H mit Auto-Pulse), eigene Datei src/Elena.cpp, Engine in
+// src/CvProcElena.hpp.
+extern Model* modelElena;
+
+// Achtes Modul "Anna-Maria" (Lowpass Gate nach dem Modell von Parker/D'Angelo, DAFx-13;
+// vier Kanaele), eigene Datei src/AnnaMaria.cpp, Engine in src/AnnaMariaLpg.hpp.
+extern Model* modelAnnaMaria;

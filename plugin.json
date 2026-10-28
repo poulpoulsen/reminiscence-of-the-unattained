@@ -1,7 +1,7 @@
 {
   "slug": "reminiscence-of-the-unattained",
   "name": "reminiscence of the unattained",
-  "version": "2.0.0",
+  "version": "2.4.0",
   "license": "GPL-3.0-or-later",
   "author": "Kinovice",
   "authorEmail": "karlderletzte@holnishaus.de",
@@ -14,25 +14,87 @@
       "slug": "Marf248",
       "name": "Sofonisba",
       "description": "Dual-section multiple arbitrary function generator with per-stage voltage, time, and modifier control",
-      "tags": ["Sequencer", "Function generator", "Dual"]
+      "tags": [
+        "Sequencer",
+        "Function generator",
+        "Dual"
+      ]
     },
     {
       "slug": "Marf248Compact",
       "name": "Lucia",
       "description": "Compact single-stage-slot variant of Sofonisba: same dual-section engine, one visible stage slot instead of 16 parallel columns",
-      "tags": ["Sequencer", "Function generator", "Dual"]
+      "tags": [
+        "Sequencer",
+        "Function generator",
+        "Dual"
+      ]
     },
     {
       "slug": "Marf248TriggerExpander",
       "name": "Amilcare",
       "description": "Trigger/CV expander for Sofonisba: Clear, Reset Values, 12 preset loads, Scale/Key select, Start/End of Cycle outputs",
-      "tags": ["Expander", "Sequencer", "Utility"]
+      "tags": [
+        "Expander",
+        "Sequencer",
+        "Utility"
+      ]
     },
     {
       "slug": "Marf248CvExpander",
       "name": "Bianca",
       "description": "Poly CV expander for Sofonisba: additive Stage Time/Curve/Warp CV and per-stage Gate A/B outputs",
-      "tags": ["Expander", "Sequencer", "Utility", "Polyphonic"]
-    }
+      "tags": [
+        "Expander",
+        "Sequencer",
+        "Utility",
+        "Polyphonic"
+      ]
+    },
+    {
+      "slug": "Europa",
+      "name": "Europa",
+      "description": "Quad function generator with VCA: four independent Delay/Attack/Hold/Release envelope generators with audio-rate capable times, One-Shot/Sustain modes, internal loop and poly time CV",
+      "tags": [
+        "Envelope generator",
+        "Function generator",
+        "Voltage-controlled amplifier",
+        "Polyphonic"
+      ]
+    },
+    {
+      "slug": "Minerva",
+      "name": "Minerva",
+      "description": "Dual voltage processor: per section attenuverter, crossfader between two inputs with CV and offset, polyphonic with individual settings for all 16 channels",
+      "tags": [
+        "Attenuator",
+        "Mixer",
+        "Utility",
+        "Dual",
+        "Polyphonic"
+      ]
+    },
+    {
+      "slug": "Elena",
+      "name": "Elena",
+      "description": "Control voltage processor: two transfer-curve sections with input select, breakpoint and individual settings for all 16 channels, plus six slew limiters with rate/time mode and auto-pulse",
+      "tags": [
+        "Slew limiter",
+        "Attenuator",
+        "Utility",
+        "Dual",
+        "Polyphonic"
+      ]
+    },
+    {
+     "slug": "AnnaMaria",
+     "name": "Anna-Maria",
+     "description": "Quad low-pass gate with VCA mode, vactrol-style response and optional resonance",
+     "tags": [
+     "Low-pass gate",
+     "Filter",
+     "Voltage-controlled amplifier"
+     ]
+   }
   ]
 }
