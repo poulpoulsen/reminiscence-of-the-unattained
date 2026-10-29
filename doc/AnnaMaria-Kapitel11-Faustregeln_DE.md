@@ -15,3 +15,7 @@
 * **Gate zu ≠ stumm**: LOWPASS/BOTH lassen bei geschlossenem Gate die Bässe durch (CV 0 V, 100 Hz: −1,6/−0,6 dB; 5 kHz: −41/−21 dB). VCA: breitbandig −35 dB bei CV 0 V. Erst bei CV −10 V praktisch stumm.
 * **Negativer THRESHOLD** (bis −0,9 V bei DEPTH 50 %, −2,6 V bei DEPTH 100 %): Das Gate ist ohne CV offen, eine negative CV schließt es. Nützlich für Dauertöne mit „Ducking“, für bipolare LFOs (öffnet in der positiven Halbwelle) und mit CV ATT −100 % für invertiertes Gate. Schwellen zwischen −0,1 und +0,1 V meiden: Das Gate steht ohne CV-Kabel halb offen.
 * **Warum es negative Schwellen gibt:** Das Gate öffnet bei `CV + 10 V × Offset ≈ 9,1 V`. Bei vollem Offset (10 V) fehlen an der Schwelle schon 0,9 V, die Schwelle liegt dann bei −0,9 V.
+* **V/OCT ist ein Resonator, keine Filter-Stimmung**: Er schwingt genau auf der Note, ohne Glide beim Schließen des Gates. Eine Zeitskalierung des ganzen Filters hat den Klang gedämpft und wurde ersetzt.
+* **FEEDBACK mit V/OCT = Klingdauer**: 0,05 s · 60^FEEDBACK (0 % = 0,05 s, 50 % ≈ 0,4 s, 100 % = 3 s). Die eigene Resonanz des Gates ist dann aus.
+* **Pegel von WET und DRY** sind auf einen 10-V-Nadelimpuls am IN zugeschnitten (gut bei etwa −45 dB, WET ≈ 35 %). Bei Rauschburst oder Dauerton den Pegel nachstellen.
+* **Zweipol-Form mit Audiorate-V/Oct kann aufschaukeln**: Der Resonator rechnet deshalb mit einem komplexen Zustand (eine Drehung je Sample) und ist weich begrenzt (linear bis 4, dann gegen 8).

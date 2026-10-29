@@ -15,3 +15,7 @@
 * **Gate closed ≠ silent**: LOWPASS/BOTH let the bass through with a closed gate (CV 0 V, 100 Hz: −1.6/−0.6 dB; 5 kHz: −41/−21 dB). VCA: broadband −35 dB at CV 0 V. Practically silent only at CV −10 V.
 * **Negative THRESHOLD** (down to −0.9 V at DEPTH 50 %, −2.6 V at DEPTH 100 %): the gate is open without CV, a negative CV closes it. Useful for drones with "ducking", for bipolar LFOs (opens in the positive half-wave) and, with CV ATT −100 %, for an inverted gate. Avoid thresholds between −0.1 and +0.1 V: the gate sits half open without a CV cable.
 * **Why negative thresholds exist:** the gate opens at `CV + 10 V × offset ≈ 9.1 V`. At full offset (10 V), 0.9 V are already missing at the threshold, so the threshold lies at −0.9 V.
+* **V/OCT is a resonator, not a filter tuning**: it rings exactly on the note, with no glide when the gate closes. Scaling the time of the whole filter damped the sound and was replaced.
+* **FEEDBACK with V/OCT = decay time**: 0.05 s · 60^FEEDBACK (0 % = 0.05 s, 50 % ≈ 0.4 s, 100 % = 3 s). The gate's own resonance is then off.
+* **WET and DRY levels** are tailored to a 10 V needle pulse at IN (good at about −45 dB, WET ≈ 35 %). With a noise burst or a sustained tone, readjust the level.
+* **A direct two-pole form can build up at audio-rate V/OCT**: the resonator therefore works with a complex state (one rotation per sample) and is soft-limited (linear up to 4, then towards 8).
