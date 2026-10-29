@@ -501,7 +501,7 @@ struct AnnaMaria : Module {
 		j = json_object_get(rootJ, "saturation");
 		saturation = j ? json_is_true(j) : false;
 		j = json_object_get(rootJ, "boardRepro");
-		if (!j) j = json_object_get(rootJ, "boardRepro");   // Patches vor der Umbenennung
+		if (!j) j = json_object_get(rootJ, "boardNR");   // Patches vor der Umbenennung
 		boardRepro = j ? json_is_true(j) : false;
 		j = json_object_get(rootJ, "vcaLinear");
 		vcaLinear = j ? json_is_true(j) : true;
