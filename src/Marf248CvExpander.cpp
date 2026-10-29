@@ -52,14 +52,18 @@ struct Marf248CvExpanderWidget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
+		// Modulname zentriert wie bei den anderen Modulen; das LINK-Licht und sein Label
+		// sitzen darunter (y = 13mm), damit sie den Namen nicht beruehren.
+		addChild(new PanelLabel(Vec(HP * 5.08f / 2.f, 3.5f), "BIANCA", COLOR_SYSTEM, 13.f));
+
 		// Zweispaltig wie bisher: linke Spalte Stage Time CV, rechte Spalte
 		// Slew Curve CV. Gate-Ausgaenge bleiben modulweit und sitzen mittig.
 		float colTime = 15.f;
 		float colCurve = 45.f;
 		float colCenter = 30.f;
 
-		addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(colCenter, 10)), module, Marf248CvExpander::LINK_LIGHT));
-		addChild(new PanelLabel(Vec(colCenter + 6.f, 8.f), "LINK", COLOR_STAGEMOD, 7.f, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE));
+		addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(colCenter, 13)), module, Marf248CvExpander::LINK_LIGHT));
+		addChild(new PanelLabel(Vec(colCenter + 6.f, 11.f), "LINK", COLOR_STAGEMOD, 7.f, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE));
 
 		// Zeilenraster: 14mm-Schritte (identische Rechnung wie im Trigger-
 		// Expander bei fontSize=9 - Label-Versatz 5.5mm + Zeilenhoehe
