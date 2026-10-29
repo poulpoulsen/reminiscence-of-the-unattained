@@ -134,6 +134,29 @@ struct AnnaMariaLpg {
 		//   (bei hoher Rueckkopplung praktisch der Resonanzpeak); bei starker Daempfung gilt ein stetiger Ersatzwert.
 		//   Die Bilineartransformation wird vorverzerrt, sodass die digitale Frequenz stimmt.
 		double pitchHz = 0.0;
+
+		// resHz, resWet, resT60: gestimmter Resonator vor der LPG-Stufe (Erweiterung, NICHT im Paper). resHz = Tonhoehe
+		//   in Hz, 0 = aus (Standard, bitgenau gegen die Referenz). Der Resonator ist ein Zweipol mit Spitzen-
+		//   normierter Impulsantwort h[n] = r^n * sin((n+1) w0): ein Impuls am Eingang gibt einen abklingenden Sinus
+		//   der Amplitude 1 bei genau resHz (kein Glide, unabhaengig von Gate und Vactrol). Eingang der LPG-Stufe
+		//   ist x + resWet * res(x); der Direktpfad x bleibt unveraendert (bitgleich zu resWet = 0). Das LPG
+		//   bestimmt weiter, wie lange der Ton hoerbar ist. resT60 = Abklingzeit des Resonators auf -60 dB in s
+		//   (unabhaengig von der Tonhoehe). Wirkt nur dort, wo das Filter eine Resonanzstufe hat (MODE_LOWPASS und
+		//   BOTH mit linearem Gate und Lowpass-Stufe); in VCA und Paper-BOTH ohne Wirkung. Der Aufrufer setzt dann
+		//   fb = 0 (keine eigene LPG-Resonanz). Gegenstueck zur Zeitskalierung pitchHz, die das ganze Filter stimmt
+		//   und dadurch den Klang daempft (Studie 2026-10-24); pitchHz bleibt in der Engine, wird vom Modul nicht
+		//   mehr gesetzt.
+		double resHz = 0.0;
+		double resWet = 0.0;
+		double resT60 = 0.5;
+		// Hochpass 1. Ordnung auf dem Direktpfad im Resonatorbetrieb: Eckfrequenz = resHpRatio * resHz (0 = aus).
+		// Entfernt Gleichanteil und Tiefen eines unipolaren Nadelimpulses (Hüllkurve am IN), die sonst als tiefer
+		// "Plopp" durch das offene Gate laufen. Der Resonator wird vom ungefilterten Eingang gespeist.
+		double resHpRatio = 0.0;
+		double resLpHz = 0.0;      // Tiefpass 1. Ordnung auf dem Direktpfad (0 = aus): rundet die senkrechte Flanke ab
+		double resHpMinHz = 0.0;   // untere Grenze der Eckfrequenz in Hz (unabhaengig von der Note)
+		// Pegel des Direktpfads im Resonatorbetrieb (1 = unveraendert, 0 = nur der Resonator wird gehoert).
+		double resDry = 1.0;
 	};
 
 	// ---- Konstanten (Bauteile, siehe Paper Tab. 1/2 und .m) ----
@@ -185,6 +208,14 @@ struct AnnaMariaLpg {
 	double sd = 0, sx = 0, so = 0;  // Audiopfad-Zustaende
 	double yoz1 = 0;                // vorheriger Ausgang (Arbeitspunkt der tanh-Linearisierung)
 
+	// Pitch-Resonator (resHz): Zustaende und Koeffizienten-Cache
+	double lpy1 = 0;
+	double hpx1 = 0, hpy1 = 0;   // Hochpass des Direktpfads
+	double rni1 = 0, rni2 = 0, rinv = 0;   // Verlauf von ni (Nullstelle bei 0 Hz), rinv = 1/(2 sin w0)
+	double rzr = 0, rzi = 0;   // gekoppelte Form: komplexer Zustand z = rzr + j rzi
+	bool rcValid = false;
+	double rcHz = 0, rcT60 = 0, rcFs = 0, rrc = 0, rrs = 0, rcw = 0, rsw = 0;
+
 	// Linearer Gate-Anteil (vcaLinear): Zielverstaerkung und geglaettete Verstaerkung des vorigen Samples.
 	// gainValid = das letzte Sample hat den linearen Anteil benutzt (sonst wird der Zustand beim naechsten
 	// Mal auf die Zielverstaerkung gesetzt). paperStale = Steuerpfad, Vactrol und Filter wurden im reinen
@@ -234,7 +265,7 @@ struct AnnaMariaLpg {
 	// (Dort ist Rfz1 = 0 am ersten Sample: kuenstlicher Einschwingvorgang.)
 	void reset() {
 		zVb = 0; Rfz1 = 0; Rfvz1 = 0; G1z1 = 0; G2z1 = 0;
-		sd = 0; sx = 0; so = 0; yoz1 = 0;
+		sd = 0; sx = 0; so = 0; yoz1 = 0; rzr = 0; rzi = 0; rni1 = 0; rni2 = 0; hpx1 = 0; hpy1 = 0; lpy1 = 0;
 		gLinz1 = 0; gLinv1 = 0; gainValid = false; paperStale = false;
 	}
 
@@ -249,7 +280,7 @@ struct AnnaMariaLpg {
 		Rfz1 = Rf;
 		Rfvz1 = Rf;                                 // stationaer: Rfv == Rf
 		G1z1 = 1.0 / Rf; G2z1 = G1z1;
-		sd = 0; sx = 0; so = 0; yoz1 = 0;
+		sd = 0; sx = 0; so = 0; yoz1 = 0; rzr = 0; rzi = 0; rni1 = 0; rni2 = 0; hpx1 = 0; hpy1 = 0; lpy1 = 0;
 		gainValid = false; paperStale = false;   // linearer Anteil startet beim naechsten Sample mit der Zielverstaerkung
 	}
 
@@ -284,6 +315,31 @@ struct AnnaMariaLpg {
 		// Modus-abhaengige Bauteile
 		const double C3 = (mode == MODE_LOWPASS) ? C3lp : 0.0;
 		const double Ra = (mode == MODE_VCA) ? pin.vcaRa : Ralp;
+
+		// Pitch-Resonator vor der LPG-Stufe (Erweiterung): nur mit Resonanzstufe (C3 > 0). Sonst Zustand loeschen,
+		// damit nach einem Moduswechsel kein altes Klingen auftaucht. Ohne resHz bitgleich zu vorher.
+		if (pin.resHz > 0.0 && C3 > 0.0) {
+			const double xr = x;
+			if (pin.resHpRatio > 0.0) {
+				double fc = pin.resHpRatio * pin.resHz;
+				if (fc < pin.resHpMinHz) fc = pin.resHpMinHz;
+				if (fc > 0.2 * fs) fc = 0.2 * fs;
+				const double a = std::exp(-2.0 * 3.14159265358979323846 * fc / fs);
+				const double yh = a * (hpy1 + x - hpx1);
+				hpx1 = x; hpy1 = yh; x = yh;
+			}
+			if (pin.resLpHz > 0.0) {
+				double fl = pin.resLpHz;
+				if (fl > 0.45 * fs) fl = 0.45 * fs;
+				const double al = 1.0 - std::exp(-2.0 * 3.14159265358979323846 * fl / fs);
+				lpy1 += al * (x - lpy1);
+				x = lpy1;
+			}
+			if (pin.resDry != 1.0) x *= pin.resDry;
+			if (pin.resWet > 0.0)
+				x += pin.resWet * pitchResonator(xr, pin.resHz, pin.resT60);
+			else { rzr = 0.0; rzi = 0.0; rni1 = 0.0; rni2 = 0.0; }
+		} else { rzr = 0.0; rzi = 0.0; rni1 = 0.0; rni2 = 0.0; hpx1 = 0.0; hpy1 = 0.0; lpy1 = 0.0; }
 
 		// ---- Steuerpfad ----
 		// Shelving (DF2T): y = b0*x + z; z = b1*x - a1*y
@@ -477,6 +533,39 @@ struct AnnaMariaLpg {
 	}
 
 private:
+	// Gestimmter Resonator in gekoppelter Form (komplexer Zustand, eine Drehung pro Sample):
+	//   z[n] = r e^{j w0} z[n-1] + e^{j w0} x[n],  y[n] = Im z[n],  r = 10^(-3 / (T60 fs)).
+	// Impulsantwort r^n sin((n+1) w0): Amplitude 1, Frequenz genau hz, Spitzen-normiert. Die Drehung
+	// erhaelt den Betrag des Zustands, auch wenn sich w0 von Sample zu Sample aendert (Audiorate-V/Oct);
+	// die direkte Zweipol-Form kann dabei aufschaukeln (Studie 2026-10-24).
+	double pitchResonator(double x, double hz, double t60) {
+		if (!(rcValid && hz == rcHz && t60 == rcT60 && fs == rcFs)) {
+			const double PI = 3.14159265358979323846;
+			double f = hz < 0.1 ? 0.1 : hz;
+			if (f > 0.45 * fs) f = 0.45 * fs;
+			const double T = t60 > 1e-3 ? t60 : 1e-3;
+			const double w0 = 2.0 * PI * f / fs;
+			const double r = std::pow(10.0, -3.0 / (T * fs));
+			rcw = std::cos(w0); rsw = std::sin(w0);
+			rrc = r * rcw; rrs = r * rsw; rinv = 0.5 / rsw;
+			rcHz = hz; rcT60 = t60; rcFs = fs; rcValid = true;
+		}
+		const double nr = rrc * rzr - rrs * rzi + rcw * x;
+		const double ni = rrs * rzr + rrc * rzi + rsw * x;
+		rzr = nr; rzi = ni;
+		// Nullstelle bei 0 Hz und Nyquist: (1 - z^-2) / (2 sin w0). Die Spitzenverstaerkung bei der Resonanz bleibt gleich
+		// (Impulsantwort Amplitude 1), aber Gleichanteil und Tiefen eines Pulses/Gate-Sprungs erzeugen keinen tiefen Plopp mehr.
+		const double nb = (ni - rni2) * rinv;
+		rni2 = rni1; rni1 = ni;
+		// Weiche Begrenzung des Resonatorausgangs: linear bis 4 (die Impulsantwort hat Amplitude 1), darueber stetig
+		// gegen 8. Der Resonator summiert bei Dauerrauschen und langer T60 bis zum 70-fachen des Eingangspegels auf;
+		// ohne Begrenzung loest das den Schutz des Moduls aus (Studie 2026-10-24).
+		const double a = std::fabs(nb);
+		if (a <= 4.0) return nb;
+		const double lim = 4.0 + 4.0 * std::tanh((a - 4.0) / 4.0);
+		return nb < 0.0 ? -lim : lim;
+	}
+
 	// Geglaetteter linearer Gate-Anteil: g = cv / 10, Trapezglaettung wie beim Vactrol.
 	double linearGain(const Params& pin) {
 		const double g = clampd(pin.cv, 0.0, 10.0) * 0.1;
