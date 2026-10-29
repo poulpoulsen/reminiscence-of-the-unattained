@@ -868,7 +868,7 @@ struct ElenaWidget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		// Kopfzeile: Kanalwahl ueber A/B, Titel ueber den Slew-Sektionen.
-		const float selX = 44.f, actX = 72.f, selY = 11.5f;
+		const float selX = 38.f, actX = 66.f, selY = 11.5f;   // links vom zentrierten Namen, mit Abstand
 		ElenaSelectKnob* sel = new ElenaSelectKnob;
 		sel->module = module;
 		sel->box.pos = mm2px(Vec(selX, selY)) - sel->box.size / 2.f;
@@ -880,7 +880,7 @@ struct ElenaWidget : ModuleWidget {
 		addLabel(Vec(selX, 19.5f), "CHANNEL", COLOR_SYSTEM);
 		addLabel(Vec(actX, 19.5f), "ACTIVATE", COLOR_SYSTEM);
 
-		const float titleX = 163.f;
+		const float titleX = W_MM / 2.f;   // zentriert wie bei den anderen Modulen
 		addChild(new PanelLabel(Vec(titleX, 3.5f), "ELENA", COLOR_SYSTEM, 14.f));
 		addChild(new PanelLabel(Vec(titleX, 11.f), "CONTROL VOLTAGE PROCESSOR", COLOR_SYSTEM, 6.f));
 

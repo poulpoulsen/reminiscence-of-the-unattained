@@ -3531,6 +3531,13 @@ struct Marf248Widget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
+		// Modulname (oben links, im freien Streifen 0-12mm ueber den Rahmen;
+		// links neben den Schrauben beginnend, weit weg von den Clear/Reset/
+		// Auto-Fill-Tastern in der Panelmitte).
+		// Modulname zentriert wie bei den anderen Modulen (Mitte = halbe Panelbreite in mm).
+		const float titleCenterMM = HP * 5.08f / 2.f;
+		addChild(new PanelLabel(Vec(titleCenterMM, 3.5f), "SOFONISBA", COLOR_SYSTEM, 13.f));
+
 		// Geometrie-Konstanten fuer die Stage-Spalte.
 		// Session "Hauptmodul-Relayout", zweiter Anlauf (Kinovice-Feedback
 		// nach erstem Test): Buttons jetzt in 2 statt 4 Spalten (siehe
@@ -4095,7 +4102,9 @@ struct Marf248Widget : ModuleWidget {
 		// Mitte zwischen Stage-Oberkante und Modulrahmen"): Modulrahmen
 		// liegt bei y=0, Stage-Oberkante (frameTopMM) bei y=12, Mitte also
 		// bei 6.
-		float colClear = xStart + (NUM_STAGES - 1) * xStep / 2.f;
+		// Die Taster sitzen jetzt rechts neben dem zentrierten Modulnamen (Titelbreite ca. 27mm,
+		// dazu ca. 10mm Abstand): erster Taster 24mm rechts von der Panelmitte, Abstand 12mm.
+		float colClear = titleCenterMM + 24.f;
 		addParam(createParamCentered<LEDButton>(mm2px(Vec(colClear, 6)), module, Marf248::CLEAR_PARAM));
 		addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(colClear, 6)), module, Marf248::CLEAR_LIGHT));
 
@@ -4468,6 +4477,13 @@ struct Marf248CompactWidget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
+		// Modulname (wie bei Sofonisba oben links im Streifen 0-12mm; die Clear/
+		// Reset/Auto-Fill-Taster liegen bei xStart, also deutlich weiter rechts).
+		// Modulname zentriert wie bei den anderen Modulen; die Taster sitzen mit Abstand rechts davon.
+		const float titleCenterMM = HP * 5.08f / 2.f;
+		addChild(new PanelLabel(Vec(titleCenterMM, 3.5f), "LUCIA", COLOR_SYSTEM, 13.f));
+		const float btnX0 = titleCenterMM + 18.f;   // Clear; Reset und Auto-Fill folgen im Abstand von 12mm
+
 		// --- External-CV-Spalte ganz links: 1:1 aus Marf248Widget
 		// (vier modulweit geteilte EXT-A/B/C/D-Eingaenge).
 		const float extFrameWidthMM = 20.f;
@@ -4787,12 +4803,12 @@ struct Marf248CompactWidget : ModuleWidget {
 		// Vollversion) - 8mm-Pitch um xStart herum statt 12mm-Pitch ab
 		// colClear, damit alle drei Buttons innerhalb der 32mm-Rahmenbreite
 		// bleiben.
-		addParam(createParamCentered<LEDButton>(mm2px(Vec(xStart - 8.f, 6)), module, Marf248::CLEAR_PARAM));
-		addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(xStart - 8.f, 6)), module, Marf248::CLEAR_LIGHT));
-		addParam(createParamCentered<LEDButton>(mm2px(Vec(xStart, 6)), module, Marf248::RESET_VALUES_PARAM));
-		addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(xStart, 6)), module, Marf248::RESET_VALUES_LIGHT));
-		addParam(createParamCentered<LEDButton>(mm2px(Vec(xStart + 8.f, 6)), module, Marf248::AUTOFILL_PARAM));
-		addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(xStart + 8.f, 6)), module, Marf248::AUTOFILL_LIGHT));
+		addParam(createParamCentered<LEDButton>(mm2px(Vec(btnX0, 6)), module, Marf248::CLEAR_PARAM));
+		addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(btnX0, 6)), module, Marf248::CLEAR_LIGHT));
+		addParam(createParamCentered<LEDButton>(mm2px(Vec(btnX0 + 12.f, 6)), module, Marf248::RESET_VALUES_PARAM));
+		addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(btnX0 + 12.f, 6)), module, Marf248::RESET_VALUES_LIGHT));
+		addParam(createParamCentered<LEDButton>(mm2px(Vec(btnX0 + 24.f, 6)), module, Marf248::AUTOFILL_PARAM));
+		addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(btnX0 + 24.f, 6)), module, Marf248::AUTOFILL_LIGHT));
 
 		// --- Preset-Spalte ganz rechts: 1:1 aus Marf248Widget.
 		StageFrame* presetFrame = new StageFrame;

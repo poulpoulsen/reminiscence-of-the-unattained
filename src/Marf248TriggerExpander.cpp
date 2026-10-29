@@ -65,6 +65,9 @@ struct Marf248TriggerExpanderWidget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
+		// Modulname zentriert wie bei den anderen Modulen (das LINK-Licht sitzt links davon bei colC = 70mm).
+		addChild(new PanelLabel(Vec(HP * 5.08f / 2.f, 3.5f), "AMILCARE", COLOR_SYSTEM, 13.f));
+
 		// 5 Spalten, 27mm Pitch (vorher 4 Spalten a 29mm) - bei fontSize=9
 		// ist die laengste Beschriftung ("ADDR RECALL B", 13 Zeichen) ca.
 		// 22mm breit (Schaetzung: Zeichenbreite ~0.55*fontSize/2.9528mm),
