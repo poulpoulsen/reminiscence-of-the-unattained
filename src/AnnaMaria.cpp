@@ -16,12 +16,15 @@
 //
 // QUAD-LPG (paramLayout 6): vier getrennte, monophone Kanaele (NUM_LPG).
 // Panel (31 HP) mit fuenf Spalten, Beschriftungen ueber den Elementen:
-//   Spalte 1 (ALL):  ALL-Ausgang, MODE (global), MODE-CV (global), DRIVE, VACTROL, DEEP (global, Platzhalter)
+//   Spalte 1 (ALL):  ALL-Ausgang, MODE (global), MODE-CV (global), DRIVE, VACTROL, WET (global), WET-CV (polyphon, 4 Kanaele)
 //   Spalte 2-5:      je Kanal zwei Unterspalten in sechs Reihen:
 //                    IN | OUT, ATT | VEL, CV | CV, THRESH | FEEDBACK, CV | CV, FB NL | V/OCT, MODE | DEEP
-// V/OCT (je Kanal, neuer Eingang hinter den anderen, Params unveraendert, paramLayout bleibt 6): stimmt das
-// Filter (Zeitskalierung, siehe AnnaMariaLpg::Params::pitchHz) so, dass seine Klingfrequenz bei voll offenem
-// Gate auf der Note liegt; beim Schliessen des Gates faellt die Tonhoehe wie bisher.
+// V/OCT (je Kanal, neuer Eingang hinter den anderen, Params unveraendert, paramLayout bleibt 6): stimmt einen Resonator
+// vor der LPG-Stufe (AnnaMariaLpg::Params::resHz) auf die Note; der Klang des LPG bleibt unveraendert, der gestimmte Ton
+// kommt dazu (kein Glide). WET (Knopf, global; ein gestecktes polyphones WET-CV ersetzt ihn, Kanal 1-4 = LPG 1-4,
+// monophon = alle) bestimmt seinen Anteil, FEEDBACK (Knopf oder CV) die Klingdauer (0,05 ... 3 s), solange V/OCT steckt.
+// Nur in LOWPASS und in BOTH mit linearem Gate und Lowpass-Stufe. Der globale DEEP-Schalter (Platzhalter) ist vom
+// Panel entfallen (Platz fuer WET/WET-CV); der Param DEEP_ALL_PARAM bleibt, die DEEP-Schalter der Kanaele auch.
 // Hardware-Vorbild (Layout 5): ATT = Steuerpegel 0...10 V, eine gesteckte CV ersetzt den Knopf;
 // Velocity (-10...+10 V) wird als Gleichanteil addiert (Knopf oder gesteckte Velocity-CV),
 // Summe auf 0...10 V begrenzt.
@@ -142,6 +145,41 @@ struct VactrolQuantity : AmQuantity {
 			sc, 2.4 * sc, 50.0 * sc);
 	}
 };
+// WET: Knopf 0..1, Verstaerkung des gestimmten Resonators 0,045 k^2 (100 % = -27 dB, 90 % = -29 dB = Standard, 50 % = -39 dB).
+// Der Anwender hat mit 0,0225 (90 %: 2,5 V) einen guten Klang gefunden und wollte den Pegel auf 5 V anheben (+6 dB).
+// Die Impulsantwort des Resonators hat Amplitude 1 (Modelleinheit, = DRIVE-Pegel). Ein Puls summiert sich im Resonator zur Flaeche
+// auf (10 V, einige ms: ueber 100 Modelleinheiten roh, begrenzt auf 8). Rack-Messung des Anwenders: 30 V bei -6 dB; guter Klang bei
+// 10 V und -45 dB. Der Bereich ist deshalb auf diese Region zugeschnitten. Eine Zeile, falls der Pegel nachgestellt wird.
+static const double RES_DRY_HP_RATIO = 0.5;
+// Untere Grenze der Hochpass-Eckfrequenz in Hz (gilt unabhaengig von der Note). Der Direktpfad eines Nadelimpulses ist
+// stark tieflastig (Studie: ca. 18 dB je Oktave abfallend ab etwa 40 Hz); 150 Hz nimmt den Bass-Plopp um etwa 25 dB.
+// Kleiner = mehr Bass bleibt im Direktklang, groesser = duenner.
+static const double RES_DRY_HP_MIN_HZ = 150.0;
+// Tiefpass 1. Ordnung auf dem Direktpfad (Hz): rundet die senkrechte Flanke eines Nadelimpulses ab (hartes Knacken).
+// 0 = aus. Richtwerte: 8000 = leicht, 4000 = deutlich, 2000 = stark. Wirkt nur mit gestecktem V/OCT.
+static const double RES_DRY_LP_HZ = 4000.0;
+static inline float dryToGain(float k) {
+	return k * k;
+}
+struct DryQuantity : AmQuantity {
+	std::string getDisplayValueString() override {
+		const float g = dryToGain(getValue());
+		if (g < 0.0003f)
+			return "off";
+		return string::f("%.0f %% (gain %.2f = %+.1f dB)", getValue() * 100.f, g, 20.f * std::log10(g));
+	}
+};
+static inline float wetToGain(float k) {
+	return 0.045f * k * k;
+}
+struct WetQuantity : AmQuantity {
+	std::string getDisplayValueString() override {
+		const float g = wetToGain(getValue());
+		if (g < 0.0002f)
+			return "off";
+		return string::f("%.0f %% (gain %.2f = %+.1f dB)", getValue() * 100.f, g, 20.f * std::log10(g));
+	}
+};
 static inline float driveToModelLevel(float drive) {
 	return 5.f * std::exp2(2.f * (5.f - drive) / 5.f);
 }
@@ -214,6 +252,8 @@ static inline float lerpTable(const float* tab, int n, float x01) {
 static bool amLinearGate(Module* m);
 // Wirkt die Rueckkopplung in BOTH? Nur mit linearem Gate-Anteil und Lowpass-Stufe.
 static bool amBothResonance(Module* m);
+// Steckt am V/OCT-Eingang dieses Kanals ein Kabel? (FEEDBACK bestimmt dann die Klingdauer des Resonators.)
+static bool amPitchPatched(Module* m, int ch);
 
 struct ThresholdQuantity : AmQuantity {
 	std::string getDisplayValueString() override {
@@ -223,21 +263,27 @@ struct ThresholdQuantity : AmQuantity {
 		bool clamped = false;
 		double off = thresholdToOffset(thr, depth, &clamped);
 		// Schwelle in Volt; zusaetzlich, was ohne CV-Kabel (0 V) passiert
-		std::string s = string::f("%.2f V: gate opens when the control level (ATT or CV, plus velocity) rises above this (half open exactly here, "
-			"fully open about 0.1 V above). With ATT at 0 V (plus velocity): gate %s", thr,
+		std::string s = string::f("%.2f V\n"
+				"Gate half open at this control level\n"
+				"(ATT or CV, plus velocity), fully open\n"
+				"about 0.1 V above.\n"
+				"At ATT 0 V (plus velocity): gate %s", thr,
 			(thr < -0.1f) ? "open" : (thr > 0.1f ? "closed" : "half open"));
 		if (clamped) {
 			double lo, hi;
 			thresholdRange(depth, &lo, &hi);
 			double eff = trimT(depth) + THR_HALF - 10.0 * off;
-			s = string::f("%.2f V set, %.2f V effective (DEPTH limits the range to %.1f..%.1f V). "
-				"Gate opens when the control level (ATT or CV, plus velocity) rises above the effective value. With ATT at 0 V (plus velocity): gate %s",
+			s = string::f("%.2f V set, %.2f V effective\n"
+				"(DEPTH limits the range to %.1f..%.1f V)\n"
+				"Gate half open at the effective level\n"
+				"(ATT or CV, plus velocity).\n"
+				"At ATT 0 V (plus velocity): gate %s",
 				thr, eff, lo, hi, (eff < -0.1) ? "open" : (eff > 0.1 ? "closed" : "half open"));
 		}
 		// Linearer VCA: THRESHOLD wirkt im Modus VCA nicht
 		int mode = (int) std::round(module->params[paramIndex(PT_MODE, ch)].getValue());
 		if (mode == 2 && amLinearGate(module))
-			s += " - no effect in VCA mode with the linear gate response (gain = ATT + velocity)";
+			s += "\nNo effect in VCA mode (linear gate)";
 		return s;
 	}
 };
@@ -271,9 +317,11 @@ struct FeedbackQuantity : AmQuantity {
 		const bool bothRes = amBothResonance(module);
 		std::string note;
 		if (mode == 2)
-			note = bothRes ? " - no effect in VCA mode, works in LOWPASS and BOTH" : " - no effect in BOTH/VCA mode, works in LOWPASS only";
+			note = bothRes ? "\nNo effect in VCA mode;\nworks in LOWPASS and BOTH" : "\nNo effect in BOTH/VCA mode;\nworks in LOWPASS only";
 		else if (mode == 1 && !bothRes)
-			note = " - no effect in BOTH/VCA mode, works in LOWPASS only";
+			note = "\nNo effect in BOTH/VCA mode;\nworks in LOWPASS only";
+		if (amPitchPatched(module, ch) && (mode == 0 || (mode == 1 && bothRes)))
+			return string::f("%.0f %%\nResonator decay about %.2f s\n(V/OCT patched; the gate's own\nresonance is off)", v * 100.f, 0.05 * std::pow(60.0, (double) v));
 		float db = ys[0];
 		for (int i = 0; i < 6; i++) {
 			if (v <= xs[i + 1]) {
@@ -283,9 +331,9 @@ struct FeedbackQuantity : AmQuantity {
 			}
 			db = ys[6];
 		}
-		if (v < 0.5f) return string::f("%.0f %% (no audible resonance)", v * 100.f) + note;
-		if (v >= 0.995f) return string::f("%.0f %% (at the stability limit, rings on)", v * 100.f) + note;
-		return string::f("%.0f %% (resonance peak about +%.0f dB, normalized mode)", v * 100.f, db) + note;
+		if (v < 0.5f) return string::f("%.0f %%\nNo audible resonance", v * 100.f) + note;
+		if (v >= 0.995f) return string::f("%.0f %%\nAt the stability limit, rings on", v * 100.f) + note;
+		return string::f("%.0f %%\nResonance peak about +%.0f dB\n(normalized mode)", v * 100.f, db) + note;
 	}
 };
 
@@ -315,7 +363,9 @@ struct AnnaMaria : Module {
 		MODE_ALL_PARAM = VACTROL_PARAM + 1,     // globaler MODE-Schalter (schreibt auf alle Kanaele)
 		DEEP_ALL_PARAM,                         // globaler DEEP-Schalter (Platzhalter)
 		DEEP_PARAM,                             // NUM_LPG Kanal-Schalter (Platzhalter)
-		NUM_PARAMS = DEEP_PARAM + NUM_LPG
+		WET_PARAM = DEEP_PARAM + NUM_LPG,       // global: Anteil des gestimmten V/OCT-Resonators (0..1, Verstaerkung 0,0225 k^2)
+		DRY_PARAM,                              // global: Pegel des Direktpfads im V/OCT-Betrieb (0..1, Verstaerkung k^2)
+		NUM_PARAMS
 	};
 	enum InputId {
 		AUDIO_INPUT,    // IN 1 (wie bisher)
@@ -339,10 +389,11 @@ struct AnnaMaria : Module {
 		FB_CV2_INPUT,
 		FB_CV3_INPUT,
 		FB_CV4_INPUT,
-		PITCH_INPUT,    // V/Oct Kanal 1, danach 2-4 (aufeinanderfolgend), 0 V = C4; Zeitskalierung des Filters (Pitch)
+		PITCH_INPUT,    // V/Oct Kanal 1, danach 2-4 (aufeinanderfolgend), 0 V = C4; stimmt den Resonator vor dem LPG
 		PITCH2_INPUT,
 		PITCH3_INPUT,
 		PITCH4_INPUT,
+		WET_CV_INPUT,   // polyphon: Kanal 1-4 = LPG 1-4 (monophon: alle), ersetzt den WET-Knopf
 		NUM_INPUTS
 	};
 	enum OutputId {
@@ -381,6 +432,9 @@ struct AnnaMaria : Module {
 	bool vcaLinear = true;       // Modi VCA und BOTH: true = linearer Gate-Anteil (Referenzdokumentation der Hardware), false = Paper-Schaltung
 	bool velAudio = false;       // Velocity-Ziel: false = Steuerpegel (Standard, Hardware-Vorbild), true = Gleichanteil auf dem Audiosignal
 	bool bothLowpass = true;     // BOTH mit linearem Gate-Anteil: true = Lowpass-Stufe (Standard), false = Paper-Stufe von BOTH (C3 = 0, ohne Resonanz)
+	// V/OCT-Resonator: Klingdauer aus dem FEEDBACK-Wert (exponentiell 0,05 ... 3 s), nur bei Aenderung neu rechnen
+	float resFbCached[NUM_LPG] = {-1.f, -1.f, -1.f, -1.f};
+	double resT60Cached[NUM_LPG] = {0.5, 0.5, 0.5, 0.5};
 
 	float cachedSampleRate = -1.f;  // -1 erzwingt Neuinitialisierung im naechsten process()
 	// Kanal ist gerade aktiv (wird gerechnet). Kanaele ohne OUT-Kabel werden uebersprungen (solange
@@ -402,13 +456,22 @@ struct AnnaMaria : Module {
 		static_assert(DRIVE_PARAM == NUM_PT * NUM_CH, "ParamId passt nicht zu paramIndex()");
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int c = 0; c < NUM_CH; c++) {
+			// Namen kurz, Details in "description": Rack zeigt sie als eigene Zeilen unter dem Wert.
 			configParam<ThresholdQuantity>(paramIndex(PT_THRESHOLD, c), THR_MIN, THR_MAX, THR_DEFAULT,
-			            string::f("Threshold, control level where the gate opens (channel %d; a patched threshold CV replaces this knob)", c + 1));
+			            string::f("Threshold (channel %d)", c + 1))->description =
+			            "A patched threshold CV replaces this knob.";
 			// Eingabe in Prozent (Doppelklick, "50" = 50 %), intern 0..1
 			configParam<DepthQuantity>(paramIndex(PT_DEPTH, c), 0.f, 1.f, 1.f,
 			            string::f("Depth, how far the closed gate attenuates (channel %d)", c + 1))->displayMultiplier = 100.f;
-			configParam<FeedbackQuantity>(paramIndex(PT_FEEDBACK, c), 0.f, 1.f, 0.f,
-			            string::f("Feedback, resonance (channel %d; works in LOWPASS mode, and in BOTH with the linear gate response and the lowpass filter stage; a patched feedback CV replaces this knob)", c + 1))->displayMultiplier = 100.f;
+			{
+				ParamQuantity* fbq = configParam<FeedbackQuantity>(paramIndex(PT_FEEDBACK, c), 0.f, 1.f, 0.f,
+				            string::f("Feedback (channel %d)", c + 1));
+				fbq->displayMultiplier = 100.f;
+				fbq->description = "Resonance. Works in LOWPASS, and in BOTH with\n"
+				                   "linear gate + lowpass stage.\n"
+				                   "With V/OCT patched: resonator decay.\n"
+				                   "A patched feedback CV replaces this knob.";
+			}
 			configParam<AmQuantity>(paramIndex(PT_CVATT, c), 0.f, ATT_MAX, 0.f,
 			            string::f("ATT (channel %d; control level 0...10 V; a patched CV input replaces this knob)", c + 1), " V");
 			configParam<AmQuantity>(CVBIAS_PARAM + c, -CVBIAS_MAX, CVBIAS_MAX, 0.f,
@@ -417,11 +480,15 @@ struct AnnaMaria : Module {
 			             string::f("Mode (channel %d)", c + 1),
 			             {"Lowpass", "Both", "VCA"});
 			configSwitch(paramIndex(PT_NL, c), 0.f, 1.f, 0.f,
-			             string::f("Feedback nonlinearity (channel %d; works together with the feedback, i.e. in LOWPASS mode and in BOTH with the linear gate response and the lowpass filter stage)", c + 1),
-			             {"Off", "On"});
+			             string::f("Feedback nonlinearity (channel %d)", c + 1),
+			             {"Off", "On"})->description =
+			             "Works with the feedback: in LOWPASS, and in\n"
+			             "BOTH with linear gate + lowpass stage.";
 		}
 		configParam<DriveQuantity>(DRIVE_PARAM, 0.f, 10.f, DRIVE_DEFAULT, "Drive (input level into the model, affects feedback nonlinearity)");
 		configParam<VactrolQuantity>(VACTROL_PARAM, 0.f, 1.f, 0.5f, "Vactrol time scale (left = fast, follows the gate; right = slow, envelope-like)");
+		configParam<DryQuantity>(DRY_PARAM, 0.f, 1.f, 0.3f, "Dry, level of the direct signal while V/OCT is patched (all channels; 100 % = unchanged, 0 = only the tuned resonator is heard; default 30 %)");
+		configParam<WetQuantity>(WET_PARAM, 0.f, 1.f, 0.9f, "Wet, level of the tuned V/OCT resonator (all channels; a patched wet CV replaces this knob)");
 		configSwitch(MODE_ALL_PARAM, 0.f, 2.f, 1.f, "Mode, all channels (a change is written to all four channel switches)",
 		             {"Lowpass", "Both", "VCA"});
 		configSwitch(DEEP_ALL_PARAM, 0.f, 1.f, 0.f, "Deep, all channels (placeholder, no function yet)", {"Off", "On"});
@@ -433,12 +500,18 @@ struct AnnaMaria : Module {
 			configInput(velCvIn(c), string::f("Velocity CV %d (replaces the velocity knob when patched, 1 V per V)", c + 1));
 			configInput(thrCvIn(c), string::f("Threshold CV %d (replaces the threshold knob when patched; 1 V per V, 0...7.5 V)", c + 1));
 			configInput(fbCvIn(c), string::f("Feedback CV %d (replaces the feedback knob when patched; 0...10 V = 0...100 %%)", c + 1));
-			configInput(pitchIn(c), string::f("V/Oct %d (0 V = C4; tunes the filter so that its ringing frequency with the gate fully open is on the note, "
-				"then it glides down as the gate closes; works in LOWPASS and in BOTH with the linear gate response and the lowpass filter stage, "
-				"best with FEEDBACK above 90 %%; not in VCA mode; loudness does not depend on the note)", c + 1));
+			configInput(pitchIn(c), string::f("V/Oct %d (0 V = C4)", c + 1))->description =
+				"Tunes a resonator in front of the gate; the\n"
+				"gate sound itself is unchanged. Works in\n"
+				"LOWPASS, and in BOTH with linear gate +\n"
+				"lowpass stage; not in VCA mode.\n"
+				"FEEDBACK sets the decay (0.05 ... 3 s), the\n"
+				"gate's own resonance is off, WET the level.\n"
+				"Excite it with a pulse, click or noise burst.";
 			configOutput(outId(c), string::f("Audio %d", c + 1));
 			configBypass(audioIn(c), outId(c));
 		}
+		configInput(WET_CV_INPUT, "Wet CV, polyphonic (channel 1-4 = LPG 1-4, a mono cable is used for all four; replaces the wet knob when patched; 0...10 V = 0...100 % of the knob range)");
 		configInput(MODE_CV_INPUT, "Mode CV, all channels (< 3.3 V VCA, < 6.6 V Lowpass, above Both; overrides the switches)");
 		configOutput(ALL_OUTPUT, "All (sum of the four channels, soft clip at +-10 V)");
 	}
@@ -582,12 +655,34 @@ struct AnnaMaria : Module {
 			vactrolScaleCached = vactrolKnobToScale(vk);
 		}
 		p.vactrolTimeScale = vactrolScaleCached;
-		// V/Oct (gesteckt): Tonhoehe in Hz, 0 V = C4 (261,6256 Hz, wie in Rack ueblich); 0 = aus.
-		// Der Bereich wird auf +-6 Oktaven um C4 begrenzt, die Engine begrenzt zusaetzlich nach oben auf 0,49 fs.
+		// V/Oct (gesteckt): gestimmter Resonator vor der LPG-Stufe (Engine resHz), 0 V = C4 (261,6256 Hz, wie in Rack
+		// ueblich). Bereich +-6 Oktaven um C4, die Engine begrenzt zusaetzlich nach oben auf 0,45 fs. Nur in den Modi mit
+		// Resonanzstufe (LOWPASS; BOTH mit linearem Gate und Lowpass-Stufe). Dann bestimmt FEEDBACK (Knopf oder CV)
+		// die Klingdauer des Resonators, die LPG-Rueckkopplung ist 0. WET: Knopf oder polyphones CV (ersetzt den Knopf).
 		Input& pitchInp = inputs[pitchIn(c)];
-		p.pitchHz = pitchInp.isConnected()
-			? 261.6255653005986 * std::exp2((double) rack::clamp(pitchInp.getVoltage(), -6.f, 6.f))
-			: 0.0;
+		p.pitchHz = 0.0;
+		const bool resStage = (p.mode == AnnaMariaLpg::MODE_LOWPASS)
+			|| (p.mode == AnnaMariaLpg::MODE_BOTH && vcaLinear && bothLowpass);
+		if (pitchInp.isConnected() && resStage) {
+			// Hochpass auf dem Direktpfad (Eckfrequenz = Faktor * Notenfrequenz): nimmt Gleichanteil und Tiefen eines
+			// unipolaren Nadelimpulses (Huellkurve am IN) weg, die sonst als tiefer Plopp durch das Gate laufen.
+			// Faktor 0 = aus; 0.5 = Standard; 1 = staerker.
+			p.resHpRatio = RES_DRY_HP_RATIO;
+			p.resHpMinHz = RES_DRY_HP_MIN_HZ;
+			p.resLpHz = RES_DRY_LP_HZ;
+			p.resHz = 261.6255653005986 * std::exp2((double) rack::clamp(pitchInp.getVoltage(), -6.f, 6.f));
+			Input& wetIn = inputs[WET_CV_INPUT];
+			const float wetK = wetIn.isConnected() ? rack::clamp(wetIn.getPolyVoltage(c) * 0.1f, 0.f, 1.f)
+			                                       : params[WET_PARAM].getValue();
+			p.resWet = wetToGain(wetK);
+			p.resDry = dryToGain(params[DRY_PARAM].getValue());
+			if (fbKnob != resFbCached[c]) {
+				resFbCached[c] = fbKnob;
+				resT60Cached[c] = 0.05 * std::pow(60.0, (double) fbKnob);
+			}
+			p.resT60 = resT60Cached[c];
+			p.fb = 0.0;
+		}
 		if (boardRepro) {
 			p.r8 = 10e3;          // Plan: R8 = 10 k (Paper: 4,7 k)
 			p.vcaRa = 10e3;       // Plan: R16 = 10 k im VCA-Modus (Paper: 5 k)
@@ -749,6 +844,11 @@ static bool amLinearGate(Module* m) {
 static bool amBothResonance(Module* m) {
 	AnnaMaria* a = dynamic_cast<AnnaMaria*>(m);
 	return a && a->vcaLinear && a->bothLowpass;
+}
+
+static bool amPitchPatched(Module* m, int ch) {
+	AnnaMaria* a = dynamic_cast<AnnaMaria*>(m);
+	return a && ch >= 0 && ch < NUM_LPG && a->inputs[AnnaMaria::pitchIn(ch)].isConnected();
 }
 
 
@@ -1084,7 +1184,7 @@ struct AnnaMariaWidget : ModuleWidget {
 				nvgRGB(232, 232, 228), 8.f, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE));
 		}
 
-		// ---- Spalte 1: ALL-Ausgang, MODE (global), MODE-CV, DEEP (global, Platzhalter) ----
+		// ---- Spalte 1: ALL-Ausgang, MODE (global), MODE-CV, DRIVE, VACTROL, WET, WET-CV ----
 		{
 			const float x = ALLW * 0.5f;
 			addLabel(Vec(x, lR1), "ALL OUT", COLOR_STAGEMOD);
@@ -1101,8 +1201,12 @@ struct AnnaMariaWidget : ModuleWidget {
 			addLabel(Vec(x, lR5), "VACTROL", COLOR_STAGEMOD);
 			addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(x, lR5 + 8.f)), module, AnnaMaria::VACTROL_PARAM));
 
-			addLabel(Vec(x, lR7), "DEEP", COLOR_STAGEMOD);
-			addToggle(Vec(x, lR7 + togDy), AnnaMaria::DEEP_ALL_PARAM, 14.f, -1, {"OFF", "ON"}, 1);
+			addLabel(Vec(x - 4.8f, lR6), "DRY", COLOR_STAGEMOD);
+			addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(x - 4.8f, lR6 + 7.5f)), module, AnnaMaria::DRY_PARAM));
+			addLabel(Vec(x + 4.8f, lR6), "WET", COLOR_STAGEMOD);
+			addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(x + 4.8f, lR6 + 7.5f)), module, AnnaMaria::WET_PARAM));
+			addLabel(Vec(x, lR7), "WET CV", COLOR_STAGEMOD);
+			addInput(createInputCentered<PJ301MPort>(mm2px(Vec(x, lR7 + togDy)), module, AnnaMaria::WET_CV_INPUT));
 		}
 
 		// ---- Spalten 2-5: je ein Kanal, zwei Unterspalten (links / rechts) ----
@@ -1236,12 +1340,20 @@ struct AnnaMariaWidget : ModuleWidget {
 				[m]() { m->vcaLinear = false; }));
 		}));
 		menu->addChild(createSubmenuItem("Velocity target", m->velAudio ? "Audio offset" : "Control level", [m](Menu* sub) {
-			sub->addChild(createCheckMenuItem("Control level (velocity is added to ATT or CV, result clamped to 0...10 V; default)", "",
+			sub->addChild(createCheckMenuItem("Control level (default)", "",
 				[m]() { return !m->velAudio; },
 				[m]() { m->velAudio = false; }));
-			sub->addChild(createCheckMenuItem("Audio offset (velocity is added to the signal after the gate/ATT, only while the gate is open (full offset from ATT 0.5 V, none at ATT 0); 0 V = no effect; negative velocity shifts down and cuts below -10 V (e.g. +-5 V after ATT with -4 V gives +1/-9 V), positive velocity shifts up and cuts above +10 V (e.g. +-5 V with +7 V gives +10/+2 V); ATT/CV stays the control level)", "",
+			sub->addChild(createCheckMenuItem("Audio offset", "",
 				[m]() { return m->velAudio; },
 				[m]() { m->velAudio = true; }));
+			sub->addChild(new MenuSeparator);
+			sub->addChild(createMenuLabel("Control level: velocity is added to ATT/CV,"));
+			sub->addChild(createMenuLabel("result clamped to 0...10 V."));
+			sub->addChild(createMenuLabel("Audio offset: velocity is added to the signal"));
+			sub->addChild(createMenuLabel("after gate/ATT, only while the gate is open"));
+			sub->addChild(createMenuLabel("(full from ATT 0.5 V, none at ATT 0)."));
+			sub->addChild(createMenuLabel("Cut at +-10 V, e.g. +-5 V with -4 V -> +1/-9 V,"));
+			sub->addChild(createMenuLabel("+-5 V with +7 V -> +10/+2 V."));
 		}));
 		menu->addChild(createSubmenuItem("BOTH filter stage", m->bothLowpass ? "Lowpass" : "Paper BOTH", [m](Menu* sub) {
 			sub->addChild(createCheckMenuItem("Lowpass stage (as in LOWPASS mode, resonance works; default; only with Linear gate response)", "",
