@@ -1,6 +1,7 @@
 #include "Marf248.hpp"
 #include "Marf248TriggerExpander.hpp"
 #include "Marf248CvExpander.hpp"
+#include "Marf248LoopExpander.hpp"
 #include "PanelLabel.hpp"
 // Fuer den Stage-Number-Broadcast (Rechtsklick "Apply to all stages" auf
 // Modifier-Buttons/Slidern/Reglern, siehe weiter unten): history::Action/
@@ -586,6 +587,13 @@ struct Marf248 : Module, Marf248Host {
 	// Triggern oben, da sie eine andere Spannungsquelle (Expander-Eingang
 	// statt Taster-Parameter) abfragen. Key laeuft ueber kontinuierliche CV
 	// und braucht daher keinen eigenen Trigger. Siehe process().
+	// Loop-Expander (Ritornello): Pegelzustand des Austrittsimpulses im
+	// letzten Sample je Section, fuer die Flankenerkennung (Blink-Timer der
+	// Panel-Anzeige). Wird in process() unabhaengig davon gefuehrt, ob ein
+	// Expander andockt.
+	bool loopExitPrevA = false;
+	bool loopExitPrevB = false;
+
 	dsp::SchmittTrigger expClearTrigger;
 	dsp::SchmittTrigger expResetValuesTrigger;
 	dsp::SchmittTrigger expPresetLoadTrigger[12];
@@ -2091,12 +2099,52 @@ struct Marf248 : Module, Marf248Host {
 		bool freezeB = trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_FREEZE_POLY_INPUT).getPolyVoltage(1) >= ADDR_GATE_THRESHOLD;
 		afgB.applyStageAddress(addrContOnB, addrValueB, strobeB, resetB, stageModifier, freezeB);
 
-		// Loop-Schleifen (Session 1b, nur Engine): bis der Loop-Expander
-		// angebunden ist (Session 2), ist nichts gepatcht -> keine Flags, keine
-		// Schleifen, Verhalten bitgleich zum Stand davor. Die Ausgaenge
-		// loopExit/loopRest werden noch nirgends verdrahtet.
-		static const int stageLoopFlags[NUM_STAGES] = {};
-		static const int stageLoopCount[NUM_STAGES] = {};
+		// Loop-Schleifen (Ritornello, Marf248LoopExpander): Expander links UND
+		// rechts suchen (links zuerst), gleiches Muster wie trigExp/cvExp. Ohne
+		// angedockten Expander oder ohne gepatchtes Begin- UND End-Kabel gehen
+		// die Nullen-Arrays an die Engine -> keine Flags, keine Schleifen,
+		// Verhalten bitgleich zum Stand ohne Loop-Feature (unpaarige Begin/End
+		// wuerden ohnehin ignoriert, daher genuegt das UND).
+		// Begin/End: Poly-Gate, Kanal i = Stage i+1, Pegel >= 2 V (identische
+		// Schwelle wie die Stage-Modifier-Gates, ohne Hysterese). Count: 1 V
+		// pro Zone, floor(V) auf 0..9 begrenzt (0 = endlos); nur Kanaele bis
+		// getChannels() werden gelesen (getPolyVoltage() wuerde ein Mono-Kabel
+		// auf alle 16 Stages kopieren). Gemeinsam fuer Section A und B.
+		Marf248LoopExpander* loopExp = dynamic_cast<Marf248LoopExpander*>(getLeftExpander().module);
+		if (!loopExp) {
+			loopExp = dynamic_cast<Marf248LoopExpander*>(getRightExpander().module);
+		}
+		static const int zeroLoopFlags[NUM_STAGES] = {};
+		static const int zeroLoopCount[NUM_STAGES] = {};
+		int loopFlagsBuf[NUM_STAGES];
+		int loopCountBuf[NUM_STAGES];
+		const int* stageLoopFlags = zeroLoopFlags;
+		const int* stageLoopCount = zeroLoopCount;
+		if (loopExp) {
+			Input& loopBeginIn = loopExp->getInput(Marf248LoopExpander::LOOP_BEGIN_POLY_INPUT);
+			Input& loopEndIn = loopExp->getInput(Marf248LoopExpander::LOOP_END_POLY_INPUT);
+			Input& loopCountIn = loopExp->getInput(Marf248LoopExpander::LOOP_COUNT_POLY_INPUT);
+			if (loopBeginIn.isConnected() && loopEndIn.isConnected()) {
+				int beginCh = loopBeginIn.getChannels();
+				int endCh = loopEndIn.getChannels();
+				int countCh = loopCountIn.isConnected() ? loopCountIn.getChannels() : 0;
+				for (int i = 0; i < NUM_STAGES; i++) {
+					int f = 0;
+					if (i < beginCh && loopBeginIn.getVoltage(i) >= ADDR_GATE_THRESHOLD) {
+						f |= LOOPFLAG_BEGIN;
+					}
+					if (i < endCh && loopEndIn.getVoltage(i) >= ADDR_GATE_THRESHOLD) {
+						f |= LOOPFLAG_END;
+					}
+					loopFlagsBuf[i] = f;
+					loopCountBuf[i] = (i < countCh)
+						? (int) rack::clamp(std::floor(loopCountIn.getVoltage(i)), 0.f, 9.f)
+						: 0;
+				}
+				stageLoopFlags = loopFlagsBuf;
+				stageLoopCount = loopCountBuf;
+			}
+		}
 		float loopExitA, loopRestA, loopExitB, loopRestB;
 		float vA, tA, apA, p1A, p2A, scA, ecA, rgA, eosA;
 		afgA.process(args.sampleTime, resolvedVoltage, resolvedTimeA, stageModifier, stageCurvePower,
@@ -2158,6 +2206,48 @@ struct Marf248 : Module, Marf248Host {
 		outputs[TIMESTATIC_B_OUTPUT].setVoltage(stageTime[afgB.currentStage] * 10.f);
 		lights[P1_ACTIVE_B_LIGHT].setBrightness(p1B > 0.f ? 1.f : 0.f);
 		lights[P2_ACTIVE_B_LIGHT].setBrightness(p2B > 0.f ? 1.f : 0.f);
+
+		// Loop-Expander (Ritornello): Austrittsimpuls und Restwert je Section in
+		// die Expander-Ausgaenge schreiben, dazu Anzeigezustand fuer die Panel-
+		// Ziffernanzeige. Der Blink-Timer (0,3 s) wird bei der steigenden Flanke
+		// des Austrittsimpulses gesetzt und hier heruntergezaehlt - nur dieser
+		// Block schreibt ihn, das Widget liest nur. Die Flanken-Merker laufen
+		// auch ohne Expander mit, damit ein spaeter angedockter Expander keinen
+		// alten Impuls als Austritt sieht. Anzeigewert nur bei Aenderung
+		// schreiben (spart staendige Schreibzugriffe auf gemeinsam gelesene
+		// Speicherzeilen).
+		{
+			bool exitHighA = loopExitA > 0.5f;
+			bool exitHighB = loopExitB > 0.5f;
+			if (loopExp) {
+				loopExp->getOutput(Marf248LoopExpander::LOOP_EXIT_A_OUTPUT).setVoltage(loopExitA);
+				loopExp->getOutput(Marf248LoopExpander::LOOP_EXIT_B_OUTPUT).setVoltage(loopExitB);
+				loopExp->getOutput(Marf248LoopExpander::LOOP_REST_A_OUTPUT).setVoltage(loopRestA);
+				loopExp->getOutput(Marf248LoopExpander::LOOP_REST_B_OUTPUT).setVoltage(loopRestB);
+
+				if (exitHighA && !loopExitPrevA) {
+					loopExp->blinkTimer[0] = LOOP_BLINK_SECONDS;
+				}
+				if (exitHighB && !loopExitPrevB) {
+					loopExp->blinkTimer[1] = LOOP_BLINK_SECONDS;
+				}
+				for (int s = 0; s < 2; s++) {
+					if (loopExp->blinkTimer[s] > 0.f) {
+						loopExp->blinkTimer[s] = std::max(0.f, loopExp->blinkTimer[s] - args.sampleTime);
+					}
+				}
+				int restShownA = (int) std::lround(loopRestA);
+				int restShownB = (int) std::lround(loopRestB);
+				if (loopExp->restShown[0] != restShownA) {
+					loopExp->restShown[0] = restShownA;
+				}
+				if (loopExp->restShown[1] != restShownB) {
+					loopExp->restShown[1] = restShownB;
+				}
+			}
+			loopExitPrevA = exitHighA;
+			loopExitPrevB = exitHighB;
+		}
 
 		// Marf248TriggerExpander: einfacher "Host liest/schreibt direkt"-
 		// Ansatz (kein Message-Passing noetig, da der Expander selbst keine

@@ -13,4 +13,5 @@ void init(Plugin* p) {
 	p->addModel(modelMinerva);
 	p->addModel(modelElena);
 	p->addModel(modelAnnaMaria);
+	p->addModel(modelMarf248LoopExpander);
 }

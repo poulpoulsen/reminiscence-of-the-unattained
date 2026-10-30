@@ -95,6 +95,16 @@
      "Filter",
      "Voltage-controlled amplifier"
      ]
+   },
+   {
+     "slug": "Marf248LoopExpander",
+     "name": "Ritornello",
+     "description": "Loop expander for Sofonisba: per-stage loop begin/end markers with pass counter, nested loops, exit trigger, remaining-pass CV and display per section",
+     "tags": [
+     "Expander",
+     "Sequencer",
+     "Utility"
+     ]
    }
   ]
 }

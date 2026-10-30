@@ -38,3 +38,9 @@ extern Model* modelElena;
 // Achtes Modul "Anna-Maria" (Lowpass Gate nach dem Modell von Parker/D'Angelo, DAFx-13;
 // vier Kanaele), eigene Datei src/AnnaMaria.cpp, Engine in src/AnnaMariaLpg.hpp.
 extern Model* modelAnnaMaria;
+
+// Neuntes Modul "Ritornello" (Loop-Expander fuer Sofonisba/Lucia, interner
+// Name Marf248LoopExpander): Begin/End-Schleifen mit Zaehler, Austrittsimpuls,
+// Restwert und Panel-Ziffernanzeige. Reiner Jack-Traeger wie Amilcare/Bianca,
+// eigene Dateien src/Marf248LoopExpander.hpp/.cpp, Logik in Afg (Marf248.hpp).
+extern Model* modelMarf248LoopExpander;
