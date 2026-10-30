@@ -10,7 +10,7 @@
 #include <vector>
 
 #ifdef NEW_ENGINE
-#define LOOP_ARGS_CFG , cfg
+#define LOOP_ARGS_CFG , flags, cfg
 #define LOOP_ARGS_OUT , &loopExit, &loopRest
 #else
 #define LOOP_ARGS_CFG
@@ -26,7 +26,8 @@ struct Rig {
 	int ratchet[NUM_STAGES];
 	float warp[NUM_STAGES];
 	float roff[NUM_STAGES];
-	int cfg[NUM_STAGES];
+	int flags[NUM_STAGES];   // Loop-Flags (LOOPFLAG_BEGIN/END), 0 = keine Schleife
+	int cfg[NUM_STAGES];     // Zaehler je End-Stage, 0 = endlos
 	float dt = 1e-3f;
 	// letzte Ausgaenge
 	float vOut = 0, tOut = 0, ap = 0, p1 = 0, p2 = 0, sc = 0, ec = 0, rg = 0, eos = 0;
@@ -39,11 +40,20 @@ struct Rig {
 	Rig() {
 		for (int i = 0; i < NUM_STAGES; i++) {
 			volt[i] = i * 0.5f; time[i] = 2e-3f; mod[i] = 0; curve[i] = 1.f;
-			ratchet[i] = 0; warp[i] = 0.f; roff[i] = 0.f; cfg[i] = 0;
+			ratchet[i] = 0; warp[i] = 0.f; roff[i] = 0.f; flags[i] = 0; cfg[i] = 0;
 		}
 		mod[0] |= MOD_FIRST;
 		mod[NUM_STAGES - 1] |= MOD_LAST;
 	}
+
+	// Schleife in Stage-Nummern (1-basiert wie am Panel) einrichten.
+#ifdef NEW_ENGINE
+	void setLoop(int begin1, int end1, int count) {
+		flags[begin1 - 1] |= LOOPFLAG_BEGIN;
+		flags[end1 - 1] |= LOOPFLAG_END;
+		cfg[end1 - 1] = count;
+	}
+#endif
 
 	void step(bool continuous = false, int addr = 0, bool strobe = false, bool reset = false) {
 		afg.applyStageAddress(continuous, addr, strobe, reset, mod, false);
