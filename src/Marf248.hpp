@@ -761,6 +761,136 @@ struct Afg {
 	// nichts tut, siehe process()).
 	bool ratchetWasActive = false;
 
+	// ---------------------------------------------------------------------
+	// Loop-Zaehler (Session "Loop-Expander, Session 1: Engine"): ein Segment
+	// (First..Last) wird N-mal durchlaufen, danach Austritt (Weiterlauf hinter
+	// die Last-Stage statt Wrap auf First). Konfiguration kommt pro Stage als
+	// stageLoopCount[] (0 = endlos / kein Zaehler, 1..9 = Durchlaeufe) und wird
+	// an der Last-Stage des Segments gelesen (Kanal = Stage-Nummer). Ohne
+	// Konfiguration (alle 0) bleibt das Verhalten bitgleich zum Stand davor.
+	//   - Der Zaehler gehoert zu einem Segmentbesuch: geladen wird beim ersten
+	//     Bedarf nach Segmentwechsel / Reset / Austritt (lazy, siehe
+	//     ensureLoopLoaded()), der Wert wird nur beim Laden gelesen.
+	//   - Gezaehlt wird ausschliesslich an Wrap-Ereignissen von advanceStage()
+	//     (Forward: Last->First, Reverse: First->Last), nie bei Strobe/
+	//     Continuous/Recall.
+	//   - Pendulum: Zaehler inaktiv (Version 1), Restwert 0.
+	// loopRemaining: verbleibende Durchlaeufe einschliesslich des laufenden,
+	// 0 = endlos / kein Zaehler.
+	int loopRemaining = 0;
+	bool loopLoaded = false;
+	// Identitaet des aktuell besuchten Segments (First-/Last-Stage), -1 = noch
+	// keines. Wechselt sie bei einem Stage-Eintritt, wird neu geladen.
+	int loopSegFirst = -1;
+	int loopSegLast = -1;
+	// Zeiger auf die Konfiguration des laufenden process()-Aufrufs (Besitzer ist
+	// der Aufrufer). Zwischen process()-Aufrufen NICHT dereferenzieren - das
+	// Laden passiert deshalb nur innerhalb von process()/advanceStage().
+	const int* loopCfg = nullptr;
+	// Entsprechend fuer die Modifier-Bits (Segmentgrenzen), siehe loopCfg.
+	const int* loopMod = nullptr;
+	// false = Segment-Identitaet unbekannt/veraltet (nach resetLoopCounter()):
+	// wird beim naechsten Laden aus loopMod neu bestimmt.
+	bool loopSegValid = false;
+	dsp::PulseGenerator loopExitGen;
+
+	// Hoechste MOD_LAST-Stage im Array (globaler Rueckwaerts-Wrap beim Austritt
+	// ueber die untere Array-Kante, Option A). Fallback: Stage 16.
+	int findHighestLast(const int stageModifier[NUM_STAGES]) const {
+		for (int i = NUM_STAGES - 1; i >= 0; i--) {
+			if (stageModifier[i] & MOD_LAST)
+				return i;
+		}
+		return NUM_STAGES - 1;
+	}
+
+	// Setzt den Zaehler komplett zurueck (onReset(), Global Clear): beim
+	// naechsten Bedarf wird Segment und Zaehler frisch bestimmt und geladen.
+	void resetLoopCounter() {
+		loopRemaining = 0;
+		loopLoaded = false;
+		loopSegValid = false;
+	}
+
+	// Segment der aktuellen Stage OHNE Ring-Wraparound (anders als
+	// findFirstBefore()/findLastAfter()): Last = naechste MOD_LAST-Stage
+	// ab hier aufwaerts (Fallback Stage 16), First = hoechste MOD_FIRST-
+	// Stage <= Last (Fallback Stage 1). Liegt die aktuelle Stage VOR
+	// dieser First (Vorlauf unterhalb des Segments, z.B. nach einem
+	// Reverse-Austritt), gehoert sie zu keinem Segment (-2/-2): dort
+	// zaehlt nichts. Ein Stage-Bereich hinter der Last-Stage (nach einem
+	// Austritt) bildet dagegen ein eigenes Segment bis zur naechsten Last
+	// bzw. Stage 16 - er wird also nicht dem verlassenen Segment
+	// zugerechnet.
+	void findLoopSegment(const int stageModifier[NUM_STAGES], int* outFirst, int* outLast) const {
+		int l = NUM_STAGES - 1;
+		for (int i = currentStage; i < NUM_STAGES; i++) {
+			if (stageModifier[i] & MOD_LAST) {
+				l = i;
+				break;
+			}
+		}
+		int f = 0;
+		for (int i = l; i >= 0; i--) {
+			if (stageModifier[i] & MOD_FIRST) {
+				f = i;
+				break;
+			}
+		}
+		if (currentStage < f) {
+			f = -2;
+			l = -2;
+		}
+		*outFirst = f;
+		*outLast = l;
+	}
+
+	// Wird nach jedem Stage-Eintritt aufgerufen (advanceStage()/jumpToStage(),
+	// vor resetPulseEdgeState()). Markiert den Zaehler zum Neuladen, wenn das
+	// Segment gewechselt hat oder forceReload gesetzt ist (Reset, Austritt).
+	// Liest bewusst keine Konfiguration (loopCfg kann hier veraltet sein).
+	void onStageEntered(const int stageModifier[NUM_STAGES], bool forceReload) {
+		int f, l;
+		findLoopSegment(stageModifier, &f, &l);
+		if (forceReload || !loopSegValid || f != loopSegFirst || l != loopSegLast) {
+			loopLoaded = false;
+		}
+		loopSegFirst = f;
+		loopSegLast = l;
+		loopSegValid = true;
+	}
+
+	// Laedt den Zaehler beim ersten Bedarf nach Beginn eines Segmentbesuchs.
+	void ensureLoopLoaded() {
+		if (loopLoaded)
+			return;
+		if (!loopSegValid && loopMod) {
+			findLoopSegment(loopMod, &loopSegFirst, &loopSegLast);
+			loopSegValid = true;
+		}
+		loopLoaded = true;
+		int n = 0;
+		if (loopCfg && loopSegLast >= 0) {
+			n = loopCfg[loopSegLast];
+		}
+		loopRemaining = rack::clamp(n, 0, 9);
+	}
+
+	// Wrap-Ereignis in advanceStage(): true = Austritt (kein Wrap), false =
+	// normal wrappen (ggf. nach Dekrement). Ohne Zaehler immer false.
+	bool loopWrapShouldExit() {
+		if (pendulumMode)
+			return false;
+		ensureLoopLoaded();
+		if (loopRemaining <= 0)
+			return false;
+		if (loopRemaining > 1) {
+			loopRemaining--;
+			return false;
+		}
+		return true;
+	}
+
 	// Setzt die Flanken-Vorwerte fuer P1/P2/First/Last zurueck auf false -
 	// wird von advanceStage() und jumpToStage() nach dem Setzen von
 	// currentStage aufgerufen (gleiche Stelle wie allPulseGen), IMMER bei
@@ -799,7 +929,7 @@ struct Afg {
 	// (Reset/Strobe/Continuous-Adressierung). Startpunkt der Rampe ist wie
 	// bei advanceStage() der zuletzt ausgegebene Wert, damit ein Slew nicht
 	// abrupt abreisst.
-	void jumpToStage(int stage, const int stageModifier[NUM_STAGES]) {
+	void jumpToStage(int stage, const int stageModifier[NUM_STAGES], bool forceReload = false) {
 		int prevStage = currentStage;
 		voltageFrom = voltageOut;
 		currentStage = rack::clamp(stage, 0, NUM_STAGES - 1);
@@ -821,6 +951,8 @@ struct Afg {
 		if (currentStage == prevStage) {
 			regateGen.trigger(REGATE_GAP_SECONDS);
 		}
+		// Loop-Zaehler: Segmentwechsel bzw. Reset (forceReload) -> neu laden.
+		onStageEntered(stageModifier, forceReload);
 		resetPulseEdgeState();
 	}
 
@@ -860,7 +992,7 @@ struct Afg {
 
 		if (resetPressed) {
 			int first = findLowestFirst(stageModifier);
-			jumpToStage(first, stageModifier);
+			jumpToStage(first, stageModifier, true);
 			return;
 		}
 		if (continuous) {
@@ -1005,6 +1137,9 @@ struct Afg {
 		int next;
 		bool wasFirst = stageModifier[currentStage] & MOD_FIRST;
 		bool wasLast  = stageModifier[currentStage] & MOD_LAST;
+		// Loop-Zaehler: true, sobald in diesem Aufruf ein Austritt stattfand
+		// (danach zaehlen weitere Wraps desselben Aufrufs nicht mehr mit).
+		bool loopExited = false;
 
 		// Beim Einschalten von Pendulum (aus->an) die Schwingrichtung frisch
 		// aus reverseMode setzen: Forward -> Bounce startet Richtung Last,
@@ -1052,7 +1187,17 @@ struct Afg {
 			// die naechste Last-markierte Stage (statt First).
 			next = currentStage - 1;
 			if (next < 0 || wasFirst) {
-				next = findLastAfter(stageModifier, currentStage);
+				if (loopWrapShouldExit()) {
+					// Loop-Austritt: nicht wrappen, hinter First weiterlaufen
+					// (Array-Kante: global auf die hoechste Last, Option A).
+					loopExited = true;
+					if (next < 0) {
+						next = findHighestLast(stageModifier);
+					}
+				}
+				else {
+					next = findLastAfter(stageModifier, currentStage);
+				}
 			}
 		}
 		else {
@@ -1060,7 +1205,17 @@ struct Afg {
 			// unveraendert).
 			next = currentStage + 1;
 			if (next >= NUM_STAGES || wasLast) {
-				next = findFirstBefore(stageModifier, currentStage);
+				if (loopWrapShouldExit()) {
+					// Loop-Austritt: nicht wrappen, hinter Last weiterlaufen
+					// (Array-Kante: global auf die niedrigste First, Option A).
+					loopExited = true;
+					if (next >= NUM_STAGES) {
+						next = findLowestFirst(stageModifier);
+					}
+				}
+				else {
+					next = findFirstBefore(stageModifier, currentStage);
+				}
 			}
 		}
 
@@ -1084,11 +1239,33 @@ struct Afg {
 			}
 			else if (reverseMode) {
 				int cand = next - 1;
-				next = (cand < 0 || nextIsFirst) ? findLastAfter(stageModifier, next) : cand;
+				if (cand < 0 || nextIsFirst) {
+					if (!loopExited && loopWrapShouldExit()) {
+						loopExited = true;
+						next = (cand < 0) ? findHighestLast(stageModifier) : cand;
+					}
+					else {
+						next = findLastAfter(stageModifier, next);
+					}
+				}
+				else {
+					next = cand;
+				}
 			}
 			else {
 				int cand = next + 1;
-				next = (cand >= NUM_STAGES || nextIsLast) ? findFirstBefore(stageModifier, next) : cand;
+				if (cand >= NUM_STAGES || nextIsLast) {
+					if (!loopExited && loopWrapShouldExit()) {
+						loopExited = true;
+						next = (cand >= NUM_STAGES) ? findLowestFirst(stageModifier) : cand;
+					}
+					else {
+						next = findFirstBefore(stageModifier, next);
+					}
+				}
+				else {
+					next = cand;
+				}
 			}
 		}
 
@@ -1109,6 +1286,11 @@ struct Afg {
 		// einmal pro voller Stage, da der Ratchet-Block advanceStage() nie
 		// selbst aufruft.
 		eosGen.trigger(1e-3f);
+		// Loop-Austritt: Impuls (unabhaengig von MOD_MUTE, struktureller
+		// Marker wie EOS) und Zaehler fuer das Folgesegment neu laden.
+		if (loopExited) {
+			loopExitGen.trigger(1e-3f);
+		}
 		// Wendepunkt-Wiederholung, next==currentStage von oben) - bei einem
 		// normalen Schritt auf eine andere Stage braucht es keine Luecke,
 		// die Gate-Adressierung wechselt dort ohnehin den Kanal (siehe
@@ -1116,6 +1298,7 @@ struct Afg {
 		if (sameStageReentry) {
 			regateGen.trigger(REGATE_GAP_SECONDS);
 		}
+		onStageEntered(stageModifier, loopExited);
 		resetPulseEdgeState();
 	}
 
@@ -1137,6 +1320,9 @@ struct Afg {
 	             // immer gueltig (Default 0 = keine Verschiebung), analog zu
 	             // stageWarpBlend.
 	             const float stageRatchetOffset[NUM_STAGES],
+	             // Loop-Zaehler (siehe oben): 0 = endlos / kein Zaehler,
+	             // 1..9 = Durchlaeufe, gelesen am Kanal der Last-Stage.
+	             const int stageLoopCount[NUM_STAGES],
 	             int quantKey, int quantScaleMode,
 	             float runButtonValue, bool startConnected, float startVoltage,
 	             bool stopConnected, float stopVoltage,
@@ -1145,7 +1331,12 @@ struct Afg {
 	             float* outVoltage, float* outTime, float* outAllPulse,
 	             float* outP1, float* outP2,
 	             float* outStartCycle, float* outEndCycle, float* outRegateGap,
-	             float* outEos) {
+	             float* outEos,
+	             float* outLoopExit, float* outLoopRest) {
+		// Konfiguration fuer lazy Laden des Loop-Zaehlers (nur innerhalb dieses
+		// Aufrufs dereferenziert).
+		loopCfg = stageLoopCount;
+		loopMod = stageModifier;
 		// Button togglet Start/Stop (daher der Name "Start/Stop"-Button).
 		// CV-Inputs bleiben reine Start- bzw. Stop-Pulse, wie im Original.
 		if (runButtonTrigger.process(runButtonValue)) {
@@ -1534,5 +1725,18 @@ struct Afg {
 		*outEndCycle = endCycleGen.process(sampleTime) ? 10.f : 0.f;
 		*outRegateGap = regateGen.process(sampleTime) ? 1.f : 0.f;
 		*outEos = eosGen.process(sampleTime) ? 10.f : 0.f;
+		// Loop-Austritt (1 ms Trigger) und Restwert: verbleibende Durchlaeufe
+		// einschliesslich des laufenden, 1 V pro Durchlauf; 0 V = endlos / kein
+		// Zaehler / Pendulum. Blinkt bewusst nicht (siehe Konzept-Nachtrag).
+		*outLoopExit = loopExitGen.process(sampleTime) ? 10.f : 0.f;
+		if (pendulumMode) {
+			*outLoopRest = 0.f;
+		}
+		else {
+			ensureLoopLoaded();
+			*outLoopRest = (float) loopRemaining;
+		}
+		loopCfg = nullptr;
+		loopMod = nullptr;
 	}
 };

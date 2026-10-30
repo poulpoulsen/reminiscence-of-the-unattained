@@ -975,6 +975,10 @@ struct Marf248 : Module, Marf248Host {
 		// basieren.
 		stageModifier[0] |= MOD_FIRST;
 		stageModifier[NUM_STAGES - 1] |= MOD_LAST;
+		// Loop-Zaehler beider Sections verwerfen (Segmentgrenzen haben sich
+		// geaendert; onReset() setzt per Afg() ohnehin alles zurueck).
+		afgA.resetLoopCounter();
+		afgB.resetLoopCounter();
 		clearFlash.trigger(0.15f);
 	}
 
@@ -2087,9 +2091,15 @@ struct Marf248 : Module, Marf248Host {
 		bool freezeB = trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_FREEZE_POLY_INPUT).getPolyVoltage(1) >= ADDR_GATE_THRESHOLD;
 		afgB.applyStageAddress(addrContOnB, addrValueB, strobeB, resetB, stageModifier, freezeB);
 
+		// Loop-Zaehler (Session 1, nur Engine): bis der Loop-Expander
+		// angebunden ist (Session 2), ist nichts gepatcht -> alles 0 = endlos,
+		// Verhalten bitgleich zum Stand davor. Die Ausgaenge loopExit/loopRest
+		// werden noch nirgends verdrahtet.
+		static const int stageLoopCount[NUM_STAGES] = {};
+		float loopExitA, loopRestA, loopExitB, loopRestB;
 		float vA, tA, apA, p1A, p2A, scA, ecA, rgA, eosA;
 		afgA.process(args.sampleTime, resolvedVoltage, resolvedTimeA, stageModifier, stageCurvePower,
-			stageRatchetCount, stageWarpBlend, stageRatchetOffset,
+			stageRatchetCount, stageWarpBlend, stageRatchetOffset, stageLoopCount,
 			currentKey, currentScale,
 			params[RUN_A_PARAM].getValue(),
 			inputs[START_A_INPUT].isConnected(), inputs[START_A_INPUT].getVoltage(),
@@ -2102,7 +2112,8 @@ struct Marf248 : Module, Marf248Host {
 			// Trigger-Expander andockt - identisches Muster wie RUN_GATE_A oben.
 			trigExp && trigExp->getInput(Marf248TriggerExpander::ADVANCE_A_INPUT).isConnected(),
 			trigExp ? trigExp->getInput(Marf248TriggerExpander::ADVANCE_A_INPUT).getVoltage() : 0.f,
-			&vA, &tA, &apA, &p1A, &p2A, &scA, &ecA, &rgA, &eosA);
+			&vA, &tA, &apA, &p1A, &p2A, &scA, &ecA, &rgA, &eosA,
+			&loopExitA, &loopRestA);
 		outputs[VOUT_A_OUTPUT].setVoltage(vA);
 		outputs[TOUT_A_OUTPUT].setVoltage(tA);
 		outputs[APOUT_A_OUTPUT].setVoltage(apA);
@@ -2121,7 +2132,7 @@ struct Marf248 : Module, Marf248Host {
 
 		float vB, tB, apB, p1B, p2B, scB, ecB, rgB, eosB;
 		afgB.process(args.sampleTime, resolvedVoltage, resolvedTimeB, stageModifier, stageCurvePower,
-			stageRatchetCount, stageWarpBlend, stageRatchetOffset,
+			stageRatchetCount, stageWarpBlend, stageRatchetOffset, stageLoopCount,
 			currentKey, currentScale,
 			params[RUN_B_PARAM].getValue(),
 			inputs[START_B_INPUT].isConnected(), inputs[START_B_INPUT].getVoltage(),
@@ -2134,7 +2145,8 @@ struct Marf248 : Module, Marf248Host {
 			// Trigger-Expander andockt - identisches Muster wie RUN_GATE_B oben.
 			trigExp && trigExp->getInput(Marf248TriggerExpander::ADVANCE_B_INPUT).isConnected(),
 			trigExp ? trigExp->getInput(Marf248TriggerExpander::ADVANCE_B_INPUT).getVoltage() : 0.f,
-			&vB, &tB, &apB, &p1B, &p2B, &scB, &ecB, &rgB, &eosB);
+			&vB, &tB, &apB, &p1B, &p2B, &scB, &ecB, &rgB, &eosB,
+			&loopExitB, &loopRestB);
 		outputs[VOUT_B_OUTPUT].setVoltage(vB);
 		outputs[TOUT_B_OUTPUT].setVoltage(tB);
 		outputs[APOUT_B_OUTPUT].setVoltage(apB);
