@@ -975,8 +975,8 @@ struct Marf248 : Module, Marf248Host {
 		// basieren.
 		stageModifier[0] |= MOD_FIRST;
 		stageModifier[NUM_STAGES - 1] |= MOD_LAST;
-		// Loop-Zaehler beider Sections verwerfen (Segmentgrenzen haben sich
-		// geaendert; onReset() setzt per Afg() ohnehin alles zurueck).
+		// Loop-Zaehler beider Sections verwerfen (onReset() setzt per Afg()
+		// ohnehin alles zurueck).
 		afgA.resetLoopCounter();
 		afgB.resetLoopCounter();
 		clearFlash.trigger(0.15f);
@@ -2091,15 +2091,16 @@ struct Marf248 : Module, Marf248Host {
 		bool freezeB = trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_FREEZE_POLY_INPUT).getPolyVoltage(1) >= ADDR_GATE_THRESHOLD;
 		afgB.applyStageAddress(addrContOnB, addrValueB, strobeB, resetB, stageModifier, freezeB);
 
-		// Loop-Zaehler (Session 1, nur Engine): bis der Loop-Expander
-		// angebunden ist (Session 2), ist nichts gepatcht -> alles 0 = endlos,
-		// Verhalten bitgleich zum Stand davor. Die Ausgaenge loopExit/loopRest
-		// werden noch nirgends verdrahtet.
+		// Loop-Schleifen (Session 1b, nur Engine): bis der Loop-Expander
+		// angebunden ist (Session 2), ist nichts gepatcht -> keine Flags, keine
+		// Schleifen, Verhalten bitgleich zum Stand davor. Die Ausgaenge
+		// loopExit/loopRest werden noch nirgends verdrahtet.
+		static const int stageLoopFlags[NUM_STAGES] = {};
 		static const int stageLoopCount[NUM_STAGES] = {};
 		float loopExitA, loopRestA, loopExitB, loopRestB;
 		float vA, tA, apA, p1A, p2A, scA, ecA, rgA, eosA;
 		afgA.process(args.sampleTime, resolvedVoltage, resolvedTimeA, stageModifier, stageCurvePower,
-			stageRatchetCount, stageWarpBlend, stageRatchetOffset, stageLoopCount,
+			stageRatchetCount, stageWarpBlend, stageRatchetOffset, stageLoopFlags, stageLoopCount,
 			currentKey, currentScale,
 			params[RUN_A_PARAM].getValue(),
 			inputs[START_A_INPUT].isConnected(), inputs[START_A_INPUT].getVoltage(),
@@ -2132,7 +2133,7 @@ struct Marf248 : Module, Marf248Host {
 
 		float vB, tB, apB, p1B, p2B, scB, ecB, rgB, eosB;
 		afgB.process(args.sampleTime, resolvedVoltage, resolvedTimeB, stageModifier, stageCurvePower,
-			stageRatchetCount, stageWarpBlend, stageRatchetOffset, stageLoopCount,
+			stageRatchetCount, stageWarpBlend, stageRatchetOffset, stageLoopFlags, stageLoopCount,
 			currentKey, currentScale,
 			params[RUN_B_PARAM].getValue(),
 			inputs[START_B_INPUT].isConnected(), inputs[START_B_INPUT].getVoltage(),

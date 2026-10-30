@@ -33,6 +33,13 @@ struct Marf248Host {
 // Huellkurven zuverlaessig neu retriggern - siehe Afg::regateGen.
 static const float REGATE_GAP_SECONDS = 0.005f;
 
+// Loop-Markierungen je Stage (Loop-Expander, Session 1b), getrennt von
+// StageModifierBits: Begin/End einer Schleife, siehe Afg::loopFlags.
+enum LoopFlagBits {
+	LOOPFLAG_BEGIN = 1 << 0,
+	LOOPFLAG_END   = 1 << 1,
+};
+
 enum StageModifierBits {
 	MOD_QUANT_OCT   = 1 << 0,
 	MOD_SLOPED      = 1 << 1,
@@ -762,132 +769,169 @@ struct Afg {
 	bool ratchetWasActive = false;
 
 	// ---------------------------------------------------------------------
-	// Loop-Zaehler (Session "Loop-Expander, Session 1: Engine"): ein Segment
-	// (First..Last) wird N-mal durchlaufen, danach Austritt (Weiterlauf hinter
-	// die Last-Stage statt Wrap auf First). Konfiguration kommt pro Stage als
-	// stageLoopCount[] (0 = endlos / kein Zaehler, 1..9 = Durchlaeufe) und wird
-	// an der Last-Stage des Segments gelesen (Kanal = Stage-Nummer). Ohne
-	// Konfiguration (alle 0) bleibt das Verhalten bitgleich zum Stand davor.
-	//   - Der Zaehler gehoert zu einem Segmentbesuch: geladen wird beim ersten
-	//     Bedarf nach Segmentwechsel / Reset / Austritt (lazy, siehe
-	//     ensureLoopLoaded()), der Wert wird nur beim Laden gelesen.
-	//   - Gezaehlt wird ausschliesslich an Wrap-Ereignissen von advanceStage()
-	//     (Forward: Last->First, Reverse: First->Last), nie bei Strobe/
-	//     Continuous/Recall.
-	//   - Pendulum: Zaehler inaktiv (Version 1), Restwert 0.
-	// loopRemaining: verbleibende Durchlaeufe einschliesslich des laufenden,
-	// 0 = endlos / kein Zaehler.
-	int loopRemaining = 0;
-	bool loopLoaded = false;
-	// Identitaet des aktuell besuchten Segments (First-/Last-Stage), -1 = noch
-	// keines. Wechselt sie bei einem Stage-Eintritt, wird neu geladen.
-	int loopSegFirst = -1;
-	int loopSegLast = -1;
-	// Zeiger auf die Konfiguration des laufenden process()-Aufrufs (Besitzer ist
-	// der Aufrufer). Zwischen process()-Aufrufen NICHT dereferenzieren - das
-	// Laden passiert deshalb nur innerhalb von process()/advanceStage().
-	const int* loopCfg = nullptr;
-	// Entsprechend fuer die Modifier-Bits (Segmentgrenzen), siehe loopCfg.
-	const int* loopMod = nullptr;
-	// false = Segment-Identitaet unbekannt/veraltet (nach resetLoopCounter()):
-	// wird beim naechsten Laden aus loopMod neu bestimmt.
-	bool loopSegValid = false;
+	// Loop-Schleifen (Session 1b): Begin-/End-Markierungen, UNABHAENGIG von
+	// MOD_FIRST/MOD_LAST (Start-/End-of-Cycle-Trigger und BEATS_FACTOR-
+	// Segmente bleiben unberuehrt). Eine Schleife besteht aus einer Begin-
+	// und einer End-Stage; an der End-Stage haengt der Zaehler N
+	// (stageLoopCount[End]: 0 = endlos, 1..9 = Durchlaeufe). Verlaesst die
+	// Sektion die End-Stage (Forward), springt sie zur Begin-Stage und zaehlt
+	// herunter; beim letzten Durchlauf laeuft sie normal weiter (Austritt).
+	// Im Reverse-Lauf tauschen Begin und End die Rollen: verlassen wird die
+	// Begin-Stage, der Sprung geht zur End-Stage, der Zaehler bleibt der der
+	// End-Stage.
+	//   - Paarung per Klammerung (Stack): jedes End schliesst das zuletzt
+	//     geoeffnete, noch offene Begin. Damit sind Schleifen verschachtelbar,
+	//     jede End-Stage hat ihren eigenen Zaehler. Eine Stage mit Begin UND
+	//     End ist eine Ein-Stage-Schleife. Unpaarige Begin/End werden ignoriert.
+	//   - Zustandsregel: der Zaehler einer Schleife ist nur aktiv, solange
+	//     die aktuelle Stage in [Begin..End] liegt. Bei JEDEM Stage-Eintritt
+	//     (auch Strobe/Recall/Reset) verfallen die Zaehler aller Schleifen,
+	//     deren Bereich die neue Stage nicht enthaelt - sie laden beim
+	//     naechsten Bedarf neu (lazy, voller Wert). Strobe hinein = voller
+	//     Zaehler, Recall heraus = Zaehler verfaellt, Reset = alles neu.
+	//     Die innere Schleife laeuft so in jedem Durchgang der aeusseren
+	//     wieder voll ab.
+	//   - Pendulum: Schleifen inaktiv (Version 1).
+	//   - Ohne Flags (alles 0) bleibt das Verhalten bitgleich zum Stand davor.
+	// Die Flag-Bits stehen in stageLoopFlags[] (vom Loop-Expander), nicht in
+	// stageModifier[].
+	const int* loopFlags = nullptr;   // nur innerhalb von process() gueltig
+	const int* loopCfg = nullptr;     // nur innerhalb von process() gueltig
+	// Paarungs-Cache; Eintraege sind Stage+1, 0 = keine Schleife.
+	int loopFlagsCache[NUM_STAGES] = {};
+	bool loopPairValid = false;
+	int loopBeginP1[NUM_STAGES] = {};  // je End-Stage: Begin+1
+	int loopEndP1[NUM_STAGES] = {};    // je Begin-Stage: End+1
+	int loopCount = 0;                 // Anzahl gepaarter Schleifen
+	// Zaehlerzustand je End-Stage: verbleibende Durchlaeufe einschliesslich
+	// des laufenden (0 = endlos), geladen-Flag (lazy, siehe oben).
+	int loopRestArr[NUM_STAGES] = {};
+	bool loopLoadedArr[NUM_STAGES] = {};
+	// End-Stage der innersten Schleife, die currentStage enthaelt (-1 = keine).
+	int loopInnerEnd = -1;
 	dsp::PulseGenerator loopExitGen;
 
-	// Hoechste MOD_LAST-Stage im Array (globaler Rueckwaerts-Wrap beim Austritt
-	// ueber die untere Array-Kante, Option A). Fallback: Stage 16.
-	int findHighestLast(const int stageModifier[NUM_STAGES]) const {
-		for (int i = NUM_STAGES - 1; i >= 0; i--) {
-			if (stageModifier[i] & MOD_LAST)
-				return i;
-		}
-		return NUM_STAGES - 1;
-	}
-
-	// Setzt den Zaehler komplett zurueck (onReset(), Global Clear): beim
-	// naechsten Bedarf wird Segment und Zaehler frisch bestimmt und geladen.
-	void resetLoopCounter() {
-		loopRemaining = 0;
-		loopLoaded = false;
-		loopSegValid = false;
-	}
-
-	// Segment der aktuellen Stage OHNE Ring-Wraparound (anders als
-	// findFirstBefore()/findLastAfter()): Last = naechste MOD_LAST-Stage
-	// ab hier aufwaerts (Fallback Stage 16), First = hoechste MOD_FIRST-
-	// Stage <= Last (Fallback Stage 1). Liegt die aktuelle Stage VOR
-	// dieser First (Vorlauf unterhalb des Segments, z.B. nach einem
-	// Reverse-Austritt), gehoert sie zu keinem Segment (-2/-2): dort
-	// zaehlt nichts. Ein Stage-Bereich hinter der Last-Stage (nach einem
-	// Austritt) bildet dagegen ein eigenes Segment bis zur naechsten Last
-	// bzw. Stage 16 - er wird also nicht dem verlassenen Segment
-	// zugerechnet.
-	void findLoopSegment(const int stageModifier[NUM_STAGES], int* outFirst, int* outLast) const {
-		int l = NUM_STAGES - 1;
-		for (int i = currentStage; i < NUM_STAGES; i++) {
-			if (stageModifier[i] & MOD_LAST) {
-				l = i;
-				break;
-			}
-		}
-		int f = 0;
-		for (int i = l; i >= 0; i--) {
-			if (stageModifier[i] & MOD_FIRST) {
-				f = i;
-				break;
-			}
-		}
-		if (currentStage < f) {
-			f = -2;
-			l = -2;
-		}
-		*outFirst = f;
-		*outLast = l;
-	}
-
-	// Wird nach jedem Stage-Eintritt aufgerufen (advanceStage()/jumpToStage(),
-	// vor resetPulseEdgeState()). Markiert den Zaehler zum Neuladen, wenn das
-	// Segment gewechselt hat oder forceReload gesetzt ist (Reset, Austritt).
-	// Liest bewusst keine Konfiguration (loopCfg kann hier veraltet sein).
-	void onStageEntered(const int stageModifier[NUM_STAGES], bool forceReload) {
-		int f, l;
-		findLoopSegment(stageModifier, &f, &l);
-		if (forceReload || !loopSegValid || f != loopSegFirst || l != loopSegLast) {
-			loopLoaded = false;
-		}
-		loopSegFirst = f;
-		loopSegLast = l;
-		loopSegValid = true;
-	}
-
-	// Laedt den Zaehler beim ersten Bedarf nach Beginn eines Segmentbesuchs.
-	void ensureLoopLoaded() {
-		if (loopLoaded)
+	void updateInnerLoop() {
+		loopInnerEnd = -1;
+		if (loopCount == 0)
 			return;
-		if (!loopSegValid && loopMod) {
-			findLoopSegment(loopMod, &loopSegFirst, &loopSegLast);
-			loopSegValid = true;
+		int bestSpan = NUM_STAGES + 1;
+		for (int e = 0; e < NUM_STAGES; e++) {
+			int b = loopBeginP1[e] - 1;
+			if (b >= 0 && b <= currentStage && currentStage <= e && (e - b) < bestSpan) {
+				bestSpan = e - b;
+				loopInnerEnd = e;
+			}
 		}
-		loopLoaded = true;
-		int n = 0;
-		if (loopCfg && loopSegLast >= 0) {
-			n = loopCfg[loopSegLast];
-		}
-		loopRemaining = rack::clamp(n, 0, 9);
 	}
 
-	// Wrap-Ereignis in advanceStage(): true = Austritt (kein Wrap), false =
-	// normal wrappen (ggf. nach Dekrement). Ohne Zaehler immer false.
-	bool loopWrapShouldExit() {
-		if (pendulumMode)
-			return false;
-		ensureLoopLoaded();
-		if (loopRemaining <= 0)
-			return false;
-		if (loopRemaining > 1) {
-			loopRemaining--;
-			return false;
+	void rebuildLoopPairing() {
+		int stack[NUM_STAGES];
+		int sp = 0;
+		loopCount = 0;
+		for (int i = 0; i < NUM_STAGES; i++) {
+			loopBeginP1[i] = 0;
+			loopEndP1[i] = 0;
+			loopLoadedArr[i] = false;
 		}
+		for (int s = 0; s < NUM_STAGES; s++) {
+			int f = loopFlags[s];
+			if (f & LOOPFLAG_BEGIN) {
+				stack[sp++] = s;
+			}
+			if ((f & LOOPFLAG_END) && sp > 0) {
+				int b = stack[--sp];
+				loopBeginP1[s] = b + 1;
+				loopEndP1[b] = s + 1;
+				loopCount++;
+			}
+			loopFlagsCache[s] = f;
+		}
+		loopPairValid = true;
+		updateInnerLoop();
+	}
+
+	// Am Anfang von process(): Paarung neu aufbauen, falls sich Flags geaendert
+	// haben (16 Integer-Vergleiche pro Sample).
+	void ensureLoopPairing() {
+		bool same = loopPairValid;
+		for (int i = 0; same && i < NUM_STAGES; i++) {
+			if (loopFlagsCache[i] != loopFlags[i])
+				same = false;
+		}
+		if (!same) {
+			rebuildLoopPairing();
+		}
+	}
+
+	// Setzt alle Schleifenzaehler zurueck (Global Clear; onReset() erzeugt die
+	// Engine ohnehin neu).
+	void resetLoopCounter() {
+		for (int i = 0; i < NUM_STAGES; i++)
+			loopLoadedArr[i] = false;
+		loopPairValid = false;
+		loopInnerEnd = -1;
+	}
+
+	// Nach jedem Stage-Eintritt (advanceStage()/jumpToStage(), vor
+	// resetPulseEdgeState()): Zaehler aller Schleifen verfallen lassen, deren
+	// Bereich die neue Stage nicht enthaelt (forceReload = Reset: alle).
+	// Liest bewusst keine Konfiguration.
+	void onStageEntered(bool forceReload) {
+		if (loopCount == 0)
+			return;
+		for (int e = 0; e < NUM_STAGES; e++) {
+			int b = loopBeginP1[e] - 1;
+			if (b >= 0 && (forceReload || currentStage < b || currentStage > e)) {
+				loopLoadedArr[e] = false;
+			}
+		}
+		updateInnerLoop();
+	}
+
+	void ensureLoopLoaded(int endStage) {
+		if (loopLoadedArr[endStage])
+			return;
+		loopLoadedArr[endStage] = true;
+		int n = loopCfg ? loopCfg[endStage] : 0;
+		loopRestArr[endStage] = rack::clamp(n, 0, 9);
+	}
+
+	// Gemeinsame Zaehllogik: true = zurueckspringen (Zaehler laeuft weiter oder
+	// endlos), false = Austritt (exited gesetzt, Zaehler verfaellt).
+	bool loopCountPass(int endStage, bool* exited) {
+		ensureLoopLoaded(endStage);
+		int& r = loopRestArr[endStage];
+		if (r == 0)
+			return true;
+		if (r > 1) {
+			r--;
+			return true;
+		}
+		loopLoadedArr[endStage] = false;
+		*exited = true;
+		return false;
+	}
+
+	// Verlaesst die Sektion `stage` vorwaerts: Sprungziel (Begin) oder false.
+	bool loopLeaveForward(int stage, int* target, bool* exited) {
+		int b = loopBeginP1[stage] - 1;
+		if (b < 0)
+			return false;
+		if (!loopCountPass(stage, exited))
+			return false;
+		*target = b;
+		return true;
+	}
+
+	// Rueckwaerts (Rollen getauscht): `stage` ist Begin, Sprungziel ist End.
+	bool loopLeaveReverse(int stage, int* target, bool* exited) {
+		int e = loopEndP1[stage] - 1;
+		if (e < 0)
+			return false;
+		if (!loopCountPass(e, exited))
+			return false;
+		*target = e;
 		return true;
 	}
 
@@ -951,8 +995,9 @@ struct Afg {
 		if (currentStage == prevStage) {
 			regateGen.trigger(REGATE_GAP_SECONDS);
 		}
-		// Loop-Zaehler: Segmentwechsel bzw. Reset (forceReload) -> neu laden.
-		onStageEntered(stageModifier, forceReload);
+		// Loop-Zaehler: Schleifen, die die neue Stage nicht enthalten, verfallen
+		// (Reset: alle).
+		onStageEntered(forceReload);
 		resetPulseEdgeState();
 	}
 
@@ -1137,9 +1182,6 @@ struct Afg {
 		int next;
 		bool wasFirst = stageModifier[currentStage] & MOD_FIRST;
 		bool wasLast  = stageModifier[currentStage] & MOD_LAST;
-		// Loop-Zaehler: true, sobald in diesem Aufruf ein Austritt stattfand
-		// (danach zaehlen weitere Wraps desselben Aufrufs nicht mehr mit).
-		bool loopExited = false;
 
 		// Beim Einschalten von Pendulum (aus->an) die Schwingrichtung frisch
 		// aus reverseMode setzen: Forward -> Bounce startet Richtung Last,
@@ -1153,7 +1195,22 @@ struct Afg {
 		}
 		pendulumWasOn = pendulumMode;
 
-		if (pendulumMode) {
+		// Loop-Schleifen: Verlassen einer End-Stage (Forward) bzw. Begin-Stage
+		// (Reverse) mit Sprung auf die Gegenstelle hat Vorrang vor der normalen
+		// Schrittlogik (First/Last-Wrap bleibt davon unberuehrt, solange die
+		// Schleife nicht springt). Pendulum: inaktiv.
+		bool loopExited = false;
+		int loopTarget = 0;
+		bool loopJumped = false;
+		if (loopCount > 0 && !pendulumMode) {
+			loopJumped = reverseMode ? loopLeaveReverse(currentStage, &loopTarget, &loopExited)
+			                         : loopLeaveForward(currentStage, &loopTarget, &loopExited);
+		}
+
+		if (loopJumped) {
+			next = loopTarget;
+		}
+		else if (pendulumMode) {
 			// Nimmt an, dass First..Last ein zusammenhaengender, nicht
 			// wrapender Bereich ist (einfache +-1-Schrittweite, kein
 			// Ring-Wraparound wie bei Forward/Reverse ohne Pendulum). Fuer
@@ -1187,17 +1244,7 @@ struct Afg {
 			// die naechste Last-markierte Stage (statt First).
 			next = currentStage - 1;
 			if (next < 0 || wasFirst) {
-				if (loopWrapShouldExit()) {
-					// Loop-Austritt: nicht wrappen, hinter First weiterlaufen
-					// (Array-Kante: global auf die hoechste Last, Option A).
-					loopExited = true;
-					if (next < 0) {
-						next = findHighestLast(stageModifier);
-					}
-				}
-				else {
-					next = findLastAfter(stageModifier, currentStage);
-				}
+				next = findLastAfter(stageModifier, currentStage);
 			}
 		}
 		else {
@@ -1205,17 +1252,7 @@ struct Afg {
 			// unveraendert).
 			next = currentStage + 1;
 			if (next >= NUM_STAGES || wasLast) {
-				if (loopWrapShouldExit()) {
-					// Loop-Austritt: nicht wrappen, hinter Last weiterlaufen
-					// (Array-Kante: global auf die niedrigste First, Option A).
-					loopExited = true;
-					if (next >= NUM_STAGES) {
-						next = findLowestFirst(stageModifier);
-					}
-				}
-				else {
-					next = findFirstBefore(stageModifier, currentStage);
-				}
+				next = findFirstBefore(stageModifier, currentStage);
 			}
 		}
 
@@ -1238,33 +1275,23 @@ struct Afg {
 				next = rack::clamp(next + pendulumDir, 0, NUM_STAGES - 1);
 			}
 			else if (reverseMode) {
-				int cand = next - 1;
-				if (cand < 0 || nextIsFirst) {
-					if (!loopExited && loopWrapShouldExit()) {
-						loopExited = true;
-						next = (cand < 0) ? findHighestLast(stageModifier) : cand;
-					}
-					else {
-						next = findLastAfter(stageModifier, next);
-					}
+				int tgt = 0;
+				if (loopCount > 0 && loopLeaveReverse(next, &tgt, &loopExited)) {
+					next = tgt;
 				}
 				else {
-					next = cand;
+					int cand = next - 1;
+					next = (cand < 0 || nextIsFirst) ? findLastAfter(stageModifier, next) : cand;
 				}
 			}
 			else {
-				int cand = next + 1;
-				if (cand >= NUM_STAGES || nextIsLast) {
-					if (!loopExited && loopWrapShouldExit()) {
-						loopExited = true;
-						next = (cand >= NUM_STAGES) ? findLowestFirst(stageModifier) : cand;
-					}
-					else {
-						next = findFirstBefore(stageModifier, next);
-					}
+				int tgt = 0;
+				if (loopCount > 0 && loopLeaveForward(next, &tgt, &loopExited)) {
+					next = tgt;
 				}
 				else {
-					next = cand;
+					int cand = next + 1;
+					next = (cand >= NUM_STAGES || nextIsLast) ? findFirstBefore(stageModifier, next) : cand;
 				}
 			}
 		}
@@ -1286,8 +1313,8 @@ struct Afg {
 		// einmal pro voller Stage, da der Ratchet-Block advanceStage() nie
 		// selbst aufruft.
 		eosGen.trigger(1e-3f);
-		// Loop-Austritt: Impuls (unabhaengig von MOD_MUTE, struktureller
-		// Marker wie EOS) und Zaehler fuer das Folgesegment neu laden.
+		// Loop-Austritt (Schleife regulaer beendet): Impuls, unabhaengig von
+		// MOD_MUTE (struktureller Marker wie EOS).
 		if (loopExited) {
 			loopExitGen.trigger(1e-3f);
 		}
@@ -1298,7 +1325,7 @@ struct Afg {
 		if (sameStageReentry) {
 			regateGen.trigger(REGATE_GAP_SECONDS);
 		}
-		onStageEntered(stageModifier, loopExited);
+		onStageEntered(false);
 		resetPulseEdgeState();
 	}
 
@@ -1320,8 +1347,9 @@ struct Afg {
 	             // immer gueltig (Default 0 = keine Verschiebung), analog zu
 	             // stageWarpBlend.
 	             const float stageRatchetOffset[NUM_STAGES],
-	             // Loop-Zaehler (siehe oben): 0 = endlos / kein Zaehler,
-	             // 1..9 = Durchlaeufe, gelesen am Kanal der Last-Stage.
+	             // Loop-Schleifen (siehe oben): Flags je Stage (LOOPFLAG_BEGIN/
+	             // LOOPFLAG_END) und Zaehler je End-Stage (0 = endlos, 1..9).
+	             const int stageLoopFlags[NUM_STAGES],
 	             const int stageLoopCount[NUM_STAGES],
 	             int quantKey, int quantScaleMode,
 	             float runButtonValue, bool startConnected, float startVoltage,
@@ -1333,10 +1361,11 @@ struct Afg {
 	             float* outStartCycle, float* outEndCycle, float* outRegateGap,
 	             float* outEos,
 	             float* outLoopExit, float* outLoopRest) {
-		// Konfiguration fuer lazy Laden des Loop-Zaehlers (nur innerhalb dieses
-		// Aufrufs dereferenziert).
+		// Konfiguration fuer die Loop-Schleifen (nur innerhalb dieses Aufrufs
+		// dereferenziert).
+		loopFlags = stageLoopFlags;
 		loopCfg = stageLoopCount;
-		loopMod = stageModifier;
+		ensureLoopPairing();
 		// Button togglet Start/Stop (daher der Name "Start/Stop"-Button).
 		// CV-Inputs bleiben reine Start- bzw. Stop-Pulse, wie im Original.
 		if (runButtonTrigger.process(runButtonValue)) {
@@ -1725,18 +1754,19 @@ struct Afg {
 		*outEndCycle = endCycleGen.process(sampleTime) ? 10.f : 0.f;
 		*outRegateGap = regateGen.process(sampleTime) ? 1.f : 0.f;
 		*outEos = eosGen.process(sampleTime) ? 10.f : 0.f;
-		// Loop-Austritt (1 ms Trigger) und Restwert: verbleibende Durchlaeufe
-		// einschliesslich des laufenden, 1 V pro Durchlauf; 0 V = endlos / kein
-		// Zaehler / Pendulum. Blinkt bewusst nicht (siehe Konzept-Nachtrag).
+		// Loop-Austritt (1 ms Trigger) und Restwert der INNERSTEN Schleife, die
+		// die aktuelle Stage enthaelt: verbleibende Durchlaeufe einschliesslich
+		// des laufenden, 1 V pro Durchlauf; 0 V = keine Schleife / endlos /
+		// Pendulum. Blinkt bewusst nicht (siehe Konzept-Nachtrag).
 		*outLoopExit = loopExitGen.process(sampleTime) ? 10.f : 0.f;
-		if (pendulumMode) {
+		if (pendulumMode || loopInnerEnd < 0) {
 			*outLoopRest = 0.f;
 		}
 		else {
-			ensureLoopLoaded();
-			*outLoopRest = (float) loopRemaining;
+			ensureLoopLoaded(loopInnerEnd);
+			*outLoopRest = (float) loopRestArr[loopInnerEnd];
 		}
+		loopFlags = nullptr;
 		loopCfg = nullptr;
-		loopMod = nullptr;
 	}
 };
