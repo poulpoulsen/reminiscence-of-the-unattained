@@ -890,8 +890,21 @@ struct Afg {
 	}
 
 	void ensureLoopLoaded(int endStage) {
-		if (loopLoadedArr[endStage])
+		if (loopLoadedArr[endStage]) {
+			// Endlosschleife (Rest 0; ein geladener Zaehler ist sonst immer >= 1,
+			// siehe loopCountPass): die Konfiguration bleibt im Blick. Wird fuer
+			// diese End-Stage nachtraeglich ein Zaehler > 0 angelegt (Count-Kabel
+			// gesteckt, Spannung erhoeht), wird er sofort uebernommen, der
+			// laufende Durchlauf zaehlt als erster. Ohne das liesse sich eine
+			// endlose Schleife nur per Stage-Address-Reset/Strobe verlassen,
+			// bevor der Zaehler neu gelesen wird (Live-Betrieb, Rack-Test).
+			// Gezaehlte Schleifen sind nicht betroffen: ihr Zaehler wird weiter
+			// erst beim naechsten Laden gelesen.
+			if (loopRestArr[endStage] == 0 && loopCfg && loopCfg[endStage] > 0) {
+				loopRestArr[endStage] = rack::clamp(loopCfg[endStage], 0, 9);
+			}
 			return;
+		}
 		loopLoadedArr[endStage] = true;
 		int n = loopCfg ? loopCfg[endStage] : 0;
 		loopRestArr[endStage] = rack::clamp(n, 0, 9);
