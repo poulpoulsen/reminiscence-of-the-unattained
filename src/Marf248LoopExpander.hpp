@@ -12,8 +12,12 @@
 //
 // Konzept und Entscheidungen: doc/Expander-Konzept-Loop-Nachtrag_DE.md.
 
-// Dauer der blinkenden 0 in der Panel-Anzeige beim Austritt aus einer Schleife.
-static const float LOOP_BLINK_SECONDS = 0.3f;
+// Blinkende 0 in der Panel-Anzeige beim Austritt aus einer Schleife: Gesamtdauer
+// und Dauer einer An- bzw. Aus-Phase. Bei 0,5 s / 0,1 s ergibt das an aus an
+// aus an. Die Gesamtdauer sollte ein ungerades Vielfaches der Phase sein, damit
+// das Blinken mit "an" endet.
+static const float LOOP_BLINK_SECONDS = 0.5f;
+static const float LOOP_BLINK_PERIOD = 0.1f;
 
 struct Marf248LoopExpander : Module {
 	enum ParamId {

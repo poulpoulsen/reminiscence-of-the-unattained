@@ -52,6 +52,14 @@ struct LoopRestDisplay : TransparentWidget {
 		int digit = 3; // Platzhalter im Browser
 		if (module) {
 			if (module->blinkTimer[section] > 0.f) {
+				// Echtes Blinken: LOOP_BLINK_PERIOD an, LOOP_BLINK_PERIOD aus, ...
+				// beginnend und endend mit "an" (bei 0,5 s / 0,1 s: an aus an
+				// aus an). Die "aus"-Phasen zeigen nur den Rahmen.
+				float elapsed = LOOP_BLINK_SECONDS - module->blinkTimer[section];
+				bool on = ((int) (elapsed / LOOP_BLINK_PERIOD) % 2) == 0;
+				if (!on) {
+					return;
+				}
 				digit = 0;
 			}
 			else {
