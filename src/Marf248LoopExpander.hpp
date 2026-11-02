@@ -30,10 +30,11 @@ struct Marf248LoopExpander : Module {
 		// modulweit geteilt). Paarung per Klammerung, siehe Afg::loopFlags.
 		LOOP_BEGIN_POLY_INPUT,
 		LOOP_END_POLY_INPUT,
-		// Zaehler je End-Stage (Poly-CV, Kanal i = Stage i+1): 1 V pro Zone,
-		// 0-1 V = endlos, 1-2 V = 1 Durchlauf ... 9-10 V = 9 Durchlaeufe. Nicht
-		// gepatchte/fehlende Kanaele = 0 V = endlos. Gemeinsam fuer Section A
-		// und B (getrennte Zaehlerstaende in den beiden Afg-Instanzen).
+		// Zaehler je End-Stage (Poly-CV, Kanal i = Stage i+1): 1 V pro
+		// WIEDERHOLUNG. 0-1 V = endlos, 1-2 V = 1 Wiederholung (2 Durchlaeufe)
+		// ... 9-10 V = 9 Wiederholungen (10 Durchlaeufe). Nicht gepatchte/
+		// fehlende Kanaele = 0 V = endlos. Gemeinsam fuer Section A und B
+		// (getrennte Zaehlerstaende in den beiden Afg-Instanzen).
 		LOOP_COUNT_POLY_INPUT,
 		INPUTS_LEN
 	};
@@ -72,7 +73,7 @@ struct Marf248LoopExpander : Module {
 
 		configInput(LOOP_BEGIN_POLY_INPUT, "Loop Begin gate (poly, ch. 1-16 = stage 1-16, high marks the first stage of a loop)");
 		configInput(LOOP_END_POLY_INPUT, "Loop End gate (poly, ch. 1-16 = stage 1-16, high marks the last stage of a loop)");
-		configInput(LOOP_COUNT_POLY_INPUT, "Loop Count CV (poly, ch. 1-16 = stage 1-16 of the End stage, 1 V per zone: 0-1V = endless, 1-2V = 1 pass ... 9-10V = 9 passes)");
+		configInput(LOOP_COUNT_POLY_INPUT, "Loop Count CV (poly, ch. 1-16 = stage 1-16 of the End stage, 1 V per repetition: 0-1V = endless, 1-2V = 1 repetition (2 passes) ... 9-10V = 9 repetitions (10 passes))");
 
 		configOutput(LOOP_EXIT_A_OUTPUT, "Section A Loop Exit trigger");
 		configOutput(LOOP_EXIT_B_OUTPUT, "Section B Loop Exit trigger");

@@ -30,7 +30,7 @@ struct LoopPanelRule : TransparentWidget {
 // Text-Widget ohne Interaktion, Outline-Trick, gleiche Amber-Farbe). Liest nur
 // restShown/blinkTimer vom Modul (beschrieben von Marf248::process()):
 //   blinkTimer > 0   -> "0" (Austritt gerade erfolgt, ca. 0,3 s)
-//   restShown > 0    -> Ziffer 1..9 (verbleibende Durchlaeufe der innersten
+//   restShown > 0    -> Ziffer 1..10 (verbleibende Durchlaeufe der innersten
 //                       Schleife, wie LOOP_REST_x_OUTPUT)
 //   sonst            -> "-" (keine Schleife / endlos / Pendulum)
 // Der Strich wird als Rechteck gezeichnet statt als Textzeichen, damit er nicht
@@ -65,7 +65,7 @@ struct LoopRestDisplay : TransparentWidget {
 			else {
 				digit = module->restShown[section];
 				if (digit < 0) digit = 0;
-				if (digit > 9) digit = 9;
+				if (digit > 10) digit = 10;
 				if (digit == 0) digit = -1; // Strich
 			}
 		}

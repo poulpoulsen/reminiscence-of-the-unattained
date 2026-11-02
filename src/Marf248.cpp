@@ -2107,7 +2107,10 @@ struct Marf248 : Module, Marf248Host {
 		// wuerden ohnehin ignoriert, daher genuegt das UND).
 		// Begin/End: Poly-Gate, Kanal i = Stage i+1, Pegel >= 2 V (identische
 		// Schwelle wie die Stage-Modifier-Gates, ohne Hysterese). Count: 1 V
-		// pro Zone, floor(V) auf 0..9 begrenzt (0 = endlos); nur Kanaele bis
+		// pro WIEDERHOLUNG, floor(V) auf 0..9 begrenzt: 0 V = endlos, 1 V = 1
+		// Wiederholung (= 2 Durchlaeufe) ... 9 V = 9 Wiederholungen (= 10
+		// Durchlaeufe). Die Engine rechnet in Durchlaeufen (stageLoopCount: 0 =
+		// endlos, 2..10), die Umrechnung geschieht hier. Nur Kanaele bis
 		// getChannels() werden gelesen (getPolyVoltage() wuerde ein Mono-Kabel
 		// auf alle 16 Stages kopieren). Gemeinsam fuer Section A und B.
 		Marf248LoopExpander* loopExp = dynamic_cast<Marf248LoopExpander*>(getLeftExpander().module);
@@ -2137,9 +2140,10 @@ struct Marf248 : Module, Marf248Host {
 						f |= LOOPFLAG_END;
 					}
 					loopFlagsBuf[i] = f;
-					loopCountBuf[i] = (i < countCh)
+					int loopRepeats = (i < countCh)
 						? (int) rack::clamp(std::floor(loopCountIn.getVoltage(i)), 0.f, 9.f)
 						: 0;
+					loopCountBuf[i] = (loopRepeats > 0) ? loopRepeats + 1 : 0;
 				}
 				stageLoopFlags = loopFlagsBuf;
 				stageLoopCount = loopCountBuf;

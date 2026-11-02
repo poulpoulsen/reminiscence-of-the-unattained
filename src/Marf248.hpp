@@ -773,7 +773,9 @@ struct Afg {
 	// MOD_FIRST/MOD_LAST (Start-/End-of-Cycle-Trigger und BEATS_FACTOR-
 	// Segmente bleiben unberuehrt). Eine Schleife besteht aus einer Begin-
 	// und einer End-Stage; an der End-Stage haengt der Zaehler N
-	// (stageLoopCount[End]: 0 = endlos, 1..9 = Durchlaeufe). Verlaesst die
+	// (stageLoopCount[End]: 0 = endlos, 1..10 = Durchlaeufe, den ersten mit
+	// eingerechnet; der Loop-Expander rechnet 1 V = 1 Wiederholung = 2
+	// Durchlaeufe um, siehe Marf248::process()). Verlaesst die
 	// Sektion die End-Stage (Forward), springt sie zur Begin-Stage und zaehlt
 	// herunter; beim letzten Durchlauf laeuft sie normal weiter (Austritt).
 	// Im Reverse-Lauf tauschen Begin und End die Rollen: verlassen wird die
@@ -901,13 +903,13 @@ struct Afg {
 			// Gezaehlte Schleifen sind nicht betroffen: ihr Zaehler wird weiter
 			// erst beim naechsten Laden gelesen.
 			if (loopRestArr[endStage] == 0 && loopCfg && loopCfg[endStage] > 0) {
-				loopRestArr[endStage] = rack::clamp(loopCfg[endStage], 0, 9);
+				loopRestArr[endStage] = rack::clamp(loopCfg[endStage], 0, 10);
 			}
 			return;
 		}
 		loopLoadedArr[endStage] = true;
 		int n = loopCfg ? loopCfg[endStage] : 0;
-		loopRestArr[endStage] = rack::clamp(n, 0, 9);
+		loopRestArr[endStage] = rack::clamp(n, 0, 10);
 	}
 
 	// Gemeinsame Zaehllogik: true = zurueckspringen (Zaehler laeuft weiter oder
@@ -1361,7 +1363,7 @@ struct Afg {
 	             // stageWarpBlend.
 	             const float stageRatchetOffset[NUM_STAGES],
 	             // Loop-Schleifen (siehe oben): Flags je Stage (LOOPFLAG_BEGIN/
-	             // LOOPFLAG_END) und Zaehler je End-Stage (0 = endlos, 1..9).
+	             // LOOPFLAG_END) und Zaehler je End-Stage (0 = endlos, 1..10 Durchlaeufe).
 	             const int stageLoopFlags[NUM_STAGES],
 	             const int stageLoopCount[NUM_STAGES],
 	             int quantKey, int quantScaleMode,
