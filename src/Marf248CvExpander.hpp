@@ -30,7 +30,7 @@
 // Enable-Freigabe) kurz auf 0V zurueckgesetzt, damit nachgeschaltete
 // Huellkurvengeneratoren zuverlaessig neu triggern (siehe Afg::regateGen in
 // Marf248.hpp).
-struct Marf248CvExpander : Module {
+struct Marf248CvExpander : Module, Marf248ExpanderMarker {
 	enum ParamId {
 		TIME_CV_ATTEN_PARAM,
 		// Frei einstellbarer Nullpunkt (Offset), wird VOR dem Attenuverter
@@ -106,6 +106,10 @@ struct Marf248CvExpander : Module {
 	// nachgeschalteten Huellkurven sonst nicht neu retriggern.
 	bool regateGapEnabled = true;
 
+	// Zwischenspeicher fuer die Host-Erkennung (siehe marf248ExpanderLinkedCached
+	// in Marf248.hpp): Zeigervergleich pro Sample statt dynamic_cast.
+	Marf248LinkCache linkCache;
+
 	Marf248CvExpander() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 
@@ -130,9 +134,7 @@ struct Marf248CvExpander : Module {
 	// sauber auf 0V zurueckfallen (Marf248 selbst schreibt die Gate-Werte
 	// nur, wenn es diesen Expander erkennt - siehe Marf248::process()).
 	void process(const ProcessArgs& args) override {
-		Module* left = getLeftExpander().module;
-		Module* right = getRightExpander().module;
-		bool linked = dynamic_cast<Marf248Host*>(left) || dynamic_cast<Marf248Host*>(right);
+		bool linked = marf248ExpanderLinkedCached(this, linkCache);
 
 		if (!linked) {
 			outputs[GATE_A_OUTPUT].setChannels(16);

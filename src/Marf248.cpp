@@ -594,6 +594,15 @@ struct Marf248 : Module, Marf248Host {
 	bool loopExitPrevA = false;
 	bool loopExitPrevB = false;
 
+	// Zwischenspeicher fuer die Expander-Kettensuche (siehe Marf248ChainCache in
+	// Marf248.hpp): je Richtung die zuletzt gefundene Kette, dazu die daraus
+	// ermittelten Expander-Zeiger. process() prueft pro Sample nur per
+	// Zeigervergleich, ob sich die Nachbarschaft geaendert hat.
+	Marf248ChainCache chainCache[2];
+	Marf248TriggerExpander* cachedTrigExp = nullptr;
+	Marf248CvExpander* cachedCvExp = nullptr;
+	Marf248LoopExpander* cachedLoopExp = nullptr;
+
 	dsp::SchmittTrigger expClearTrigger;
 	dsp::SchmittTrigger expResetValuesTrigger;
 	dsp::SchmittTrigger expPresetLoadTrigger[12];
@@ -1025,10 +1034,37 @@ struct Marf248 : Module, Marf248Host {
 		// SEXT-Trigger (externe Strobe-Pulse) bereits kennen muss, bevor
 		// applyStageAddress() aufgerufen wird. Sucht links UND rechts, damit
 		// der Expander auf beiden Seiten andocken kann.
-		Marf248TriggerExpander* trigExp = dynamic_cast<Marf248TriggerExpander*>(getLeftExpander().module);
-		if (!trigExp) {
-			trigExp = dynamic_cast<Marf248TriggerExpander*>(getRightExpander().module);
+		//
+		// Kettensuche (Session Nachbar-Problem): ein gemeinsamer Scan fuer alle
+		// drei Expander-Typen (Amilcare, Bianca, Ritornello). Je Seite werden bis
+		// zu MARF248_MAX_CHAIN Expander ab dem direkten Nachbarn durchlaufen
+		// (siehe marf248CollectChain, Abbruch an Fremdmodulen). Reihenfolge:
+		// links vor rechts, nahester zuerst; ist ein Typ mehrfach vorhanden,
+		// gewinnt der erste Treffer (die weiteren bleiben ungenutzt, ihre
+		// LINK-LED ist aus). Mit hoechstens einem Expander je Seite ist das
+		// Ergebnis identisch zur frueheren Einzelsuche an den direkten Nachbarn.
+		// cvExp und loopExp werden weiter unten unveraendert verwendet.
+		// Nachbarschaft nur bei Aenderung neu scannen (Zeigervergleich pro Sample,
+		// siehe Marf248ChainCache): das Andocken eines Expanders kostete zuvor
+		// durch die dynamic_cast der Kettensuche ca. 0,7-1 % CPU-Anzeige.
+		if (!marf248ChainUnchanged(this, true, chainCache[0])
+		    || !marf248ChainUnchanged(this, false, chainCache[1])) {
+			cachedTrigExp = nullptr;
+			cachedCvExp = nullptr;
+			cachedLoopExp = nullptr;
+			for (int dir = 0; dir < 2; dir++) {
+				marf248ChainStore(this, dir == 0, chainCache[dir]);
+				for (int k = 0; k < chainCache[dir].count; k++) {
+					Module* mod = chainCache[dir].path[k];
+					if (!cachedTrigExp) cachedTrigExp = dynamic_cast<Marf248TriggerExpander*>(mod);
+					if (!cachedCvExp) cachedCvExp = dynamic_cast<Marf248CvExpander*>(mod);
+					if (!cachedLoopExp) cachedLoopExp = dynamic_cast<Marf248LoopExpander*>(mod);
+				}
+			}
 		}
+		Marf248TriggerExpander* trigExp = cachedTrigExp;
+		Marf248CvExpander* cvExp = cachedCvExp;
+		Marf248LoopExpander* loopExp = cachedLoopExp;
 
 		// Global Clear: momentary Taster, loescht die Programmierung aller 16
 		// Stages (Manual: Output Voltage -> Continuous/Full Range/Internal
@@ -1559,10 +1595,8 @@ struct Marf248 : Module, Marf248Host {
 		// in resolvedTime[i] einfliessen muss, lange bevor der Trigger-
 		// Expander-Block erreicht wird. Derselbe cvExp-Zeiger wird weiter
 		// unten erneut verwendet, um die Gate-A/B-Outputs zu schreiben.
-		Marf248CvExpander* cvExp = dynamic_cast<Marf248CvExpander*>(getLeftExpander().module);
-		if (!cvExp) {
-			cvExp = dynamic_cast<Marf248CvExpander*>(getRightExpander().module);
-		}
+		// (cvExp wird jetzt zusammen mit trigExp/loopExp am Anfang von process()
+		// per Kettensuche ermittelt.)
 
 		// Attenuverter/Offset/Input-Referenz fuer die additive Stage-Time-CV
 		// einmalig ausgelesen (skalar, gilt fuer alle Stages gleich) - die
@@ -2113,10 +2147,7 @@ struct Marf248 : Module, Marf248Host {
 		// endlos, 2..10), die Umrechnung geschieht hier. Nur Kanaele bis
 		// getChannels() werden gelesen (getPolyVoltage() wuerde ein Mono-Kabel
 		// auf alle 16 Stages kopieren). Gemeinsam fuer Section A und B.
-		Marf248LoopExpander* loopExp = dynamic_cast<Marf248LoopExpander*>(getLeftExpander().module);
-		if (!loopExp) {
-			loopExp = dynamic_cast<Marf248LoopExpander*>(getRightExpander().module);
-		}
+		// (loopExp wird am Anfang von process() per Kettensuche ermittelt.)
 		static const int zeroLoopFlags[NUM_STAGES] = {};
 		static const int zeroLoopCount[NUM_STAGES] = {};
 		int loopFlagsBuf[NUM_STAGES];

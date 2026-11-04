@@ -19,7 +19,7 @@
 static const float LOOP_BLINK_SECONDS = 0.5f;
 static const float LOOP_BLINK_PERIOD = 0.1f;
 
-struct Marf248LoopExpander : Module {
+struct Marf248LoopExpander : Module, Marf248ExpanderMarker {
 	enum ParamId {
 		PARAMS_LEN
 	};
@@ -66,6 +66,10 @@ struct Marf248LoopExpander : Module {
 	//              0 = "-" (keine Schleife / endlos / Pendulum).
 	//   blinkTimer: > 0 = Austritt gerade erfolgt, Anzeige zeigt eine 0.
 	int restShown[2] = {0, 0};
+
+	// Zwischenspeicher fuer die Host-Erkennung (siehe marf248ExpanderLinkedCached
+	// in Marf248.hpp): Zeigervergleich pro Sample statt dynamic_cast.
+	Marf248LinkCache linkCache;
 	float blinkTimer[2] = {0.f, 0.f};
 
 	Marf248LoopExpander() {
@@ -81,15 +85,14 @@ struct Marf248LoopExpander : Module {
 		configOutput(LOOP_REST_B_OUTPUT, "Section B remaining passes of innermost loop (1 V per pass, 0 V = no loop/endless)");
 	}
 
-	// Prueft jeden Frame selbststaendig, ob (noch) ein Marf248 unmittelbar
-	// links oder rechts andockt (Muster wie Marf248TriggerExpander::process()).
+	// Prueft jeden Frame selbststaendig, ob (noch) ein Marf248 links oder
+	// rechts andockt - direkt oder ueber eine Expander-Kette (siehe
+	// marf248ExpanderLinked() in Marf248.hpp).
 	// Ohne Verbindung werden Outputs, Anzeige und Light zurueckgesetzt - die
 	// eigentlichen Werte schreibt nur Marf248, solange es diesen Expander
 	// erkennt. Beide Schreibzugriffe schliessen sich damit zeitlich aus.
 	void process(const ProcessArgs& args) override {
-		Module* left = getLeftExpander().module;
-		Module* right = getRightExpander().module;
-		bool linked = dynamic_cast<Marf248Host*>(left) || dynamic_cast<Marf248Host*>(right);
+		bool linked = marf248ExpanderLinkedCached(this, linkCache);
 
 		if (!linked) {
 			outputs[LOOP_EXIT_A_OUTPUT].setVoltage(0.f);

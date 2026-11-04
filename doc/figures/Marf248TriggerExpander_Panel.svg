@@ -1,124 +1,936 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 182.88 128.5" width="731.5" height="514.0" font-family="Arial, Helvetica, sans-serif">
-<rect x="0" y="0" width="182.88" height="128.5" fill="#e4e4e2" stroke="#333333" stroke-width="0.6"/>
-<text x="91.4" y="10" font-size="4.5" fill="#222" text-anchor="middle" font-weight="bold">Marf248 TriggerExpander (36HP)</text>
-<circle cx="5" cy="4.5" r="1.6" fill="#999" stroke="#555" stroke-width="0.2"/>
-<circle cx="177.88" cy="4.5" r="1.6" fill="#999" stroke="#555" stroke-width="0.2"/>
-<circle cx="5" cy="124.0" r="1.6" fill="#999" stroke="#555" stroke-width="0.2"/>
-<circle cx="177.88" cy="124.0" r="1.6" fill="#999" stroke="#555" stroke-width="0.2"/>
-<circle cx="70" cy="22" r="1.3" fill="#2ecc71" stroke="#1a1a1a" stroke-width="0.3"/>
-<text x="73.5" y="22" font-size="2.6" fill="#8a8a8a" text-anchor="start" dominant-baseline="middle">LINK</text>
-<circle cx="16" cy="32" r="2.6" fill="#2b2b2b" stroke="#8a8a8a" stroke-width="0.5"/>
-<circle cx="16" cy="32" r="1.04" fill="#111"/>
-<text x="16" y="37.5" font-size="2.6" fill="#8a8a8a" text-anchor="middle" dominant-baseline="hanging">CLEAR</text>
-<circle cx="43" cy="32" r="2.6" fill="#2b2b2b" stroke="#8a8a8a" stroke-width="0.5"/>
-<circle cx="43" cy="32" r="1.04" fill="#111"/>
-<text x="43" y="37.5" font-size="2.6" fill="#8a8a8a" text-anchor="middle" dominant-baseline="hanging">RESET VAL</text>
-<circle cx="70" cy="32" r="2.6" fill="#2b2b2b" stroke="#8a8a8a" stroke-width="0.5"/>
-<circle cx="70" cy="32" r="1.04" fill="#111"/>
-<text x="70" y="37.5" font-size="2.6" fill="#8a8a8a" text-anchor="middle" dominant-baseline="hanging">PRESET (poly)</text>
-<circle cx="97" cy="32" r="2.6" fill="#2b2b2b" stroke="#3f7fd6" stroke-width="0.5"/>
-<circle cx="97" cy="32" r="1.04" fill="#111"/>
-<text x="97" y="37.5" font-size="2.6" fill="#3f7fd6" text-anchor="middle" dominant-baseline="hanging">RUN GATE A</text>
-<circle cx="124" cy="32" r="2.6" fill="#2b2b2b" stroke="#e08a2e" stroke-width="0.5"/>
-<circle cx="124" cy="32" r="1.04" fill="#111"/>
-<text x="124" y="37.5" font-size="2.6" fill="#e08a2e" text-anchor="middle" dominant-baseline="hanging">RUN GATE B</text>
-<circle cx="16" cy="46" r="2.6" fill="#2b2b2b" stroke="#7e57c2" stroke-width="0.5"/>
-<circle cx="16" cy="46" r="1.04" fill="#111"/>
-<text x="16" y="51.5" font-size="2.6" fill="#7e57c2" text-anchor="middle" dominant-baseline="hanging">SCALE MAJ</text>
-<circle cx="43" cy="46" r="2.6" fill="#2b2b2b" stroke="#7e57c2" stroke-width="0.5"/>
-<circle cx="43" cy="46" r="1.04" fill="#111"/>
-<text x="43" y="51.5" font-size="2.6" fill="#7e57c2" text-anchor="middle" dominant-baseline="hanging">SCALE MIN</text>
-<circle cx="70" cy="46" r="2.6" fill="#2b2b2b" stroke="#7e57c2" stroke-width="0.5"/>
-<circle cx="70" cy="46" r="1.04" fill="#111"/>
-<text x="70" y="51.5" font-size="2.6" fill="#7e57c2" text-anchor="middle" dominant-baseline="hanging">SCALE CHR</text>
-<circle cx="97" cy="46" r="2.6" fill="#2b2b2b" stroke="#7e57c2" stroke-width="0.5"/>
-<circle cx="97" cy="46" r="1.04" fill="#111"/>
-<text x="97" y="51.5" font-size="2.6" fill="#7e57c2" text-anchor="middle" dominant-baseline="hanging">KEY CV</text>
-<circle cx="124" cy="46" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
-<circle cx="124" cy="46" r="1.04" fill="#111"/>
-<text x="124" y="51.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">RANGE CV (poly)</text>
-<circle cx="16" cy="60" r="2.6" fill="#2b2b2b" stroke="#3f7fd6" stroke-width="0.5"/>
-<circle cx="16" cy="60" r="1.04" fill="#111"/>
-<text x="16" y="65.5" font-size="2.6" fill="#3f7fd6" text-anchor="middle" dominant-baseline="hanging">SOC A (out)</text>
-<circle cx="43" cy="60" r="2.6" fill="#2b2b2b" stroke="#3f7fd6" stroke-width="0.5"/>
-<circle cx="43" cy="60" r="1.04" fill="#111"/>
-<text x="43" y="65.5" font-size="2.6" fill="#3f7fd6" text-anchor="middle" dominant-baseline="hanging">EOC A (out)</text>
-<circle cx="70" cy="60" r="2.6" fill="#2b2b2b" stroke="#e08a2e" stroke-width="0.5"/>
-<circle cx="70" cy="60" r="1.04" fill="#111"/>
-<text x="70" y="65.5" font-size="2.6" fill="#e08a2e" text-anchor="middle" dominant-baseline="hanging">SOC B (out)</text>
-<circle cx="97" cy="60" r="2.6" fill="#2b2b2b" stroke="#e08a2e" stroke-width="0.5"/>
-<circle cx="97" cy="60" r="1.04" fill="#111"/>
-<text x="97" y="65.5" font-size="2.6" fill="#e08a2e" text-anchor="middle" dominant-baseline="hanging">EOC B (out)</text>
-<circle cx="124" cy="60" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
-<circle cx="124" cy="60" r="1.04" fill="#111"/>
-<text x="124" y="65.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">QUANT GLIDE (poly)</text>
-<circle cx="16" cy="74" r="2.6" fill="#2b2b2b" stroke="#3f7fd6" stroke-width="0.5"/>
-<circle cx="16" cy="74" r="1.04" fill="#111"/>
-<text x="16" y="79.5" font-size="2.6" fill="#3f7fd6" text-anchor="middle" dominant-baseline="hanging">STROBE A</text>
-<circle cx="43" cy="74" r="2.6" fill="#2b2b2b" stroke="#e08a2e" stroke-width="0.5"/>
-<circle cx="43" cy="74" r="1.04" fill="#111"/>
-<text x="43" y="79.5" font-size="2.6" fill="#e08a2e" text-anchor="middle" dominant-baseline="hanging">STROBE B</text>
-<circle cx="70" cy="74" r="2.6" fill="#2b2b2b" stroke="#3f7fd6" stroke-width="0.5"/>
-<circle cx="70" cy="74" r="1.04" fill="#111"/>
-<text x="70" y="79.5" font-size="2.6" fill="#3f7fd6" text-anchor="middle" dominant-baseline="hanging">ADDR RECALL A (poly)</text>
-<circle cx="97" cy="74" r="2.6" fill="#2b2b2b" stroke="#e08a2e" stroke-width="0.5"/>
-<circle cx="97" cy="74" r="1.04" fill="#111"/>
-<text x="97" y="79.5" font-size="2.6" fill="#e08a2e" text-anchor="middle" dominant-baseline="hanging">ADDR RECALL B (poly)</text>
-<circle cx="124" cy="74" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
-<circle cx="124" cy="74" r="1.04" fill="#111"/>
-<text x="124" y="79.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">VOLT EXT CH (poly)</text>
-<circle cx="16" cy="88" r="2.6" fill="#2b2b2b" stroke="#3f7fd6" stroke-width="0.5"/>
-<circle cx="16" cy="88" r="1.04" fill="#111"/>
-<text x="16" y="93.5" font-size="2.6" fill="#3f7fd6" text-anchor="middle" dominant-baseline="hanging">ADVANCE A</text>
-<circle cx="43" cy="88" r="2.6" fill="#2b2b2b" stroke="#e08a2e" stroke-width="0.5"/>
-<circle cx="43" cy="88" r="1.04" fill="#111"/>
-<text x="43" y="93.5" font-size="2.6" fill="#e08a2e" text-anchor="middle" dominant-baseline="hanging">ADVANCE B</text>
-<circle cx="70" cy="88" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
-<circle cx="70" cy="88" r="1.04" fill="#111"/>
-<text x="70" y="93.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">SKIP (poly)</text>
-<circle cx="97" cy="88" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
-<circle cx="97" cy="88" r="1.04" fill="#111"/>
-<text x="97" y="93.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">FIRST (poly)</text>
-<circle cx="124" cy="88" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
-<circle cx="124" cy="88" r="1.04" fill="#111"/>
-<text x="124" y="93.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">LAST (poly)</text>
-<circle cx="151" cy="88" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
-<circle cx="151" cy="88" r="1.04" fill="#111"/>
-<text x="151" y="93.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">RATCHET OFS (poly)</text>
-<circle cx="16" cy="102" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
-<circle cx="16" cy="102" r="1.04" fill="#111"/>
-<text x="16" y="107.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">STOP (poly)</text>
-<circle cx="43" cy="102" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
-<circle cx="43" cy="102" r="1.04" fill="#111"/>
-<text x="43" y="107.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">SUSTAIN (poly)</text>
-<circle cx="70" cy="102" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
-<circle cx="70" cy="102" r="1.04" fill="#111"/>
-<text x="70" y="107.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">ENABLE (poly)</text>
-<circle cx="97" cy="102" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
-<circle cx="97" cy="102" r="1.04" fill="#111"/>
-<text x="97" y="107.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">PULSE1 (poly)</text>
-<circle cx="124" cy="102" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
-<circle cx="124" cy="102" r="1.04" fill="#111"/>
-<text x="124" y="107.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">PULSE2 (poly)</text>
-<circle cx="151" cy="102" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
-<circle cx="151" cy="102" r="1.04" fill="#111"/>
-<text x="151" y="107.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">RATCHET (poly)</text>
-<circle cx="16" cy="116" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
-<circle cx="16" cy="116" r="1.04" fill="#111"/>
-<text x="16" y="121.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">SLOPE (poly)</text>
-<circle cx="43" cy="116" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
-<circle cx="43" cy="116" r="1.04" fill="#111"/>
-<text x="43" y="121.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">MUTE (poly)</text>
-<circle cx="70" cy="116" r="2.6" fill="#2b2b2b" stroke="#3f7fd6" stroke-width="0.5"/>
-<circle cx="70" cy="116" r="1.04" fill="#111"/>
-<text x="70" y="121.5" font-size="2.6" fill="#3f7fd6" text-anchor="middle" dominant-baseline="hanging">ADDR STORE A (poly)</text>
-<circle cx="97" cy="116" r="2.6" fill="#2b2b2b" stroke="#e08a2e" stroke-width="0.5"/>
-<circle cx="97" cy="116" r="1.04" fill="#111"/>
-<text x="97" y="121.5" font-size="2.6" fill="#e08a2e" text-anchor="middle" dominant-baseline="hanging">ADDR STORE B (poly)</text>
-<circle cx="124" cy="116" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
-<circle cx="124" cy="116" r="1.04" fill="#111"/>
-<text x="124" y="121.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">TIME EXT CH (poly)</text>
-<circle cx="151" cy="116" r="2.6" fill="#2b2b2b" stroke="#1f9e8e" stroke-width="0.5"/>
-<circle cx="151" cy="116" r="1.04" fill="#111"/>
-<text x="151" y="121.5" font-size="2.6" fill="#1f9e8e" text-anchor="middle" dominant-baseline="hanging">RATCHET CT (poly)</text>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 182.88 128.5"
+   width="731.5"
+   height="514.0"
+   font-family="Arial, Helvetica, sans-serif"
+   version="1.1"
+   id="svg81"
+   sodipodi:docname="Marf248TriggerExpander_Panel.svg"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs81" />
+  <sodipodi:namedview
+     id="namedview81"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1.5505837"
+     inkscape:cx="365.66876"
+     inkscape:cy="257"
+     inkscape:window-width="1920"
+     inkscape:window-height="1006"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg81" />
+  <rect
+     x="0"
+     y="0"
+     width="182.88"
+     height="128.5"
+     fill="#e4e4e2"
+     stroke="#333333"
+     stroke-width="0.6"
+     id="rect1" />
+  <text
+     x="91.400002"
+     y="10"
+     font-size="4.5px"
+     fill="#222222"
+     text-anchor="middle"
+     font-weight="bold"
+     id="text1">Amilcare TriggerExpander (36HP)</text>
+  <circle
+     cx="5"
+     cy="4.5"
+     r="1.6"
+     fill="#999"
+     stroke="#555"
+     stroke-width="0.2"
+     id="circle1" />
+  <circle
+     cx="177.88"
+     cy="4.5"
+     r="1.6"
+     fill="#999"
+     stroke="#555"
+     stroke-width="0.2"
+     id="circle2" />
+  <circle
+     cx="5"
+     cy="124.0"
+     r="1.6"
+     fill="#999"
+     stroke="#555"
+     stroke-width="0.2"
+     id="circle3" />
+  <circle
+     cx="177.88"
+     cy="124.0"
+     r="1.6"
+     fill="#999"
+     stroke="#555"
+     stroke-width="0.2"
+     id="circle4" />
+  <circle
+     cx="70"
+     cy="22"
+     r="1.3"
+     fill="#2ecc71"
+     stroke="#1a1a1a"
+     stroke-width="0.3"
+     id="circle5" />
+  <text
+     x="73.5"
+     y="22"
+     font-size="2.6"
+     fill="#8a8a8a"
+     text-anchor="start"
+     dominant-baseline="middle"
+     id="text5">LINK</text>
+  <circle
+     cx="16"
+     cy="32"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#8a8a8a"
+     stroke-width="0.5"
+     id="circle6" />
+  <circle
+     cx="16"
+     cy="32"
+     r="1.04"
+     fill="#111"
+     id="circle7" />
+  <text
+     x="16"
+     y="37.5"
+     font-size="2.6"
+     fill="#8a8a8a"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text7">CLEAR</text>
+  <circle
+     cx="43"
+     cy="32"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#8a8a8a"
+     stroke-width="0.5"
+     id="circle8" />
+  <circle
+     cx="43"
+     cy="32"
+     r="1.04"
+     fill="#111"
+     id="circle9" />
+  <text
+     x="43"
+     y="37.5"
+     font-size="2.6"
+     fill="#8a8a8a"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text9">RESET VAL</text>
+  <circle
+     cx="70"
+     cy="32"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#8a8a8a"
+     stroke-width="0.5"
+     id="circle10" />
+  <circle
+     cx="70"
+     cy="32"
+     r="1.04"
+     fill="#111"
+     id="circle11" />
+  <text
+     x="70"
+     y="37.5"
+     font-size="2.6"
+     fill="#8a8a8a"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text11">PRESET (poly)</text>
+  <circle
+     cx="97"
+     cy="32"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#3f7fd6"
+     stroke-width="0.5"
+     id="circle12" />
+  <circle
+     cx="97"
+     cy="32"
+     r="1.04"
+     fill="#111"
+     id="circle13" />
+  <text
+     x="97"
+     y="37.5"
+     font-size="2.6"
+     fill="#3f7fd6"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text13">RUN GATE A</text>
+  <circle
+     cx="124"
+     cy="32"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#e08a2e"
+     stroke-width="0.5"
+     id="circle14" />
+  <circle
+     cx="124"
+     cy="32"
+     r="1.04"
+     fill="#111"
+     id="circle15" />
+  <text
+     x="124"
+     y="37.5"
+     font-size="2.6"
+     fill="#e08a2e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text15">RUN GATE B</text>
+  <circle
+     cx="16"
+     cy="46"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#7e57c2"
+     stroke-width="0.5"
+     id="circle16" />
+  <circle
+     cx="16"
+     cy="46"
+     r="1.04"
+     fill="#111"
+     id="circle17" />
+  <text
+     x="16"
+     y="51.5"
+     font-size="2.6"
+     fill="#7e57c2"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text17">SCALE MAJ</text>
+  <circle
+     cx="43"
+     cy="46"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#7e57c2"
+     stroke-width="0.5"
+     id="circle18" />
+  <circle
+     cx="43"
+     cy="46"
+     r="1.04"
+     fill="#111"
+     id="circle19" />
+  <text
+     x="43"
+     y="51.5"
+     font-size="2.6"
+     fill="#7e57c2"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text19">SCALE MIN</text>
+  <circle
+     cx="70"
+     cy="46"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#7e57c2"
+     stroke-width="0.5"
+     id="circle20" />
+  <circle
+     cx="70"
+     cy="46"
+     r="1.04"
+     fill="#111"
+     id="circle21" />
+  <text
+     x="70"
+     y="51.5"
+     font-size="2.6"
+     fill="#7e57c2"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text21">SCALE CHR</text>
+  <circle
+     cx="97"
+     cy="46"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#7e57c2"
+     stroke-width="0.5"
+     id="circle22" />
+  <circle
+     cx="97"
+     cy="46"
+     r="1.04"
+     fill="#111"
+     id="circle23" />
+  <text
+     x="97"
+     y="51.5"
+     font-size="2.6"
+     fill="#7e57c2"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text23">KEY CV</text>
+  <circle
+     cx="124"
+     cy="46"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#1f9e8e"
+     stroke-width="0.5"
+     id="circle24" />
+  <circle
+     cx="124"
+     cy="46"
+     r="1.04"
+     fill="#111"
+     id="circle25" />
+  <text
+     x="124"
+     y="51.5"
+     font-size="2.6"
+     fill="#1f9e8e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text25">RANGE CV (poly)</text>
+  <circle
+     cx="16"
+     cy="60"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#3f7fd6"
+     stroke-width="0.5"
+     id="circle26" />
+  <circle
+     cx="16"
+     cy="60"
+     r="1.04"
+     fill="#111"
+     id="circle27" />
+  <text
+     x="16"
+     y="65.5"
+     font-size="2.6"
+     fill="#3f7fd6"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text27">SOC A (out)</text>
+  <circle
+     cx="43"
+     cy="60"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#3f7fd6"
+     stroke-width="0.5"
+     id="circle28" />
+  <circle
+     cx="43"
+     cy="60"
+     r="1.04"
+     fill="#111"
+     id="circle29" />
+  <text
+     x="43"
+     y="65.5"
+     font-size="2.6"
+     fill="#3f7fd6"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text29">EOC A (out)</text>
+  <circle
+     cx="70"
+     cy="60"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#e08a2e"
+     stroke-width="0.5"
+     id="circle30" />
+  <circle
+     cx="70"
+     cy="60"
+     r="1.04"
+     fill="#111"
+     id="circle31" />
+  <text
+     x="70"
+     y="65.5"
+     font-size="2.6"
+     fill="#e08a2e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text31">SOC B (out)</text>
+  <circle
+     cx="97"
+     cy="60"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#e08a2e"
+     stroke-width="0.5"
+     id="circle32" />
+  <circle
+     cx="97"
+     cy="60"
+     r="1.04"
+     fill="#111"
+     id="circle33" />
+  <text
+     x="97"
+     y="65.5"
+     font-size="2.6"
+     fill="#e08a2e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text33">EOC B (out)</text>
+  <circle
+     cx="124"
+     cy="60"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#1f9e8e"
+     stroke-width="0.5"
+     id="circle34" />
+  <circle
+     cx="124"
+     cy="60"
+     r="1.04"
+     fill="#111"
+     id="circle35" />
+  <text
+     x="124"
+     y="65.5"
+     font-size="2.6"
+     fill="#1f9e8e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text35">QUANT GLIDE (poly)</text>
+  <circle
+     cx="16"
+     cy="74"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#3f7fd6"
+     stroke-width="0.5"
+     id="circle36" />
+  <circle
+     cx="16"
+     cy="74"
+     r="1.04"
+     fill="#111"
+     id="circle37" />
+  <text
+     x="16"
+     y="79.5"
+     font-size="2.6"
+     fill="#3f7fd6"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text37">STROBE A</text>
+  <circle
+     cx="43"
+     cy="74"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#e08a2e"
+     stroke-width="0.5"
+     id="circle38" />
+  <circle
+     cx="43"
+     cy="74"
+     r="1.04"
+     fill="#111"
+     id="circle39" />
+  <text
+     x="43"
+     y="79.5"
+     font-size="2.6"
+     fill="#e08a2e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text39">STROBE B</text>
+  <circle
+     cx="70"
+     cy="74"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#3f7fd6"
+     stroke-width="0.5"
+     id="circle40" />
+  <circle
+     cx="70"
+     cy="74"
+     r="1.04"
+     fill="#111"
+     id="circle41" />
+  <text
+     x="70"
+     y="79.5"
+     font-size="2.6"
+     fill="#3f7fd6"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text41">ADDR RECALL A (poly)</text>
+  <circle
+     cx="97"
+     cy="74"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#e08a2e"
+     stroke-width="0.5"
+     id="circle42" />
+  <circle
+     cx="97"
+     cy="74"
+     r="1.04"
+     fill="#111"
+     id="circle43" />
+  <text
+     x="97"
+     y="79.5"
+     font-size="2.6"
+     fill="#e08a2e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text43">ADDR RECALL B (poly)</text>
+  <circle
+     cx="124"
+     cy="74"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#1f9e8e"
+     stroke-width="0.5"
+     id="circle44" />
+  <circle
+     cx="124"
+     cy="74"
+     r="1.04"
+     fill="#111"
+     id="circle45" />
+  <text
+     x="124"
+     y="79.5"
+     font-size="2.6"
+     fill="#1f9e8e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text45">VOLT EXT CH (poly)</text>
+  <circle
+     cx="16"
+     cy="88"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#3f7fd6"
+     stroke-width="0.5"
+     id="circle46" />
+  <circle
+     cx="16"
+     cy="88"
+     r="1.04"
+     fill="#111"
+     id="circle47" />
+  <text
+     x="16"
+     y="93.5"
+     font-size="2.6"
+     fill="#3f7fd6"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text47">ADVANCE A</text>
+  <circle
+     cx="43"
+     cy="88"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#e08a2e"
+     stroke-width="0.5"
+     id="circle48" />
+  <circle
+     cx="43"
+     cy="88"
+     r="1.04"
+     fill="#111"
+     id="circle49" />
+  <text
+     x="43"
+     y="93.5"
+     font-size="2.6"
+     fill="#e08a2e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text49">ADVANCE B</text>
+  <circle
+     cx="70"
+     cy="88"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#1f9e8e"
+     stroke-width="0.5"
+     id="circle50" />
+  <circle
+     cx="70"
+     cy="88"
+     r="1.04"
+     fill="#111"
+     id="circle51" />
+  <text
+     x="70"
+     y="93.5"
+     font-size="2.6"
+     fill="#1f9e8e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text51">SKIP (poly)</text>
+  <circle
+     cx="97"
+     cy="88"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#1f9e8e"
+     stroke-width="0.5"
+     id="circle52" />
+  <circle
+     cx="97"
+     cy="88"
+     r="1.04"
+     fill="#111"
+     id="circle53" />
+  <text
+     x="97"
+     y="93.5"
+     font-size="2.6"
+     fill="#1f9e8e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text53">FIRST (poly)</text>
+  <circle
+     cx="124"
+     cy="88"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#1f9e8e"
+     stroke-width="0.5"
+     id="circle54" />
+  <circle
+     cx="124"
+     cy="88"
+     r="1.04"
+     fill="#111"
+     id="circle55" />
+  <text
+     x="124"
+     y="93.5"
+     font-size="2.6"
+     fill="#1f9e8e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text55">LAST (poly)</text>
+  <circle
+     cx="151"
+     cy="88"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#1f9e8e"
+     stroke-width="0.5"
+     id="circle56" />
+  <circle
+     cx="151"
+     cy="88"
+     r="1.04"
+     fill="#111"
+     id="circle57" />
+  <text
+     x="151"
+     y="93.5"
+     font-size="2.6"
+     fill="#1f9e8e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text57">RATCHET OFS (poly)</text>
+  <circle
+     cx="16"
+     cy="102"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#1f9e8e"
+     stroke-width="0.5"
+     id="circle58" />
+  <circle
+     cx="16"
+     cy="102"
+     r="1.04"
+     fill="#111"
+     id="circle59" />
+  <text
+     x="16"
+     y="107.5"
+     font-size="2.6"
+     fill="#1f9e8e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text59">STOP (poly)</text>
+  <circle
+     cx="43"
+     cy="102"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#1f9e8e"
+     stroke-width="0.5"
+     id="circle60" />
+  <circle
+     cx="43"
+     cy="102"
+     r="1.04"
+     fill="#111"
+     id="circle61" />
+  <text
+     x="43"
+     y="107.5"
+     font-size="2.6"
+     fill="#1f9e8e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text61">SUSTAIN (poly)</text>
+  <circle
+     cx="70"
+     cy="102"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#1f9e8e"
+     stroke-width="0.5"
+     id="circle62" />
+  <circle
+     cx="70"
+     cy="102"
+     r="1.04"
+     fill="#111"
+     id="circle63" />
+  <text
+     x="70"
+     y="107.5"
+     font-size="2.6"
+     fill="#1f9e8e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text63">ENABLE (poly)</text>
+  <circle
+     cx="97"
+     cy="102"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#1f9e8e"
+     stroke-width="0.5"
+     id="circle64" />
+  <circle
+     cx="97"
+     cy="102"
+     r="1.04"
+     fill="#111"
+     id="circle65" />
+  <text
+     x="97"
+     y="107.5"
+     font-size="2.6"
+     fill="#1f9e8e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text65">PULSE1 (poly)</text>
+  <circle
+     cx="124"
+     cy="102"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#1f9e8e"
+     stroke-width="0.5"
+     id="circle66" />
+  <circle
+     cx="124"
+     cy="102"
+     r="1.04"
+     fill="#111"
+     id="circle67" />
+  <text
+     x="124"
+     y="107.5"
+     font-size="2.6"
+     fill="#1f9e8e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text67">PULSE2 (poly)</text>
+  <circle
+     cx="151"
+     cy="102"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#1f9e8e"
+     stroke-width="0.5"
+     id="circle68" />
+  <circle
+     cx="151"
+     cy="102"
+     r="1.04"
+     fill="#111"
+     id="circle69" />
+  <text
+     x="151"
+     y="107.5"
+     font-size="2.6"
+     fill="#1f9e8e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text69">RATCHET (poly)</text>
+  <circle
+     cx="16"
+     cy="116"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#1f9e8e"
+     stroke-width="0.5"
+     id="circle70" />
+  <circle
+     cx="16"
+     cy="116"
+     r="1.04"
+     fill="#111"
+     id="circle71" />
+  <text
+     x="16"
+     y="121.5"
+     font-size="2.6"
+     fill="#1f9e8e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text71">SLOPE (poly)</text>
+  <circle
+     cx="43"
+     cy="116"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#1f9e8e"
+     stroke-width="0.5"
+     id="circle72" />
+  <circle
+     cx="43"
+     cy="116"
+     r="1.04"
+     fill="#111"
+     id="circle73" />
+  <text
+     x="43"
+     y="121.5"
+     font-size="2.6"
+     fill="#1f9e8e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text73">MUTE (poly)</text>
+  <circle
+     cx="70"
+     cy="116"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#3f7fd6"
+     stroke-width="0.5"
+     id="circle74" />
+  <circle
+     cx="70"
+     cy="116"
+     r="1.04"
+     fill="#111"
+     id="circle75" />
+  <text
+     x="70"
+     y="121.5"
+     font-size="2.6"
+     fill="#3f7fd6"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text75">ADDR STORE A (poly)</text>
+  <circle
+     cx="97"
+     cy="116"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#e08a2e"
+     stroke-width="0.5"
+     id="circle76" />
+  <circle
+     cx="97"
+     cy="116"
+     r="1.04"
+     fill="#111"
+     id="circle77" />
+  <text
+     x="97"
+     y="121.5"
+     font-size="2.6"
+     fill="#e08a2e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text77">ADDR STORE B (poly)</text>
+  <circle
+     cx="124"
+     cy="116"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#1f9e8e"
+     stroke-width="0.5"
+     id="circle78" />
+  <circle
+     cx="124"
+     cy="116"
+     r="1.04"
+     fill="#111"
+     id="circle79" />
+  <text
+     x="124"
+     y="121.5"
+     font-size="2.6"
+     fill="#1f9e8e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text79">TIME EXT CH (poly)</text>
+  <circle
+     cx="151"
+     cy="116"
+     r="2.6"
+     fill="#2b2b2b"
+     stroke="#1f9e8e"
+     stroke-width="0.5"
+     id="circle80" />
+  <circle
+     cx="151"
+     cy="116"
+     r="1.04"
+     fill="#111"
+     id="circle81" />
+  <text
+     x="151"
+     y="121.5"
+     font-size="2.6"
+     fill="#1f9e8e"
+     text-anchor="middle"
+     dominant-baseline="hanging"
+     id="text81">RATCHET CT (poly)</text>
 </svg>

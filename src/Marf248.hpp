@@ -26,6 +26,180 @@ struct Marf248Host {
 	virtual ~Marf248Host() = default;
 };
 
+// Marker-Interface fuer die Expander selbst (Amilcare, Bianca, Ritornello).
+// Wird nur zum Durchlaufen der Expander-Kette gebraucht ("Kettensuche",
+// Session Nachbar-Problem): Host und Expander duerfen nicht nur direkt
+// nebeneinander stehen, sondern in einer Reihe - bis zu MARF248_MAX_CHAIN
+// Expander auf einer Seite. Jeder Expander implementiert dieses Interface
+// zusaetzlich zu Module (struct X : Module, Marf248ExpanderMarker).
+struct Marf248ExpanderMarker {
+	virtual ~Marf248ExpanderMarker() = default;
+};
+
+// Maximale Kettenlaenge je Seite (= Anzahl der Expander-Typen).
+static const int MARF248_MAX_CHAIN = 3;
+
+// Host-Seite: sammelt die Expander-Kette ab dem direkten Nachbarn in eine
+// Richtung (links oder rechts), nahester zuerst. Die Kette endet am ersten
+// Modul, das kein Expander ist (Fremdmodul oder Luecke), oder nach
+// MARF248_MAX_CHAIN Modulen. Rueckgabe: Anzahl gefundener Module. Das
+// Casten auf die konkreten Expander-Typen passiert in Marf248.cpp, da
+// dieser Header die Expander-Header nicht einbinden kann (sie binden ihn ein).
+inline int marf248CollectChain(Module* host, bool left, Module* out[MARF248_MAX_CHAIN]) {
+	Module* m = left ? host->getLeftExpander().module : host->getRightExpander().module;
+	int n = 0;
+	while (m && n < MARF248_MAX_CHAIN && dynamic_cast<Marf248ExpanderMarker*>(m)) {
+		out[n++] = m;
+		m = left ? m->getLeftExpander().module : m->getRightExpander().module;
+	}
+	return n;
+}
+
+// Expander-Seite: Ist dieser Expander an einen Host angedockt? Laeuft je
+// Richtung ueber die Nachbarn, solange es Expander sind, und sucht den Host.
+// Abbruch (nicht verbunden in dieser Richtung), wenn
+//  - ein Fremdmodul dazwischen steht (Kette bricht ab),
+//  - ein Expander desselben Typs (gleiches Model) dazwischen steht: der
+//    Host nimmt je Typ nur den nahesten, dieser hier waere ungenutzt,
+//  - der Host nicht innerhalb von MARF248_MAX_CHAIN Schritten erreicht wird.
+// Mit hoechstens einem Expander je Seite identisch zur frueheren Pruefung
+// "linker oder rechter direkter Nachbar ist ein Marf248Host".
+inline bool marf248ExpanderLinked(Module* self) {
+	for (int dir = 0; dir < 2; dir++) {
+		bool left = (dir == 0);
+		Module* m = left ? self->getLeftExpander().module : self->getRightExpander().module;
+		for (int step = 0; step < MARF248_MAX_CHAIN && m; step++) {
+			if (dynamic_cast<Marf248Host*>(m))
+				return true;
+			if (!dynamic_cast<Marf248ExpanderMarker*>(m))
+				break;
+			if (m->model == self->model)
+				break;
+			m = left ? m->getLeftExpander().module : m->getRightExpander().module;
+		}
+	}
+	return false;
+}
+
+// ---------------------------------------------------------------------------
+// Zwischenspeicher fuer die Expander-Erkennung (Performance, Session "CPU-Last
+// Ritornello"). Messung: schon das blosse Andocken eines Expanders kostete
+// ca. 0,7-1 % CPU-Anzeige, unabhaengig von Kabeln und Schleifen - die Kettensuche
+// und marf248ExpanderLinked() liefen mit mehreren dynamic_cast in JEDEM Sample.
+// Die Nachbarschaft aendert sich aber nur, wenn der Nutzer Module verschiebt.
+// Deshalb merken sich Host und Expander die zuletzt gefundene Kette (Zeiger der
+// durchlaufenen Module plus das Modul dahinter) und pruefen pro Sample nur per
+// Zeigervergleich, ob sie unveraendert ist; nur bei einer Abweichung wird neu
+// gescannt (dynamic_cast). Die Zeiger werden erst dereferenziert, nachdem sie
+// mit dem live von Rack gepflegten Nachbarzeiger uebereinstimmen - ein
+// entferntes Modul kann also nie ueber den Cache erreicht werden. Das Ergebnis
+// ist bitgleich zur uncachten Suche.
+// ---------------------------------------------------------------------------
+
+// Host-Seite: eine Kette je Richtung (siehe marf248CollectChain).
+struct Marf248ChainCache {
+	Module* path[MARF248_MAX_CHAIN] = {};
+	int count = 0;
+	Module* end = nullptr;   // Modul direkt hinter der Kette (oder nullptr)
+	bool valid = false;
+};
+
+// true, wenn die Kette ab dem direkten Nachbarn exakt wie beim letzten Scan ist.
+inline bool marf248ChainUnchanged(Module* host, bool left, const Marf248ChainCache& c) {
+	if (!c.valid)
+		return false;
+	Module* m = left ? host->getLeftExpander().module : host->getRightExpander().module;
+	for (int i = 0; i < c.count; i++) {
+		if (m != c.path[i])
+			return false;
+		m = left ? m->getLeftExpander().module : m->getRightExpander().module;
+	}
+	return m == c.end;
+}
+
+// Scannt die Kette neu (wie marf248CollectChain) und merkt sie sich.
+inline void marf248ChainStore(Module* host, bool left, Marf248ChainCache& c) {
+	Module* m = left ? host->getLeftExpander().module : host->getRightExpander().module;
+	int n = 0;
+	while (m && n < MARF248_MAX_CHAIN && dynamic_cast<Marf248ExpanderMarker*>(m)) {
+		c.path[n++] = m;
+		m = left ? m->getLeftExpander().module : m->getRightExpander().module;
+	}
+	c.count = n;
+	c.end = m;
+	c.valid = true;
+}
+
+// Expander-Seite: gleicher Zweck fuer marf248ExpanderLinked().
+struct Marf248LinkCache {
+	Module* path[2][MARF248_MAX_CHAIN] = {};
+	int count[2] = {0, 0};
+	Module* end[2] = {nullptr, nullptr};
+	bool checkEnd[2] = {false, false};
+	bool valid = false;
+	bool linked = false;
+};
+
+// Entspricht marf248ExpanderLinked(self), aber mit Zeigervergleich pro Sample.
+inline bool marf248ExpanderLinkedCached(Module* self, Marf248LinkCache& c) {
+	if (c.valid) {
+		bool same = true;
+		for (int dir = 0; dir < 2 && same; dir++) {
+			bool left = (dir == 0);
+			Module* m = left ? self->getLeftExpander().module : self->getRightExpander().module;
+			for (int i = 0; i < c.count[dir]; i++) {
+				if (m != c.path[dir][i]) {
+					same = false;
+					break;
+				}
+				m = left ? m->getLeftExpander().module : m->getRightExpander().module;
+			}
+			if (same && c.checkEnd[dir] && m != c.end[dir])
+				same = false;
+		}
+		if (same)
+			return c.linked;
+	}
+
+	// Neu bestimmen: gleiche Logik wie marf248ExpanderLinked(), dabei den
+	// durchlaufenen Pfad merken.
+	bool linked = false;
+	for (int dir = 0; dir < 2; dir++) {
+		c.count[dir] = 0;
+		c.checkEnd[dir] = false;
+		c.end[dir] = nullptr;
+	}
+	for (int dir = 0; dir < 2 && !linked; dir++) {
+		bool left = (dir == 0);
+		Module* m = left ? self->getLeftExpander().module : self->getRightExpander().module;
+		bool stopped = false;
+		for (int step = 0; step < MARF248_MAX_CHAIN && m; step++) {
+			c.path[dir][c.count[dir]++] = m;
+			if (dynamic_cast<Marf248Host*>(m)) {
+				linked = true;
+				stopped = true;
+				break;
+			}
+			if (!dynamic_cast<Marf248ExpanderMarker*>(m)) {
+				stopped = true;
+				break;
+			}
+			if (m->model == self->model) {
+				stopped = true;
+				break;
+			}
+			m = left ? m->getLeftExpander().module : m->getRightExpander().module;
+		}
+		if (!stopped) {
+			c.end[dir] = m;
+			c.checkEnd[dir] = true;
+		}
+	}
+	c.linked = linked;
+	c.valid = true;
+	return linked;
+}
+
 // Dauer der Retrigger-Luecke fuer den CV-Expander (Marf248CvExpander,
 // Gate A/B): wenn eine Section eine Stage OHNE Indexwechsel neu betritt
 // (Pendulum-Wendepunkt-Wiederholung, Strobe auf dieselbe Adresse, Sustain/
