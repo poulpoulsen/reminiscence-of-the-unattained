@@ -146,7 +146,7 @@ struct VactrolQuantity : AmQuantity {
 	}
 };
 // WET: Knopf 0..1, Verstaerkung des gestimmten Resonators 0,045 k^2 (100 % = -27 dB, 90 % = -29 dB = Standard, 50 % = -39 dB).
-// Der Anwender hat mit 0,0225 (90 %: 2,5 V) einen guten Klang gefunden und wollte den Pegel auf 5 V anheben (+6 dB).
+// Ich habe mit 0,0225 (90 %: 2,5 V) einen guten Klang gefunden und wollte den Pegel auf 5 V anheben (+6 dB).
 // Die Impulsantwort des Resonators hat Amplitude 1 (Modelleinheit, = DRIVE-Pegel). Ein Puls summiert sich im Resonator zur Flaeche
 // auf (10 V, einige ms: ueber 100 Modelleinheiten roh, begrenzt auf 8). Rack-Messung des Anwenders: 30 V bei -6 dB; guter Klang bei
 // 10 V und -45 dB. Der Bereich ist deshalb auf diese Region zugeschnitten. Eine Zeile, falls der Pegel nachgestellt wird.
@@ -363,7 +363,7 @@ struct AnnaMaria : Module {
 		MODE_ALL_PARAM = VACTROL_PARAM + 1,     // globaler MODE-Schalter (schreibt auf alle Kanaele)
 		DEEP_ALL_PARAM,                         // globaler DEEP-Schalter (Platzhalter)
 		DEEP_PARAM,                             // NUM_LPG Kanal-Schalter (Platzhalter)
-		WET_PARAM = DEEP_PARAM + NUM_LPG,       // global: Anteil des gestimmten V/OCT-Resonators (0..1, Verstaerkung 0,0225 k^2)
+		WET_PARAM = DEEP_PARAM + NUM_LPG,       // global: Anteil des gestimmten V/OCT-Resonators (0..1, Verstaerkung 0.045f * k * k)
 		DRY_PARAM,                              // global: Pegel des Direktpfads im V/OCT-Betrieb (0..1, Verstaerkung k^2)
 		NUM_PARAMS
 	};

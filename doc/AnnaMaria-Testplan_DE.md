@@ -266,6 +266,23 @@ Einstellungen je Kanal (Kanal-Wähler + ACTIVATE):
 | Menü Channels | Kanalzahl | Auto oder fest 1…16 | 9 |
 | CHANNEL / ACTIVATE | Anzeige eines Kanals | kein Einfluss auf den Klang | 9 |
 
+## 12b. V/Oct-Resonator, DRY, WET und Tooltips (Quad-Version, Tests R1–R10)
+
+Hinweis: Dieser Plan stammt sonst von der älteren 16-Kanal-Fassung. Dieser Abschnitt gilt für die Quad-Fassung (Abschnitt 3b der Dokumentation); die Sollwerte kommen aus der Engine-Simulation, die Rack-Prüfung steht aus.
+
+Gemeinsamer Aufbau: Kanal 1, MODE LOWPASS, THRESHOLD 7,5 V, ATT 10 V (Gate offen), V/OCT von Tastatur oder Sequenzer, am IN ein Impuls, kurzer Click oder Rauschburst.
+
+- [ ] **R1 Tonhöhe**: V/OCT 0 V = C4. Ein Stimmgerät zeigt die Note (±5 Cent) von C1 bis C7; der Pegel ist von der Note unabhängig.
+- [ ] **R2 WET-Regler**: WET 0 / 25 / 35 / 50 / 75 / 100 %: Der Pegel des gestimmten Tons steigt (Verstärkung 0 / 0,0028 / 0,0055 / 0,011 / 0,025 / 0,045); bei 0 % nur der normale Gate-Klang. Ziel: etwa 10 V bei −45 dB (WET ≈ 35 %) mit gutem Klang; prüfen, ob die Reserve nach oben nutzbar ist.
+- [ ] **R3 WET CV**: Kabel mit 5 V an WET CV = wie Regler 50 % (der Regler wirkt nicht mehr); polyphones Kabel mit vier Spannungen = je ein Kanal; monophones Kabel = alle Kanäle gleich; Kabel ab = Regler wirkt wieder.
+- [ ] **R4 Klingdauer**: FEEDBACK 0 / 50 / 100 % ergibt 0,05 / 0,4 / 3 s (T60). Der Tooltip von FEEDBACK zeigt die Zeit.
+- [ ] **R5 Aus-Fälle**: V/OCT abziehen: Klang wie ohne Resonator, FEEDBACK wirkt wieder als Resonanz des Gates. MODE VCA und BOTH mit „Gate response = Paper circuit“: V/OCT ohne Wirkung.
+- [ ] **R6 Gate schließt**: Hüllkurve von 200 ms: Die Tonhöhe weicht beim Schließen des Gates um weniger als etwa 15 Cent ab, kein Glide.
+- [ ] **R7 Audiorate-V/Oct**: V/OCT mit Audiorate-Modulation: kein Knacken, kein Absturz. CPU im Auge behalten (die Koeffizienten ändern sich jedes Sample).
+- [ ] **R8 Alte Patches**: Patch mit V/OCT der früheren Version laden: klingt anders (Resonator statt Zeitskalierung), lädt ohne Fehler; alte Patches ohne WET/DRY laden mit Standardwerten (WET 90 %, DRY 30 %).
+- [ ] **R9 DRY**: DRY 0 %: nur der Resonator ist zu hören; DRY 100 %: Direktsignal mit Pegel 1 (Hoch- und Tiefpass des Direktpfads bleiben aktiv, solange V/OCT gesteckt ist); Nadelimpuls am IN: kein tiefer „Plopp“ im Direktklang.
+- [ ] **R10 Tooltips**: Mouseover bei Threshold, Feedback, Feedback nonlinearity und V/Oct: Der Name ist kurz, die Erklärung steht in mehreren Zeilen darunter. Das Menü „Velocity target“ hat zwei kurze Einträge mit den Erläuterungen darunter. Panel: Die Modulnamen stehen zentriert oben.
+
 ## 13. Abschluss
 
 - [ ] Alle Abweichungen > 5 % (Pegel) oder > 3 dB (Resonanz) mit Block-Nr., Einstellung und gemessenem Wert notieren.

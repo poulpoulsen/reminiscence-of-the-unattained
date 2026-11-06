@@ -868,7 +868,10 @@ struct ElenaWidget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		// Kopfzeile: Kanalwahl ueber A/B, Titel ueber den Slew-Sektionen.
-		const float selX = 38.f, actX = 66.f, selY = 11.5f;   // links vom zentrierten Namen, mit Abstand
+		// CHANNEL-Knopf (14 mm) linksbuendig mit "SECTION A" (Text ab x=6.5),
+		// ACTIVATE-Taster (8 mm) linksbuendig mit "SECTION B" (Text ab x=62.5).
+		const float lblA = 3.f + 3.5f, lblB = 59.f + 3.5f, selY = 11.5f;
+		const float selX = lblA + 7.f, actX = lblB + 4.f;
 		ElenaSelectKnob* sel = new ElenaSelectKnob;
 		sel->module = module;
 		sel->box.pos = mm2px(Vec(selX, selY)) - sel->box.size / 2.f;
@@ -877,12 +880,11 @@ struct ElenaWidget : ModuleWidget {
 		act->module = module;
 		act->box.pos = mm2px(Vec(actX, selY)) - act->box.size / 2.f;
 		addChild(act);
-		addLabel(Vec(selX, 19.5f), "CHANNEL", COLOR_SYSTEM);
-		addLabel(Vec(actX, 19.5f), "ACTIVATE", COLOR_SYSTEM);
+		addChild(new PanelLabel(Vec(lblA, 19.5f), "CHANNEL", COLOR_SYSTEM, 9.f, NVG_ALIGN_LEFT | NVG_ALIGN_TOP));
+		addChild(new PanelLabel(Vec(lblB, 19.5f), "ACTIVATE", COLOR_SYSTEM, 9.f, NVG_ALIGN_LEFT | NVG_ALIGN_TOP));
 
 		const float titleX = W_MM / 2.f;   // zentriert wie bei den anderen Modulen
 		addChild(new PanelLabel(Vec(titleX, 3.5f), "ELENA", COLOR_SYSTEM, 14.f));
-		addChild(new PanelLabel(Vec(titleX, 11.f), "CONTROL VOLTAGE PROCESSOR", COLOR_SYSTEM, 6.f));
 
 		const float frameTop = 24.f;
 		const float frameH = 96.f;
