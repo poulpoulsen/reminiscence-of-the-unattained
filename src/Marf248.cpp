@@ -3464,6 +3464,78 @@ struct BeatsFactorTrimpot : Trimpot {
 };
 
 
+// ---------------------------------------------------------------------
+// Stage-Legende (Review-Feedback: Stage-Spalten waren unbeschriftet).
+// Eine einzige, abgesetzte Legende links von Stage 1 (bzw. dem einen Slot
+// von Lucia): getoenter Hintergrund mit Rahmen, Schrift 10pt wie VOUT/EXT.
+// Ausgerichtet an den Reihen der Button-Unterspalte. Zeilenhoehe ist nur
+// 8mm, daher je Reihe EIN Text mit beiden Button-Namen ("A | B", linke
+// Spalte zuerst). Muss zu den Konstanten buttonRowsY/shapeCurveY/trangeY/
+// rangeY/voltSliderY/timeSliderY in den beiden Widgets passen.
+// ---------------------------------------------------------------------
+static const float STAGE_LEGEND_WIDTH_MM = 42.f; // Legendenbox 40mm + Luft
+
+struct StageLegendPanel : TransparentWidget {
+	void draw(const DrawArgs& args) override {
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0.5f, 0.5f, box.size.x - 1.f, box.size.y - 1.f, 3.f);
+		nvgFillColor(args.vg, nvgRGB(205, 226, 224));
+		nvgFill(args.vg);
+		nvgStrokeColor(args.vg, COLOR_STAGEMOD);
+		nvgStrokeWidth(args.vg, 1.5f);
+		nvgStroke(args.vg);
+
+	}
+};
+
+static void addStageLegend(ModuleWidget* w, float xStart) {
+	const float boxW = 40.f;
+	const float boxLeft = xStart - 16.f - 1.f - boxW;
+	const float boxTop = 12.f;
+	const float boxBottom = 126.f;
+	const NVGcolor textColor = nvgRGB(0, 100, 94); // dunkleres Teal, lesbar auf getoentem Grund
+	const float fs = 10.f;
+
+	// Zwei getrennte Boxen: oben die Buttons (bis QUANT-Reihe, y=68), unten
+	// Rest (ab TIME EXT-Reihe, y=76); Trennung bei y=72, 3mm Luecke.
+	const float splitTop = 70.5f, splitBottom = 73.5f;
+	StageLegendPanel* bgTop = new StageLegendPanel;
+	bgTop->box.pos = mm2px(Vec(boxLeft, boxTop));
+	bgTop->box.size = mm2px(Vec(boxW, splitTop - boxTop));
+	w->addChild(bgTop);
+	StageLegendPanel* bgBottom = new StageLegendPanel;
+	bgBottom->box.pos = mm2px(Vec(boxLeft, splitBottom));
+	bgBottom->box.size = mm2px(Vec(boxW, boxBottom - splitBottom));
+	w->addChild(bgBottom);
+
+	const float rightX = boxLeft + boxW - 2.f;
+	struct Row { float y; const char* text; };
+	static const Row rows[] = {
+		{20.f,  "PULSE 1 | 2"},
+		{28.f,  "SKIP | MUTE"},
+		{36.f,  "STOP | SUSTAIN"},
+		{44.f,  "ENABLE"},
+		{52.f,  "FIRST | LAST"},
+		{60.f,  "SLOPE | Q-GLIDE"},
+		{68.f,  "QUANT | VOLT EXT"},
+		{76.f,  "TIME EXT | NORM"},
+		{88.f,  "CURVE | SHAPE"},
+		{100.f, "TIME RANGE"},
+		{115.f, "RANGE"},
+	};
+	for (const Row& r : rows) {
+		w->addChild(new PanelLabel(Vec(rightX, r.y), r.text, textColor, fs,
+		                           NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE));
+	}
+	// Slider-Namen vertikal am linken Rand der Legendenbox, mittig auf den Slidern.
+	const float vx = boxLeft + 4.5f;
+	w->addChild(new PanelLabel(Vec(vx, 42.f), "VOLTAGE", textColor, fs,
+	                           NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE, -90.f));
+	w->addChild(new PanelLabel(Vec(vx, 98.f), "TIME", textColor, fs,
+	                           NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE, -90.f));
+}
+
+
 struct Marf248Widget : ModuleWidget {
 	// Label UNTER dem Element (Expander-Muster) - nur fuer Spalten mit
 	// ausreichendem Zeilenabstand, siehe Kommentar oben.
@@ -3513,7 +3585,8 @@ struct Marf248Widget : ModuleWidget {
 		// Preset-Spalte schmaler") - jetzt ca. 10mm Marge hinter der Preset-
 		// Rahmenkante, naeher an den uebrigen, knapp bemessenen Luecken
 		// dieses Panels.
-		const float HP = 146.f;
+		// 146 -> 155: Stage-Legende (STAGE_LEGEND_WIDTH_MM = 42mm) links von Stage 1.
+		const float HP = 155.f;
 		box.size = Vec(HP * RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
 
 		// Panel-Hintergrund + klare Aussenkante (sonst bleibt das Modul
@@ -3530,6 +3603,13 @@ struct Marf248Widget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
+		// Modulname (oben links, im freien Streifen 0-12mm ueber den Rahmen;
+		// links neben den Schrauben beginnend, weit weg von den Clear/Reset/
+		// Auto-Fill-Tastern in der Panelmitte).
+		// Modulname zentriert wie bei den anderen Modulen (Mitte = halbe Panelbreite in mm).
+		const float titleCenterMM = HP * 5.08f / 2.f;
+		addChild(new PanelLabel(Vec(titleCenterMM, 3.5f), "SOFONISBA", COLOR_SYSTEM, 13.f));
 
 		// Geometrie-Konstanten fuer die Stage-Spalte.
 		// Session "Hauptmodul-Relayout", zweiter Anlauf (Kinovice-Feedback
@@ -3585,7 +3665,7 @@ struct Marf248Widget : ModuleWidget {
 		// Array, spiegelbildlich fuer Section A/B (colAOutputs liegt links
 		// vom Stage-Array, colBOutputs rechts davon).
 		float colAOutputs = colAJacks + gapJacksToOutputs;
-		float xStart = colAOutputs + gapOutputsToStage;
+		float xStart = colAOutputs + gapOutputsToStage + STAGE_LEGEND_WIDTH_MM;
 		float colBOutputs = xStart + (NUM_STAGES - 1) * xStep + gapOutputsToStage;
 		float colBJacks = colBOutputs + gapJacksToOutputs;
 		float colBControls = colBJacks + gapControlsToJacks;
@@ -4086,6 +4166,8 @@ struct Marf248Widget : ModuleWidget {
 		// wie ohnehin geplant als eigene Folge-Session (zusammen mit der
 		// Beschriftung von Controls-/Jacks-/Ext-/Preset-Spalte).
 
+		addStageLegend(this, xStart);
+
 		// Global Clear: einzelner, geteilter Taster mittig ueber dem
 		// Stage-Array (kein Bezug zu einer einzelnen Section, siehe
 		// Kommentar bei CLEAR_PARAM). Zentriert ueber die 16 Stages selbst
@@ -4095,7 +4177,9 @@ struct Marf248Widget : ModuleWidget {
 		// Mitte zwischen Stage-Oberkante und Modulrahmen"): Modulrahmen
 		// liegt bei y=0, Stage-Oberkante (frameTopMM) bei y=12, Mitte also
 		// bei 6.
-		float colClear = xStart + (NUM_STAGES - 1) * xStep / 2.f;
+		// Die Taster sitzen jetzt rechts neben dem zentrierten Modulnamen (Titelbreite ca. 27mm,
+		// dazu ca. 10mm Abstand): erster Taster 24mm rechts von der Panelmitte, Abstand 12mm.
+		float colClear = titleCenterMM + 24.f;
 		addParam(createParamCentered<LEDButton>(mm2px(Vec(colClear, 6)), module, Marf248::CLEAR_PARAM));
 		addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(colClear, 6)), module, Marf248::CLEAR_LIGHT));
 
@@ -4434,7 +4518,7 @@ struct Marf248CompactWidget : ModuleWidget {
 		float colAOutputs = colAJacks + gapJacksToOutputs;
 		// xStart: Position des EINEN Stage-Slots (entspricht der
 		// bisherigen Position von Stage 1 auf der Vollversion).
-		float xStart = colAOutputs + gapOutputsToStage;
+		float xStart = colAOutputs + gapOutputsToStage + STAGE_LEGEND_WIDTH_MM;
 		// Kompaktversion-spezifisch: Section B folgt direkt auf den einen
 		// Slot (ein gapOutputsToStage-Abstand), statt nach 15 weiteren
 		// xStep-Schritten wie auf der Vollversion.
@@ -4451,7 +4535,10 @@ struct Marf248CompactWidget : ModuleWidget {
 		// Kompaktversion ist deutlich schmaler als die 146HP-Vollversion,
 		// aber die genaue Breite haengt von allen Spaltenabstaenden oben
 		// ab. +2HP Sicherheitsmarge fuer die Preset-Rahmenkante.
-		int hpInt = (int) (colPresets / 5.08f) + 2;
+		// Rechte Kante der Preset-Rahmen = colPresets + presetFrameWidthMM/2;
+		// dahinter 10mm Randmarge (wie Sofonisba), aufgerundet auf ganze HP.
+		// (Frueher: Abschneiden + 2HP -> Marge nur 0..5mm, Presets am Rand.)
+		int hpInt = (int) std::ceil((colPresets + presetFrameWidthMM / 2.f + 10.f) / 5.08f);
 		const float HP = (float) hpInt;
 		box.size = Vec(HP * RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
 
@@ -4467,6 +4554,13 @@ struct Marf248CompactWidget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
+		// Modulname (wie bei Sofonisba oben links im Streifen 0-12mm; die Clear/
+		// Reset/Auto-Fill-Taster liegen bei xStart, also deutlich weiter rechts).
+		// Modulname zentriert wie bei den anderen Modulen; die Taster sitzen mit Abstand rechts davon.
+		const float titleCenterMM = HP * 5.08f / 2.f;
+		addChild(new PanelLabel(Vec(titleCenterMM, 3.5f), "LUCIA", COLOR_SYSTEM, 13.f));
+		const float btnX0 = titleCenterMM + 18.f;   // Clear; Reset und Auto-Fill folgen im Abstand von 12mm
 
 		// --- External-CV-Spalte ganz links: 1:1 aus Marf248Widget
 		// (vier modulweit geteilte EXT-A/B/C/D-Eingaenge).
@@ -4688,6 +4782,8 @@ struct Marf248CompactWidget : ModuleWidget {
 		const float rangeOffsetX = 6.f;
 		const float rangeY = 115.f;
 
+		addStageLegend(this, xStart);
+
 		float x = xStart;
 		float sliderX = x + sliderColOffsetX;
 
@@ -4787,12 +4883,12 @@ struct Marf248CompactWidget : ModuleWidget {
 		// Vollversion) - 8mm-Pitch um xStart herum statt 12mm-Pitch ab
 		// colClear, damit alle drei Buttons innerhalb der 32mm-Rahmenbreite
 		// bleiben.
-		addParam(createParamCentered<LEDButton>(mm2px(Vec(xStart - 8.f, 6)), module, Marf248::CLEAR_PARAM));
-		addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(xStart - 8.f, 6)), module, Marf248::CLEAR_LIGHT));
-		addParam(createParamCentered<LEDButton>(mm2px(Vec(xStart, 6)), module, Marf248::RESET_VALUES_PARAM));
-		addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(xStart, 6)), module, Marf248::RESET_VALUES_LIGHT));
-		addParam(createParamCentered<LEDButton>(mm2px(Vec(xStart + 8.f, 6)), module, Marf248::AUTOFILL_PARAM));
-		addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(xStart + 8.f, 6)), module, Marf248::AUTOFILL_LIGHT));
+		addParam(createParamCentered<LEDButton>(mm2px(Vec(btnX0, 6)), module, Marf248::CLEAR_PARAM));
+		addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(btnX0, 6)), module, Marf248::CLEAR_LIGHT));
+		addParam(createParamCentered<LEDButton>(mm2px(Vec(btnX0 + 12.f, 6)), module, Marf248::RESET_VALUES_PARAM));
+		addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(btnX0 + 12.f, 6)), module, Marf248::RESET_VALUES_LIGHT));
+		addParam(createParamCentered<LEDButton>(mm2px(Vec(btnX0 + 24.f, 6)), module, Marf248::AUTOFILL_PARAM));
+		addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(btnX0 + 24.f, 6)), module, Marf248::AUTOFILL_LIGHT));
 
 		// --- Preset-Spalte ganz rechts: 1:1 aus Marf248Widget.
 		StageFrame* presetFrame = new StageFrame;
