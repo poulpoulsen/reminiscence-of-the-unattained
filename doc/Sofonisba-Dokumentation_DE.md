@@ -61,16 +61,16 @@ Stand: Alle in dieser Dokumentation beschriebenen Features wurden von Kinovice l
 
 Das Plugin besteht aus neun VCV-Rack-Modulen. Vier davon gehören zur Sofonisba-Familie und werden in dieser Datei beschrieben; die fünf übrigen (Europa, Minerva, Elena, Anna-Maria, Ritornello) haben jeweils eine eigene Dokumentation.
 
-**Marf248** *(`Marf248.hpp`, `Marf248.cpp`)*<br>
-Das Hauptmodul **Sofonisba** (146HP) enthält zwei unabhängige AFG-Sections (A/B), die sich 16 gemeinsame Stages teilen, sowie die gesamte DSP-Kernlogik.
+**Sofonisba** *(`Sofonisba.hpp`, `Sofonisba.cpp`)*<br>
+Das Hauptmodul (146HP) enthält zwei unabhängige AFG-Sections (A/B), die sich 16 gemeinsame Stages teilen, sowie die gesamte DSP-Kernlogik.
 
-**Marf248Compact** *(`Marf248.cpp`, `modelMarf248Compact`)*<br>
-Die kompakte Variante **Lucia** (etwa 40HP) nutzt dieselbe `struct Marf248` und damit dieselbe DSP-Engine, besitzt aber ein eigenes Panel mit nur einem sichtbaren Stage-Slot (siehe [3.6](#sec3-6)). Sie kann problemlos neben Sofonisba im selben Patch liegen.
+**Lucia** *(`Sofonisba.cpp`, `modelMarf248Compact`)*<br>
+Die kompakte Variante (etwa 40HP) nutzt dieselbe `struct Marf248` und damit dieselbe DSP-Engine, besitzt aber ein eigenes Panel mit nur einem sichtbaren Stage-Slot (siehe [3.6](#sec3-6)). Sie kann problemlos neben Sofonisba im selben Patch liegen.
 
-**Marf248TriggerExpander** *(`Marf248TriggerExpander.hpp/.cpp`)*<br>
+**Amilcare** *(`SofonisbaTriggerExpander.hpp/.cpp`)*<br>
 Optionaler 42HP-Expander mit zusätzlichen Trigger- und Gate-Ein- und -Ausgängen: Clear, Presets, Scale/Key, Start/End-of-Cycle, Run-Gates, Advance, Adress-Speicher, Stage-Modifier-CV inklusive VOLT_EXT/TIME_EXT-Kanalwahl und SEXT.
 
-**Marf248CvExpander** *(`Marf248CvExpander.hpp/.cpp`)*<br>
+**Bianca** *(`SofonisbaCvExpander.hpp/.cpp`)*<br>
 Optionaler 12HP-Expander: polyphone CV-Modulation der Stage-Zeit und der Slew-Kurve sowie polyphone Gate-Ausgänge pro Stage.
 
 **Grundprinzip des Expander-Mechanismus:** Beide Expander besitzen selbst keine DSP-Logik – sie sind reine „Jack-Träger". `Marf248::process()` prüft bei jedem Sample, ob links oder rechts ein passendes Modul andockt (`getLeftExpander()`/`getRightExpander()`), und liest und schreibt dessen Parameter, Inputs und Outputs direkt. Das vermeidet Message-Passing und Doppelpufferung und ist nur zulässig, weil die Expander keine eigene, unabhängige Verarbeitung haben (siehe VCV-Rack-Plugin-API-Guide, Abschnitt „Expanders": „you can implement its entire DSP algorithm in the [primary] module"). Die Expander prüfen umgekehrt jeden Frame eigenständig, ob ein Sofonisba andockt, um ihre Outputs und Lichter beim Entfernen oder Verschieben sauber auf 0V zurückzusetzen.
@@ -103,7 +103,7 @@ Alle neun Module werden in `plugin.cpp`/`plugin.hpp` registriert (`modelMarf248`
 
 - **Stage**: Eine von 16 Programmierstufen (`NUM_STAGES = 16`). Jede Stage besitzt einen Spannungswert, einen Zeitwert, einen Range- und einen Curve-Regler sowie ein Bündel digitaler Modifier-Bits. Die 16 Stages sind modulweit geteilt: Section A und Section B lesen dieselbe Programmierung, laufen aber unabhängig als zwei eigene „Zeiger" (`currentStage`) darüber.
 - **Section (A/B)**: Zwei unabhängige AFG-Instanzen (`Afg afgA`, `Afg afgB` in `Marf248`). Jede hat eine eigene Laufrichtung, einen eigenen Run/Stop-Zustand, einen eigenen Time-Multiplier und eine eigene Stage-Address-Quelle, aber beide fahren dieselben 16 Stages ab.
-- **Modifier-Bits** (`enum StageModifierBits`, in `Marf248.hpp`): Ein einzelnes Array `int stageModifier[NUM_STAGES]` kodiert pro Stage alle digitalen Zustände als Bitmaske. Übersicht:
+- **Modifier-Bits** (`enum StageModifierBits`, in `Sofonisba.hpp`): Ein einzelnes Array `int stageModifier[NUM_STAGES]` kodiert pro Stage alle digitalen Zustände als Bitmaske. Übersicht:
 
 | Bit | Bedeutung | Hardware-Vorbild? |
 |---|---|---|
@@ -300,7 +300,7 @@ Amilcare und Bianca docken an Lucia genauso an wie an Sofonisba, siehe [Abschnit
 ### 4.1 Der Afg-Kern (Ablaufsteuerung einer Section)
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
-`struct Afg` (in `Marf248.hpp`) kapselt den kompletten Laufzeitzustand und die Ablaufsteuerung einer einzelnen Section (A oder B). `Marf248` hält zwei Instanzen (`afgA`, `afgB`), die beide dieselben Stage-Daten lesen (über Funktionsparameter), aber unabhängig voneinander laufen.
+`struct Afg` (in `Sofonisba.hpp`) kapselt den kompletten Laufzeitzustand und die Ablaufsteuerung einer einzelnen Section (A oder B). `Marf248` hält zwei Instanzen (`afgA`, `afgB`), die beide dieselben Stage-Daten lesen (über Funktionsparameter), aber unabhängig voneinander laufen.
 
 Wichtige Zustandsfelder:
 - `currentStage`: Index (0–15) der aktuell adressierten Stage.
@@ -431,7 +431,7 @@ Ein Preset-Slot (`Marf248::PresetSlot`) speichert die vollständige Programmieru
 - `savePreset(slot)`: kopiert die aktuellen Regler-Rohwerte und Modifier in den Slot und markiert ihn als `used`.
 - `loadPreset(slot)`: Die Modifier-Bits werden sofort übernommen (rein digitale Zustände). Die vier kontinuierlichen Regler werden dagegen nicht direkt gesetzt – das würde den physischen Reglerwert „verspringen" lassen. Stattdessen wird pro Regler Pickup/Catch scharf gemacht (`PickupState::arm()`).
 
-**`PickupState`** (in `Marf248.hpp`): hält einen ausstehenden Zielwert getrennt vom aktuellen Reglerwert. `resolve(currentRaw)` liefert jeden Frame entweder den gespeicherten Zielwert (solange Pickup aussteht) oder den physischen Reglerwert direkt. Die Überkreuzung wird durch einen Vorzeichenwechsel der Differenz „Reglerwert − Zielwert" zwischen zwei aufeinanderfolgenden Frames erkannt. Auch der Fall, dass der Regler beim Laden bereits zufällig auf dem Zielwert steht, ist damit abgedeckt – es folgt ein sofortiges Pickup.
+**`PickupState`** (in `Sofonisba.hpp`): hält einen ausstehenden Zielwert getrennt vom aktuellen Reglerwert. `resolve(currentRaw)` liefert jeden Frame entweder den gespeicherten Zielwert (solange Pickup aussteht) oder den physischen Reglerwert direkt. Die Überkreuzung wird durch einen Vorzeichenwechsel der Differenz „Reglerwert − Zielwert" zwischen zwei aufeinanderfolgenden Frames erkannt. Auch der Fall, dass der Regler beim Laden bereits zufällig auf dem Zielwert steht, ist damit abgedeckt – es folgt ein sofortiges Pickup.
 
 **Abgrenzung zum Adress-Speicher (siehe [4.9](#sec4-9)):** Ein Preset speichert die komplette Stage-Programmierung; der Adress-Speicher merkt sich nur einen Stage-Index als Sprungziel. Beide Systeme sind unabhängig voneinander nutzbar.
 
@@ -487,7 +487,7 @@ Bedienung: Scale/Key-Taster werden zunächst „scharf geschaltet" (Arm); der n�
 
 Breaking Change: `TIME_MULT_A/B_PARAM` speicherte ursprünglich einen direkten Zeitfaktor (0,5×–4,0×). Derselbe Parameter-Slot speichert jetzt eine V/Oct-Tempo-Spannung (−5…+5V). Bestehende Patches und Presets interpretieren den gespeicherten Rohwert dadurch komplett anders (alte 2,0 bedeutete einen 2,0×-Zeitfaktor, jetzt bedeuten 2 Volt 480 BPM). Der Tempo-Knob in alten Patches muss neu eingestellt werden.
 
-**Grundformel** (`tempoVoltsToBpm()`, Marf248.hpp):
+**Grundformel** (`tempoVoltsToBpm()`, Sofonisba.hpp):
 
 ```
 BPM = 120 × 2^Volt
@@ -544,7 +544,7 @@ Kinovice-Feature (rhythmische Sub-Trigger pro Stage im Tangerine-Dream-Stil), oh
 
 **Aktivierung und Bit (`MOD_RATCHET`):** Wie `MOD_MUTE` gibt es kein Panel-Gegenstück. Das Bit wird ausschließlich über `STAGE_RATCHET_POLY_INPUT` am Trigger-Expander gesetzt und gelöscht (Pegel-Override, Schwelle 2V). Ohne gepatchtes Kabel bleibt das Bit dauerhaft gelöscht, denn es gibt keinen „letzten Panel-Klick"-Zustand, auf den zurückgefallen werden könnte.
 
-**Sub-Trigger-Count (1–8, `STAGE_RATCHET_COUNT_POLY_INPUT`):** acht gleich große Zonen à 1,25V im 0–10V-Bereich (`resolveRatchetCount()` in `Marf248.hpp`). Wichtig: Ratcheting bleibt trotz gesetztem `MOD_RATCHET`-Bit vollständig wirkungslos, solange diese Buchse nicht gepatcht ist – die Stage fällt dann automatisch auf das normale P1/P2-Verhalten zurück (bewusste Design-Entscheidung, ein Panel-Default existiert nicht). Bei Count=0 (unpatched) verhält sich eine Stage mit aktivem Enable-Gate exakt so, als gäbe es kein Ratcheting.
+**Sub-Trigger-Count (1–8, `STAGE_RATCHET_COUNT_POLY_INPUT`):** acht gleich große Zonen à 1,25V im 0–10V-Bereich (`resolveRatchetCount()` in `Sofonisba.hpp`). Wichtig: Ratcheting bleibt trotz gesetztem `MOD_RATCHET`-Bit vollständig wirkungslos, solange diese Buchse nicht gepatcht ist – die Stage fällt dann automatisch auf das normale P1/P2-Verhalten zurück (bewusste Design-Entscheidung, ein Panel-Default existiert nicht). Bei Count=0 (unpatched) verhält sich eine Stage mit aktivem Enable-Gate exakt so, als gäbe es kein Ratcheting.
 
 **Timing-Formel:** Sub-Trigger i (i = 0…N−1) feuert bei `rawPhase = i / N`, optional verzerrt durch Warp und Offset (siehe unten):
 
@@ -556,9 +556,9 @@ Da `rawPhase < 1` für alle i<N, liegt der letzte Sub-Trigger garantiert vor Abl
 
 **Ziel-Ausgänge – P1OUT/P2OUT, nicht bedingungslos:** Ratcheting ersetzt nur die Art des Triggers auf einem ohnehin per `MOD_PULSE1`/`MOD_PULSE2` aktivierten Ausgang. Sind beide Bits gesetzt, feuern P1OUT und P2OUT synchron; ist nur eines gesetzt, feuert nur dieses; sind beide gelöscht, läuft der interne Sub-Trigger-Zähler trotzdem mit (für den Fall, dass die Bits während des Stage-Aufenthalts per CV nachträglich gesetzt werden), es wird aber nichts ausgegeben. `MOD_MUTE` unterdrückt Ratcheting genauso wie die normalen Pulse-Trigger (siehe [4.7](#sec4-7)).
 
-**Warp-Blend (Bianca, `WARP_CV_INPUT`/`WARP_CV_ATTEN_PARAM`/`WARP_GLOBAL_PARAM`):** blendet die lineare Sub-Trigger-Verteilung kontinuierlich zu einer Smootherstep-verzerrten Verteilung über (`smootherstep01()`/`ratchetWarpPhase()` in `Marf248.hpp`), 0–100% (`WARP_GLOBAL_PARAM`; wirkt immer, auch ohne gepatchtes CV-Kabel, analog zu `CURVE_GLOBAL_PARAM`). Smootherstep hat bei `rawPhase=0` und `rawPhase=1` Fixpunkte (Ableitung 0 an beiden Enden). Bei Ratchet-Count 1 und 2 hat Warp deshalb keine hörbare Wirkung: Bei Count=1 gibt es nur `rawPhase=0` (Fixpunkt), bei Count=2 zusätzlich `rawPhase=0,5`, was unter Smootherstep ebenfalls ein Fixpunkt ist (`smootherstep01(0,5)=0,5`). Warp wird erst ab Count≥3 hörbar, wo echte Zwischen-Phasen (nicht 0, nicht 1, nicht 0,5) durch die S-Kurve spürbar Richtung Rand oder Mitte gezogen werden.
+**Warp-Blend (Bianca, `WARP_CV_INPUT`/`WARP_CV_ATTEN_PARAM`/`WARP_GLOBAL_PARAM`):** blendet die lineare Sub-Trigger-Verteilung kontinuierlich zu einer Smootherstep-verzerrten Verteilung über (`smootherstep01()`/`ratchetWarpPhase()` in `Sofonisba.hpp`), 0–100% (`WARP_GLOBAL_PARAM`; wirkt immer, auch ohne gepatchtes CV-Kabel, analog zu `CURVE_GLOBAL_PARAM`). Smootherstep hat bei `rawPhase=0` und `rawPhase=1` Fixpunkte (Ableitung 0 an beiden Enden). Bei Ratchet-Count 1 und 2 hat Warp deshalb keine hörbare Wirkung: Bei Count=1 gibt es nur `rawPhase=0` (Fixpunkt), bei Count=2 zusätzlich `rawPhase=0,5`, was unter Smootherstep ebenfalls ein Fixpunkt ist (`smootherstep01(0,5)=0,5`). Warp wird erst ab Count≥3 hörbar, wo echte Zwischen-Phasen (nicht 0, nicht 1, nicht 0,5) durch die S-Kurve spürbar Richtung Rand oder Mitte gezogen werden.
 
-**Phasen-Offset (`STAGE_RATCHET_OFFSET_POLY_INPUT`, Trigger-Expander):** direkte lineare 0–10V → 0–100%-Zuordnung (kein Zonen-Raster wie beim Count), additive Verschiebung der bereits warp-verzerrten Phase Richtung Stage-Ende, hart gedeckelt bei `RATCHET_OFFSET_PHASE_CEILING = 0,9995` (`ratchetTargetPhase()` in `Marf248.hpp`). Bewusst kein Wraparound zurück auf Phase 0: Ein Wraparound würde bei mehreren Sub-Triggern (N>1) deren zeitliche Reihenfolge durcheinanderbringen, da die Zielzeiten dann nicht mehr monoton mit dem Index steigen – das würde die inkrementelle „while (elapsed ≥ target) feuern"-Logik in `Afg::process()` voraussetzungswidrig brechen. Stattdessen stauchen sich bei hohem Offset und N>1 die späteren Sub-Trigger Richtung Stage-Ende, statt an den Anfang zurückzuspringen. Bei Count=1 verschiebt der Offset den einzelnen Puls sauber und stufenlos vom Stage-Anfang bis kurz vor das Stage-Ende.
+**Phasen-Offset (`STAGE_RATCHET_OFFSET_POLY_INPUT`, Trigger-Expander):** direkte lineare 0–10V → 0–100%-Zuordnung (kein Zonen-Raster wie beim Count), additive Verschiebung der bereits warp-verzerrten Phase Richtung Stage-Ende, hart gedeckelt bei `RATCHET_OFFSET_PHASE_CEILING = 0,9995` (`ratchetTargetPhase()` in `Sofonisba.hpp`). Bewusst kein Wraparound zurück auf Phase 0: Ein Wraparound würde bei mehreren Sub-Triggern (N>1) deren zeitliche Reihenfolge durcheinanderbringen, da die Zielzeiten dann nicht mehr monoton mit dem Index steigen – das würde die inkrementelle „while (elapsed ≥ target) feuern"-Logik in `Afg::process()` voraussetzungswidrig brechen. Stattdessen stauchen sich bei hohem Offset und N>1 die späteren Sub-Trigger Richtung Stage-Ende, statt an den Anfang zurückzuspringen. Bei Count=1 verschiebt der Offset den einzelnen Puls sauber und stufenlos vom Stage-Anfang bis kurz vor das Stage-Ende.
 
 **Aktivierung mitten im Stage-Aufenthalt: verpassen statt nachholen** (`ratchetWasActive`-Flankenerkennung): Wird das Enable-Gate erst nach Stage-Beginn scharf geschaltet (z.B. per CV), holt Ratcheting bereits verstrichene Sub-Trigger-Zeitpunkte nicht nachträglich als Burst nach (Kinovice-Entscheidung: lieber verpassen und beim nächsten Durchlauf starten). Technisch: Bei der Aktivierungsflanke (inaktiv→aktiv) wird der Sub-Trigger-Zähler einmalig auf die aktuelle Position vorgespult (strikter `>`-Vergleich `elapsed > targetTime`, ohne dabei zu feuern); danach läuft der reguläre Feuer-Loop (`>=`-Vergleich) unverändert weiter. Bei einem regulären, unmittelbaren Stage-Eintritt (`elapsed==0`) greift dieser Überspring-Effekt nicht – der erste Sub-Trigger feuert dort auch bei aktivem Offset ganz normal am Stage-Anfang.
 
@@ -595,7 +595,7 @@ Der Rechtsklick-Kontextmenü-Eintrag „Apply … to all stages" auf einem Modif
 ## 5. Sofonisba – Funktionsreferenz (C++)
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
-### `Marf248.hpp`
+### `Sofonisba.hpp`
 
 **`applySlewCurve(t, mod, power)`**<br>
 Wendet die gewählte Slew-Kurvenform (Exp/Log/Linear) auf die normalisierte Phase `t` an, inklusive optionaler Normalisierung.
@@ -666,7 +666,7 @@ Setzt die Flanken-Vorwerte für P1/P2/First/Last zurück (bei jedem Stage-(Wiede
 **`Afg::process(...)`**<br>
 Hauptverarbeitung einer Section pro Sample: Start/Stop, Run-Gate, Advance, Sustain/Enable/Stop-Logik, automatischer Zeitablauf, Voltage- und Zeit-Ausgabe, alle Puls-Ausgänge inklusive Ratcheting (siehe [4.13](#sec4-13)). Nimmt die bereits aufgelösten Stage-Arrays entgegen (Spannung, Zeit, Modifier, Curve-Power, Ratchet-Count, Warp-Blend, Ratchet-Offset) sowie Key/Scale und die Start/Stop/Run-Gate/Advance-Eingaben. Die Signatur ist um einen `float* outEos`-Ausgabeparameter erweitert (EOS-Pulsspannung, siehe [4.7](#sec4-7)).
 
-### `Marf248.cpp`
+### `Sofonisba.cpp`
 
 **`StageVoltageQuantity::getDisplayValueString()`**<br>
 Tooltip-Text des Voltage-Reglers: Kanalname bei External, Notenname bei Quantize, sonst Volt-Zahl.
@@ -802,7 +802,7 @@ Adress-Speicher Store, siehe [4.9](#sec4-9). Sitzt in Reihe 7, Spalte C/D.
 Adress-Speicher Recall, siehe [4.9](#sec4-9). Sitzt in Reihe 4, Spalte C/D (neben SEXT, seit der Panel-Beschriftungs-Session).
 
 **`STAGE_RANGE_POLY_INPUT`** *(Poly-CV, 16 Kanäle = Stage 1–16)*<br>
-Kanalwahl per CV für den 7-Positionen-Range-Drehschalter (`STAGE_RANGE_PARAM`/`RangeKnob`, siehe [3.2](#sec3-2)). Sieben gleich große Zonen à ca. 1,4286V im 0–10V-Bereich – ohne „Intern/Aus"-Sonderfall wie beim 5-Zonen-Schema von Volt-Ext/Time-Ext, da jede Zone einer gültigen Range-Position entspricht: Zone 0 = Full, 1 = Half, 2–6 = Limited +0/+2/+4/+6/+8V (`RANGE_ZONE_THRESHOLDS[6]`/`resolveRangeZone()` in `Marf248.hpp`). Bei gepatchtem Kabel überschreibt die CV die Panel-Reglerposition komplett (inklusive Pickup); nicht angesteuerte Poly-Kanäle liefern automatisch 0V = Zone 0 = Full. Sitzt in Reihe 2, Spalte E.
+Kanalwahl per CV für den 7-Positionen-Range-Drehschalter (`STAGE_RANGE_PARAM`/`RangeKnob`, siehe [3.2](#sec3-2)). Sieben gleich große Zonen à ca. 1,4286V im 0–10V-Bereich – ohne „Intern/Aus"-Sonderfall wie beim 5-Zonen-Schema von Volt-Ext/Time-Ext, da jede Zone einer gültigen Range-Position entspricht: Zone 0 = Full, 1 = Half, 2–6 = Limited +0/+2/+4/+6/+8V (`RANGE_ZONE_THRESHOLDS[6]`/`resolveRangeZone()` in `Sofonisba.hpp`). Bei gepatchtem Kabel überschreibt die CV die Panel-Reglerposition komplett (inklusive Pickup); nicht angesteuerte Poly-Kanäle liefern automatisch 0V = Zone 0 = Full. Sitzt in Reihe 2, Spalte E.
 
 **`STAGE_QUANTGLIDE_POLY_INPUT`** *(Poly-Gate, 16 Kanäle = Stage 1–16)*<br>
 Pegel-Override für `MOD_QUANT_GLIDE` (siehe [4.4](#sec4-4)), gleiches Prinzip wie `STAGE_SLOPE_POLY_INPUT` oben (Schwelle 2V, `isConnected()`-Guard, überschreibt einen manuellen Panel-Klick). Sitzt in Reihe 3, Spalte E, direkt unterhalb von Range CV.
@@ -919,7 +919,7 @@ Die Warp-Blend-Zeile (`WARP_CV_INPUT` links, `WARP_CV_ATTEN_PARAM` rechts) sowie
 ## 8. Expander-Mechanismus (Kommunikation zwischen den Modulen)
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
-Alle drei Expander (Amilcare, Bianca, Ritornello) erkennen Sofonisba oder Lucia links oder rechts von sich (`getLeftExpander()`/`getRightExpander()`) und zeigen das über ein grünes `LINK_LIGHT` an. Die Erkennung läuft per `dynamic_cast` gegen das schlanke Marker-Interface `struct Marf248Host { virtual ~Marf248Host() = default; };` in `Marf248.hpp` (`Marf248 : Module, Marf248Host`) – statt wie früher über einen Vergleich von `getModel()`. Grund: Sofonisba und Lucia verwenden dieselbe `struct Marf248` mit zwei verschiedenen Models; ein Modell-Vergleich hätte nur eines der beiden erkannt. Das Interface ist nötig, weil `struct Marf248` komplett in `Marf248.cpp` definiert ist und `dynamic_cast` den vollständigen Zieltyp braucht. Solange kein Sofonisba andockt, setzen die Expander ihre eigenen Ausgänge selbst jeden Frame auf 0V zurück; so bleibt beim Entfernen oder Verschieben keine Spannung hängen.
+Alle drei Expander (Amilcare, Bianca, Ritornello) erkennen Sofonisba oder Lucia links oder rechts von sich (`getLeftExpander()`/`getRightExpander()`) und zeigen das über ein grünes `LINK_LIGHT` an. Die Erkennung läuft per `dynamic_cast` gegen das schlanke Marker-Interface `struct Marf248Host { virtual ~Marf248Host() = default; };` in `Sofonisba.hpp` (`Marf248 : Module, Marf248Host`) – statt wie früher über einen Vergleich von `getModel()`. Grund: Sofonisba und Lucia verwenden dieselbe `struct Marf248` mit zwei verschiedenen Models; ein Modell-Vergleich hätte nur eines der beiden erkannt. Das Interface ist nötig, weil `struct Marf248` komplett in `Sofonisba.cpp` definiert ist und `dynamic_cast` den vollständigen Zieltyp braucht. Solange kein Sofonisba andockt, setzen die Expander ihre eigenen Ausgänge selbst jeden Frame auf 0V zurück; so bleibt beim Entfernen oder Verschieben keine Spannung hängen.
 
 `Marf248::process()` sucht umgekehrt jeden Frame nach einem `Marf248TriggerExpander`, `Marf248CvExpander` bzw. `Marf248LoopExpander` (Ritornello) als direkten Nachbarn (ebenfalls per `dynamic_cast<Marf248TriggerExpander*>`, `<Marf248CvExpander*>` bzw. `<Marf248LoopExpander*>`; Ritornello wird zuerst links, dann rechts gesucht) und liest bzw. schreibt deren Parameter, Inputs und Outputs unmittelbar über `getParam()`/`getInput()`/`getOutput()` – ohne Message-Passing, denn die Expander haben keine eigene Verarbeitung. Ritornello hat zusätzlich Anzeigezustand (`restShown`, `blinkTimer`), den ausschließlich `Marf248::process()` beschreibt; das Widget liest nur. Die Expander-Typen können unabhängig voneinander andocken (keiner, einer oder mehrere gleichzeitig). Fehlt ein Expander, fallen die zugehörigen Modulationen einfach weg (z.B. Curve-CV/Time-CV = 0, keine Poly-Gate-Overrides, kein Advance, kein Adress-Speicher).
 
@@ -963,7 +963,7 @@ Dieser Abschnitt sammelt alle in den bisherigen Entwicklungssessions aufgetreten
 - Sustain ohne Kabel hält nie (`startGateHigh` ist immer `false`): Die Stage läuft scheinbar wie eine normale Stage durch, das Sustain-Bit hat ohne gepatchtes Gate also keine sichtbare Wirkung.
 - Enable ohne Kabel hält immer (`!startGateHigh` ist immer `true`): Die Stage bleibt für immer stehen, egal wie viele Advance-Trigger kommen oder ob die Stage-Zeit abläuft. Das sieht aus wie ein hängengebliebenes oder kaputtes Modul, ist aber exakt die spezifizierte „wartet auf Freigabe per Gate"-Semantik.
 
-Zum Testen: ein Kabel (z.B. von einem manuellen Trigger-/Gate-Taster-Modul) an START_A/B patchen und das Gate hoch- und runterschalten – erst dann zeigt sich das jeweils andere, freigebende Verhalten (Sustain hält dann während High, Enable hält während Low und gibt bei High frei). (Code: `GATE_THRESHOLD`-Kommentarblock in `Afg::process()`, `Marf248.hpp`.)
+Zum Testen: ein Kabel (z.B. von einem manuellen Trigger-/Gate-Taster-Modul) an START_A/B patchen und das Gate hoch- und runterschalten – erst dann zeigt sich das jeweils andere, freigebende Verhalten (Sustain hält dann während High, Enable hält während Low und gibt bei High frei). (Code: `GATE_THRESHOLD`-Kommentarblock in `Afg::process()`, `Sofonisba.hpp`.)
 
 ### 10.2 Der Stage-Address-Knob bewegt currentStage nie von selbst
 
@@ -1123,7 +1123,7 @@ Direkter Kontrast zu [10.14](#sec10): Ein einzelner Klick auf einen Stage-Modifi
 ## 12. Cross-Compile-Workflow
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
-Für Windows- und Linux-Builds abseits des lokalen Entwicklungsrechners steht die VCV Rack Plugin Toolchain bereit – eingerichtet und verifiziert funktionierend. Dieser Workflow ist ein zusätzlicher Schritt vor Releases und Codeberg-Pushes; er ersetzt nicht den normalen lokalen Entwicklungs-Workflow (`make clean && make -j4 && make install` im Projektordner) für die tägliche Feature-Arbeit.
+Für Windows- und Linux-Builds abseits des lokalen Entwicklungsrechners steht die VCV Rack Plugin Toolchain bereit – eingerichtet und verifiziert funktionierend. Dieser Workflow ist ein zusätzlicher Schritt vor Releases und Github-Pushes; er ersetzt nicht den normalen lokalen Entwicklungs-Workflow (`make clean && make -j4 && make install` im Projektordner) für die tägliche Feature-Arbeit.
 
 Toolchain-Repo: `~/vcvrack-sdk/rack-plugin-toolchain` (geklont von `github.com/VCVRack/rack-plugin-toolchain`, Branch `v2`).
 
@@ -1159,10 +1159,10 @@ Die Ergebnis-Pakete (`.vcvplugin`, technisch ein Zip-Archiv) landen in `~/vcvrac
 ### Lokal in Rack testen
 
 ```bash
-unzip plugin-build/Marf248-<version>-lin-x64.vcvplugin -d <Rack-Plugin-Ordner>
+unzip plugin-build/reminiscence-of-the-unattained-<version>-lin-x64.vcvplugin -d <Rack-Plugin-Ordner>
 ```
 
-In der Regel ist das `~/.Rack2/plugins-linux-x64/`. Eine alte Marf248-Version dort vorher entfernen und Rack anschließend neu starten.
+In der Regel ist das `~/.Rack2/plugins-linux-x64/`. Eine alte Version des Plugins dort vorher entfernen und Rack anschließend neu starten.
 
 ---
 
@@ -1179,7 +1179,7 @@ Die folgenden Abbildungen sind schematische Panel-Diagramme (kein fotorealistisc
 *[[#Abbildung 1 – Sofonisba Panel-Spaltenlayout (schematische Übersicht)|Obsidian]]*
 
 ![Sofonisba Panel Overview](figures/Sofonisba_PanelOverview.svg)<br>
-Referenziert aus [3.1](#sec3-1) · [[#3.1 Panel-Layout|Obsidian]]. Zeigt die dort beschriebene Spaltenstruktur (External CV / Section-A-Controls-Jacks-Ausgänge / 16× Stage / Section-B-Ausgänge-Jacks-Controls / Preset-Spalte). Da alle 16 Stage-Spalten strukturell identisch sind, sind nur die ersten zwei sowie die letzte vollständig gezeichnet; der Rest ist zu „…" zusammengefasst – siehe Abbildung 2 für das detaillierte Pro-Stage-Layout. Stand veraltet (Session „Time/Reference-Output-Trennung"): Die Ausgangsspalte zeigt noch nur VOUT/TOUT; die neue `TIMESTATIC_A/B_OUTPUT`-Buchse direkt unter TOUT (siehe [3.3](#sec3-3)) fehlt – die SVG-Regenerierung war nicht Teil dieser Session.
+Referenziert aus [3.1](#sec3-1) · [[#3.1 Panel-Layout|Obsidian]]. Zeigt die dort beschriebene Spaltenstruktur (External CV / Section-A-Controls-Jacks-Ausgänge / 16× Stage / Section-B-Ausgänge-Jacks-Controls / Preset-Spalte). Da alle 16 Stage-Spalten strukturell identisch sind, sind nur die ersten zwei sowie die letzte vollständig gezeichnet; der Rest ist zu „…" zusammengefasst – siehe Abbildung 2 für das detaillierte Pro-Stage-Layout.
 
 <a id="fig2"></a>
 
@@ -1187,7 +1187,7 @@ Referenziert aus [3.1](#sec3-1) · [[#3.1 Panel-Layout|Obsidian]]. Zeigt die dor
 *[[#Abbildung 2 – Sofonisba Stage-Spalten-Detail|Obsidian]]*
 
 ![Sofonisba Stage Column Detail](figures/Sofonisba_StageColumnDetail.svg)<br>
-Referenziert aus [3.2](#sec3-2) · [[#3.2 Bedienelemente pro Stage|Obsidian]]. Eine repräsentative Stage-Spalte (alle 16 sind identisch, `xStep=36mm` Abstand), mit Voltage-/Time-Slidern, den beiden Stage-LEDs, allen 8 Button-Reihen (je 2 Spalten, `buttonRowsY`/`buttonColOffsets` in `Marf248.cpp`) inklusive des neuen Quantized-Glide-Buttons neben Slope sowie dem Shape-/Curve-/Time-Range-/Range-Block.
+Referenziert aus [3.2](#sec3-2) · [[#3.2 Bedienelemente pro Stage|Obsidian]]. Eine repräsentative Stage-Spalte (alle 16 sind identisch, `xStep=36mm` Abstand), mit Voltage-/Time-Slidern, den beiden Stage-LEDs, allen 8 Button-Reihen (je 2 Spalten, `buttonRowsY`/`buttonColOffsets` in `Sofonisba.cpp`) inklusive des neuen Quantized-Glide-Buttons neben Slope sowie dem Shape-/Curve-/Time-Range-/Range-Block.
 
 <a id="fig3"></a>
 

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg
-   viewBox="0 0 200 90"
-   width="800"
-   height="360"
+   viewBox="-8 0 216 96"
+   width="864"
+   height="384"
    font-family="Arial, Helvetica, sans-serif"
    version="1.1"
    id="svg28"
@@ -33,10 +33,10 @@
      inkscape:window-maximized="1"
      inkscape:current-layer="svg28" />
   <rect
-     x="0"
+     x="-8"
      y="0"
-     width="200"
-     height="90"
+     width="216"
+     height="96"
      fill="#e4e4e2"
      stroke="#333333"
      stroke-width="0.6"
@@ -48,7 +48,7 @@
      fill="#222222"
      text-anchor="middle"
      font-weight="bold"
-     id="text1">Sofinisba – Panel Column Layout (146HP, schematic)</text>
+     id="text1">Sofonisba – Panel Column Layout (146HP, schematic)</text>
   <rect
      x="-6.0"
      y="16"
@@ -167,20 +167,32 @@
      id="rect11" />
   <text
      x="56"
+     y="37.4"
+     font-size="2.6"
+     fill="#3f7fd6"
+     text-anchor="middle"
+     dominant-baseline="middle">VOUT</text>
+  <text
+     x="56"
      y="43.8"
      font-size="2.6"
      fill="#3f7fd6"
      text-anchor="middle"
-     dominant-baseline="middle"
-     id="text12">VOUT/TOUT</text>
+     dominant-baseline="middle">REF</text>
   <text
      x="56"
-     y="50.199999999999996"
+     y="50.2"
      font-size="2.6"
      fill="#3f7fd6"
      text-anchor="middle"
-     dominant-baseline="middle"
-     id="text13">Section A</text>
+     dominant-baseline="middle">TIME</text>
+  <text
+     x="56"
+     y="56.6"
+     font-size="2.6"
+     fill="#3f7fd6"
+     text-anchor="middle"
+     dominant-baseline="middle">Section A</text>
   <rect
      x="66.0"
      y="16"
@@ -219,10 +231,10 @@
      x="110"
      y="47.0"
      font-size="7"
-     fill="..."
+     fill="#555555"
      text-anchor="middle"
      dominant-baseline="middle"
-     id="text16">18</text>
+     id="text16">…</text>
   <rect
      x="120.0"
      y="16"
@@ -251,20 +263,32 @@
      id="rect17" />
   <text
      x="146"
+     y="37.4"
+     font-size="2.6"
+     fill="#e08a2e"
+     text-anchor="middle"
+     dominant-baseline="middle">VOUT</text>
+  <text
+     x="146"
      y="43.8"
      font-size="2.6"
      fill="#e08a2e"
      text-anchor="middle"
-     dominant-baseline="middle"
-     id="text18">VOUT/TOUT</text>
+     dominant-baseline="middle">REF</text>
   <text
      x="146"
-     y="50.199999999999996"
+     y="50.2"
      font-size="2.6"
      fill="#e08a2e"
      text-anchor="middle"
-     dominant-baseline="middle"
-     id="text19">Section B</text>
+     dominant-baseline="middle">TIME</text>
+  <text
+     x="146"
+     y="56.6"
+     font-size="2.6"
+     fill="#e08a2e"
+     text-anchor="middle"
+     dominant-baseline="middle">Section B</text>
   <rect
      x="156.0"
      y="16"
@@ -361,5 +385,5 @@
      font-size="2.5"
      fill="#888"
      text-anchor="middle"
-     id="text28">Not to exact scale/HP width - schematic block diagram, see source coordinates in Marf248.cpp Marf248Widget for exact mm positions.</text>
+     id="text28">Not to exact scale/HP width - schematic block diagram, see source coordinates in Sofonisba.cpp Marf248Widget for exact mm positions.</text>
 </svg>
