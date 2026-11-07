@@ -1,176 +1,190 @@
 # Anna-Maria – Documentation (Draft, English)
 
-Quad lowpass gate for VCV Rack, heavily inspired by the wonderful Buchla world of modules. Part of the plugin "reminiscence of the unattained", version 2.4.0.
-Date: 2026-10-29. Status: draft. Until the listening test in Rack, all statements about sound are **measured on the model**, not heard. The Rack tests of the linear gate part (section 5), of the velocity target "Audio offset" (section 3a) and of the V/Oct resonator (section 3b) are still pending; the four-channel panel is confirmed in Rack.
+Anna-Maria is a quad low-pass gate for VCV Rack, strongly inspired by the wonderful world of Buchla modules. It is part of the plugin "reminiscence of the unattained", version 2.4.0.
+Status as of: 2026-10-24. Status: draft.
 
-Anna-Maria is an independent work and has no connection to the makers of the modules it takes its inspiration from; all brands and names belong to their owners.
+Until the listening test in Rack, all statements about sound are measured on the model, not heard. Not yet tested in Rack are the linear gate path (section 5), the velocity target "Audio offset" (section 3a), and the tuned resonator with V/OCT and WET (section 6a). Kinovice built the resonator in Rack and tried it with a pulse and with noise; the test series is still pending. The four-channel panel is confirmed in Rack.
 
-All numbers come from test programs run against the engine (sample rate 48 kHz, no oversampling, "Reference" mode for the vactrol behavior) unless stated otherwise. Sections 4 to 8 describe the paper model (LOWPASS, and BOTH and VCA with "Gate response = Paper circuit"); what changes with the linear gate part is in section 5. The nonlinearity measurements (section 7) are explicitly labeled "Corrected" or "Reference".
+Anna-Maria is an independent work and has no connection with the manufacturers of the original modules. All trademarks and names belong to their owners.
+
+Unless stated otherwise, all numerical values come from test programs run against the engine. They assume 48 kHz, no oversampling, and the vactrol mode "Reference". Sections 4 to 8 describe the Paper model, that is LOWPASS as well as BOTH and VCA with "Gate response = Paper circuit". What changes with the linear gate path is described in section 5. The measurements on the nonlinearity (section 7) name the solver, "Corrected" or "Reference", in each case.
 
 ---
 
 ## 1. Overview
 
-Anna-Maria emulates a lowpass gate: a lowpass filter and/or a VCA whose opening is controlled by a control voltage (CV) through a vactrol (LED + light-dependent resistor). The model follows the paper *Parker/D'Angelo, DAFx-13* and the Octave simulation `buchla_lp_gate.m` (Stefano D'Angelo, MIT). The C++ engine matches the Octave reference to 1e-13 … 1e-15 (relative, 7 test cases).
+Anna-Maria models a low-pass gate. It consists of a low-pass filter and/or a VCA. A control voltage (CV) sets, via a vactrol (an LED with a light-dependent resistor), how far both open. The model follows the paper *Parker/D'Angelo, DAFx-13* and the Octave simulation `buchla_lp_gate.m` (Stefano D'Angelo, MIT). In seven test cases the C++ engine agrees with the Octave reference to 1e-13 to 1e-15 (relative).
 
 Special features of this module:
 
-* **Four separate monophonic channels** (LPG 1–4) plus an ALL column with global elements (31 HP). Each channel has its own knobs and CV inputs for ATT, velocity, THRESHOLD and FEEDBACK and its own switches for MODE, FB NL and DEEP. The ALL output sums the four channels.
-* **Control path after the hardware module:** ATT is a control level of 0…10 V, velocity a DC offset on it; a patched CV replaces the respective knob (section 3).
-* **VCA and BOTH with a linear gate part** (default): VCA behaves like a linear VCA; BOTH puts a linear VCA and then the lowpass gate in series (section 5). The paper model stays selectable in the menu.
-* One **DRIVE** knob for the whole module (level into the model; only affects the nonlinearity) and one **VACTROL** knob (time scale of the vactrol, section 8), both in the ALL column.
-* **V/Oct resonator:** every channel has a V/OCT input. When it is patched, a resonator tuned to the note rings in front of the lowpass gate; FEEDBACK then sets its decay time, and the global WET and DRY knobs mix it with the direct signal (section 3b).
-* Feedback is either **normalized** (default) or **circuit-accurate** (absolute).
-* Model variants in the context menu: vactrol behavior (section 8, default = Reference), NL solver (section 11, default = Corrected), gate part and filter stage of BOTH (section 5), velocity target (section 3a) and an optional saturation (section 7a).
+* **Four separate, monophonic channels** (LPG 1–4) and an ALL column with global elements, 31 HP in total. Each channel has its own knobs and CV inputs for ATT, velocity, THRESHOLD and FEEDBACK, as well as its own switches for MODE, FB NL and DEEP. The ALL output sums the four channels.
+* **Control path after the hardware original:** ATT is a control level of 0…10 V, and velocity is a DC offset on top of it. A patched CV replaces the respective knob (section 3).
+* **VCA and BOTH with a linear gate path** (default): VCA behaves like a linear VCA. BOTH puts the linear VCA and then the low-pass gate in series (section 5). The Paper model remains selectable in the menu.
+* **DRIVE and VACTROL** for the whole module, both in the ALL column. DRIVE sets the level into the model and only affects the nonlinearity. VACTROL is the time factor of the vactrol (section 8).
+* **Feedback** either normalized (default) or circuit-accurate (absolute).
+* **V/OCT input and WET** (section 6a): Each channel has a V/OCT input. It tunes a resonator in front of the gate to a note, so a ping or pluck can be played at a pitch. A global WET knob with a polyphonic CV input sets the level of the resonator.
+* **Model variants in the context menu:**
+  * Vactrol behavior (section 8, default = Reference)
+  * NL solver (section 11, default = Corrected)
+  * Gate path and filter stage of BOTH (section 5)
+  * Velocity target (section 3a)
+  * optional saturation (section 7a)
 
 ## 2. Signal flow
 
-Per channel (paper model, MODE LOWPASS):
+Per channel, Paper model, MODE LOWPASS:
 
 ```
-Audio IN ─ ÷level factor ─► [ audio path: 2 integrators + differentiator,
+Audio IN ─ ÷level factor ─► [ Audio path: 2 integrators + differentiator,
                               feedback (optional tanh) ] ─► ×level factor ─► Audio OUT
                                          ▲
                                          │ Rf (vactrol resistance)
 ATT (knob or CV) ─┐
-                  ├─ + ─ limit 0…10 V ─ + THRESHOLD (offset) ─ shelving ─ curve ─ LED current ─ vactrol (lowpass on Rf)
-velocity (knob/CV) ┘
+                  ├─ + ─ limit 0…10 V ─ + THRESHOLD (offset) ─ shelving ─ characteristic ─ LED current ─ vactrol (low-pass on Rf)
+Velocity (knob/CV) ┘
 ```
 
-* The vactrol resistance Rf determines both the gain of the VCA part and the cutoff frequency of the lowpass.
-* Open state: Rf ≈ 1.5 kΩ. Closed: Rf up into the MΩ range.
-* **Control level:** `cv = clamp(ATT + velocity, 0 … 10 V)`. THRESHOLD acts as an offset **after** this limit (section 4).
-* **Linear gate part (VCA, BOTH):** `g = cv / 10`, smoothed with the vactrol time constants. VCA: `output = g · input`, no filter. BOTH: first `g · input`, then the filter stage (section 5).
-* Only the velocity target "Audio offset" is different: the control level is then `clamp(ATT, 0 … 10 V)`, and velocity is added to the signal behind the gate as a DC offset (section 3a).
-* **V/Oct (patched, only with a resonance stage):** in front of the filter stage the signal of a tuned resonator is added to the (filtered) direct signal: `input of the stage = DRY · direct path + WET · resonator`. The lowpass gate still decides how long the tone is audible (section 3b).
+* The vactrol resistance Rf determines both the gain of the VCA part and the cutoff frequency of the low-pass filter.
+* In the open state, Rf is about 1.5 kΩ. Closed, it reaches into the MΩ range.
+* **Control level:** `cv = clamp(ATT + velocity, 0 … 10 V)`. THRESHOLD acts as an offset after this limiting (section 4).
+* **Linear gate path (VCA, BOTH):** `g = cv / 10`, smoothed with the vactrol time constants.
+  * VCA: `output = g · input`, no filter.
+  * BOTH: first `g · input`, then the filter stage (section 5).
+* **Exception, velocity target "Audio offset":** The control level is then `clamp(ATT, 0 … 10 V)`. Velocity is added to the signal as a DC offset after the gate (section 3a).
 
 ## 3. Controls and their effect
 
-All knobs and switches except those in the ALL column apply **per channel** (four channels). The ALL and LPG 1–4 columns carry their labels above the elements.
+All knobs and switches except those in the ALL column apply per channel. The ALL and LPG 1–4 columns carry their labels above the elements.
 
-**Channel column (LPG 1–4), rows from the top:**
+**Channel column (LPG 1–4), rows from top:**
 
-| Element | Range / default | Short effect |
+| Element | Range / default | Short description |
 |---|---|---|
-| IN | audio | Input. IN 1 is normalled to IN 2–4 when nothing is patched there. |
-| OUT | audio | Channel output (mono). |
+| IN | Audio | Input. IN 1 is normalled to IN 2–4 as long as nothing is patched there. |
+| OUT | Audio | Channel output (mono). |
 | ATT | 0…10 V, 0 V | Control level of the gate. A patched ATT CV replaces the knob. |
 | VEL | −10…+10 V, 0 V | Velocity, DC offset on the control level. A patched velocity CV replaces the knob. |
-| THRESH | 0…7.5 V, 7.5 V | Gate threshold (paper model). A patched THRESHOLD CV replaces the knob. |
+| THRESH | 0…7.5 V, 7.5 V | Threshold of the gate (Paper model). A patched THRESHOLD CV replaces the knob. |
 | FEEDBACK | 0…100 %, 0 % | Resonance. A patched FEEDBACK CV replaces the knob. |
-| FB NL | off/on, off | Enables the tanh nonlinearity in the feedback. |
-| V/OCT | −6…+6 V (0 V = C4) | Pitch of the resonator (section 3b). Without a cable the resonator is off. While patched, FEEDBACK sets the decay time. |
+| FB NL | off/on, off | Switches on the tanh nonlinearity in the feedback. |
+| V/OCT | −6…+6 V, 0 V = C4 | Pitch of the resonator (section 6a). The jack sits in the same row as FB NL, to its right. |
 | MODE | LOWPASS / BOTH / VCA, BOTH | Operating mode (section 5). |
 | DEEP | off/on, off | Placeholder, no function. |
 
 **ALL column (global):**
 
-| Element | Range / default | Short effect |
+| Element | Range / default | Short description |
 |---|---|---|
-| ALL OUT | audio | Sum of the four channels, then a soft limiter at ±10 V (linear up to ±7 V). No division by the channel count. |
-| MODE | LOWPASS / BOTH / VCA, BOTH | Writes the mode to all four channel switches; afterwards the channel switches can be operated individually again. |
-| MODE CV | 0…10 V | When patched, it sets the mode of **all** channels and takes precedence over the switches: below 3.3 V = VCA, below 6.6 V = LOWPASS, above that BOTH. |
+| ALL OUT | Audio | Sum of the four channels, followed by a soft limiter at ±10 V (linear up to ±7 V). The sum is not divided by the number of channels. |
+| MODE | LOWPASS / BOTH / VCA, BOTH | Writes the mode into all four channel switches. Afterwards the channel switches can again be operated individually. |
+| MODE CV | 0…10 V | When patched, it determines the mode of all channels and takes precedence over the switches: below 3.3 V = VCA, below 6.6 V = LOWPASS, above that BOTH. |
 | DRIVE | 0–10, 5 | Level into the model (section 7). |
-| VACTROL | ×0.1…×10, centre = ×1 | Time scale of the vactrol (section 8). |
-| DRY | 0…100 %, 30 % | Level of the direct signal while V/OCT is patched (gain = position², 100 % = level unchanged, 0 = only the resonator is heard). |
-| WET | 0…100 %, 90 % | Level of the tuned resonator (gain = 0.045 · position², shown in percent and dB). |
-| WET CV | 0…10 V = 0…100 % | Polyphonic: channel 1–4 = LPG 1–4, a mono cable is used for all four. Replaces the WET knob when patched. |
+| VACTROL | ×0.1…×10, center = ×1 | Time factor of the vactrol (section 8). |
+| WET | 0…100 %, 35 % | Level of the tuned resonator (section 6a). |
+| WET CV | 0…10 V, polyphonic | When patched, it replaces the WET knob. Channels 1–4 of the cable control LPG 1–4. |
 
-**Context menu (right click):** DEPTH per channel (submenu "Depth" with one slider for all four channels and one each for channels 1–4, default 100 %) and the model settings (section 10). A right click on a channel knob or switch offers "Apply to all 4 channels".
+The ALL column no longer has a global DEEP switch. The channel DEEP switches remain; they stay placeholders.
 
-**Effects in detail:**
+**Context menu (right-click):** It contains DEPTH per channel and the model settings (section 10). The "Depth" submenu has one slider for all four channels and one each for channels 1–4, default 100 %. A right-click on a channel knob or switch offers "Apply to all 4 channels".
 
-* **ATT.** The control level of the gate in volts. By default, the ATT knob (or the patched ATT CV) is the source of the control level `cv`; in the paper model the gate opens when `cv` exceeds the threshold, in the linear gate part the gain is `cv / 10`. A patched CV is not scaled (1 V per V); it replaces the knob.
-* **VEL (velocity).** A DC offset added to the control level (knob and CV alike). The sum `ATT + velocity` is limited to 0…10 V. A negative velocity shrinks the range ATT can reach; with ATT 5 V and velocity −5 V the gate is closed. Velocity can alternatively be set as a DC offset on the audio signal (section 3a).
-* **THRESHOLD.** The **control level in volts at which the gate is half open**, in the paper model. Lower = the gate opens earlier, i.e. already at a small ATT; 7.5 V = the gate opens only at a very high control level. A patched THRESHOLD CV input replaces the knob (1 V per V, limited to 0…7.5 V; positive CV = higher threshold = gate harder to open). Internally: offset and threshold formula, section 4. In the linear VCA THRESHOLD has no effect; in BOTH with the lowpass stage it acts on its filter part.
-* **FEEDBACK.** Resonance, see section 6. FEEDBACK CV: 0…10 V corresponds to 0…100 %, limited. Both CV inputs (THRESHOLD, FEEDBACK) act per sample and can be used at audio rate; this costs more CPU because the filter coefficients change in every sample.
-* **DEPTH (context menu).** How deep the gate closes **far below the threshold** (leak): 3 V below −31 dB (0 %) to −35 dB (100 %), 6 V below −36 dB to −49 dB (paper VCA). The threshold itself stays put when you turn it. Internally: trim. Default 100 %.
-* **FB NL.** Enables the tanh nonlinearity in the feedback (section 7). Works where FEEDBACK works (section 6).
+**Effect in detail:**
+
+* **ATT.** ATT is the control level of the gate in volts. By default the ATT knob or the patched ATT CV provides the control level `cv`. In the Paper model, the gate opens as soon as `cv` exceeds the threshold. With the linear gate path, the gain is `cv / 10`. A patched CV is not scaled (1 V per V); it replaces the knob.
+* **VEL (velocity).** Velocity is a DC offset that is added to the control level, as a knob or as a CV. The sum `ATT + velocity` is limited to 0…10 V. A negative velocity reduces the range that ATT can reach. With ATT 5 V and velocity −5 V the gate is closed. Alternatively, velocity can be applied as a DC offset to the audio signal (section 3a).
+* **THRESHOLD.** In the Paper model, THRESHOLD is the control level in volts at which the gate is half open. A lower value makes the gate open earlier, that is at a small ATT. At 7.5 V it only opens at a very high control level. A patched THRESHOLD CV input replaces the knob. It works at 1 V per V and is limited to 0…7.5 V. A positive CV means a higher threshold, so the gate opens less easily. Offset and threshold formula are given in section 4. In the linear VCA, THRESHOLD has no effect. In BOTH with the Lowpass stage, it acts on the filter part of that stage.
+* **FEEDBACK.** FEEDBACK sets the resonance (section 6). With FEEDBACK CV, 0…10 V correspond to 0…100 %, limited. Both CV inputs (THRESHOLD, FEEDBACK) act per sample and can also be used at audio rate. This costs more CPU, because the filter coefficients then change in every sample. If a V/OCT cable is patched, FEEDBACK instead sets the ring time of the resonator (section 6a).
+* **V/OCT.** The input tunes the resonator in front of the gate to the note (0 V = C4, ±6 octaves). It does not produce a tone by itself, but makes the gate ring at this pitch when excited by an impulse or noise. Without a cable the behavior is the same as without the resonator (section 6a).
+* **WET.** WET sets the level of the resonator, applies to all channels, and has a polyphonic CV (section 6a).
+* **DEPTH (context menu).** DEPTH determines how deeply the gate closes far below the threshold (leakage). At 3 V below the threshold it is −31 dB (0 %) to −35 dB (100 %), at 6 V below −36 dB to −49 dB (Paper VCA). The threshold itself stays put when you turn it. Internally DEPTH corresponds to the trim. Default is 100 %.
+* **FB NL.** FB NL switches on the tanh nonlinearity in the feedback (section 7). The switch acts wherever FEEDBACK acts (section 6).
 * **MODE.** See section 5.
-* **DRIVE.** Level factor: input voltage that corresponds to model amplitude 1 = 5·2^(2·(5−Drive)/5) V, i.e. 20 V (0), 5 V (5), 1.25 V (10). The output is scaled back; **with the NL off, DRIVE does not change the sound**. With NL: more drive = more harmonics and less level (section 7).
-* **VACTROL.** Time scale for both vactrol time constants (rise 2.4 ms, fall 50 ms at ×1 = values of the paper). Left = fast, the gate follows the CV; right = slow, envelope-like (section 8). One knob for all channels. It also sets the lag of the linear gate part (assumption, section 5).
-* **Channels without a source.** A channel is not computed when neither its own IN nor IN 1 is patched; its output then delivers 0 V. A channel without an OUT cable is skipped as long as ALL is not patched.
-* **V/OCT, DRY, WET.** See section 3b.
+* **DRIVE.** DRIVE sets the level factor. This is the input voltage that corresponds to model amplitude 1: 5·2^(2·(5−Drive)/5) V, that is 20 V (0), 5 V (5) and 1.25 V (10). The output signal is scaled back. With the NL switched off, DRIVE does not change the sound. With NL, more drive means more overtones and less level (section 7).
+* **VACTROL.** VACTROL is a time factor on both vactrol time constants (rise 2.4 ms, fall 50 ms at ×1; these are the values of the paper). Left is fast, the gate follows the CV. Right is slow and envelope-like (section 8). One knob applies to all channels. It also sets the inertia of the linear gate path (assumption, section 5).
+* **Channels without a source.** A channel is not computed if neither its own IN nor IN 1 is patched. Its output then delivers 0 V. A channel without an OUT cable is skipped as long as ALL is not patched.
 
 ### 3a. Velocity target: "Control level" or "Audio offset"
 
-In the context menu, **Velocity target** sets where velocity acts. The setting applies to all channels and modes.
+In the context menu, **Velocity target** determines where velocity acts. The setting applies to all channels and modes.
 
-* **Control level** (default, hardware model): velocity is added to the control level, `cv = clamp(ATT + velocity, 0 … 10 V)`. The audio signal never sees a DC offset. A negative velocity therefore only makes the signal quieter (in the linear VCA) or shifts where the gate opens; nothing is cut off.
-* **Audio offset:** ATT or the ATT CV stays the control level (without velocity). Velocity acts as a DC offset on the signal **after** the gate (i.e. after the attenuation by ATT), at the channel output before the ALL sum:
-  * Velocity 0 = no effect; the transition is smooth.
-  * The signal is shifted by the velocity voltage and cut at ±10 V (Rack range) in the direction of the shift: below −10 V for negative velocity, above +10 V for positive velocity. A signal already beyond the limit is not cut further.
-  * The offset acts only while the gate is open, then at full value: the weight is `clamp(cv · 2, 0, 1)` (0 at ATT 0 V, full from ATT 0.5 V), smoothed with the vactrol times so that the offset does not click. The 0.5 V is an assumption.
-  * The offset is a DC component at the output; ALL contains the offsets of all four channels. In LOWPASS and in the paper gate, ATT serves as the measure of opening, not the real filter state.
+* **Control level** (default, hardware original): Velocity is added to the control level, `cv = clamp(ATT + velocity, 0 … 10 V)`. The audio signal never receives a DC offset. A negative velocity therefore only makes the signal quieter in the linear VCA. In the Paper gate it shifts the opening. Nothing is clipped.
+* **Audio offset:** ATT or ATT CV remains the control level, without velocity. Velocity acts as a DC offset on the signal after the gate, that is after the attenuation by ATT. The DC offset sits at the channel output, before the ALL sum.
+  * Velocity 0 has no effect; the transition is smooth.
+  * The signal is shifted by the velocity voltage and clipped in the direction of the shift at ±10 V (Rack range): below −10 V for negative velocity, above +10 V for positive velocity. A signal that already lies beyond the limit is not clipped further.
+  * The offset only acts when the gate is open, then with its full value. The weight is `clamp(cv · 2, 0, 1)`: 0 at ATT 0 V, full from ATT 0.5 V. It is smoothed with the vactrol times so that the offset does not click. The 0.5 V is an assumption.
+  * The offset is a DC offset at the output. ALL contains the offsets of all four channels.
+  * In LOWPASS and in the Paper gate, ATT serves as the measure of the opening, not the actual filter state.
 
-Examples (gate open): signal after ATT ±2 V, velocity −4 V → −6 / −2 V. Signal ±5 V, velocity −4 V → +1 / −9 V; velocity −7 V → −2 / −10 V (cut); velocity +1 V → +6 / −4 V; velocity +7 V → +10 / +2 V (cut). At ATT 0 V: no offset.
+Examples (gate open):
 
-### 3b. V/Oct resonator, DRY and WET
-
-The V/OCT input of each channel (row 6, right of FB NL) tunes a resonator that sits in front of the lowpass gate. It is **not a tuning of the filter**: an earlier version scaled the time of the whole filter, which damped the sound; it has been replaced. The gate itself sounds unchanged.
-
-* **When it acts.** Only with a patched V/OCT cable and only in modes with a resonance stage: LOWPASS, and BOTH with "Gate response = Linear" and "BOTH filter stage = Lowpass". In VCA, in BOTH with the paper stage or the paper gate, and without a cable it is off; the sound is then bit-identical to a module without the resonator.
-* **Pitch.** 0 V = C4 (261.63 Hz), range ±6 octaves around C4, limited at the top to 0.45 × sample rate. The resonator is a two-pole with an impulse response normalized to amplitude 1, `rⁿ · sin((n+1)·ω0)`: an impulse at IN gives a decaying sine exactly on the note. The pitch does not fall when the gate closes (no glide) and does not depend on gate or vactrol; the lowpass gate only decides how long and how bright the tone is heard.
-* **Decay time.** While V/OCT is patched, FEEDBACK (knob or CV) sets the time in which the resonator decays to −60 dB: `T60 = 0.05 s · 60^FEEDBACK`, i.e. 0 % = 0.05 s, 50 % ≈ 0.39 s, 100 % = 3 s. The gate's own resonance is then off (feedback 0); the FEEDBACK tooltip shows the time.
-* **Mix.** The input of the filter stage is `DRY · direct signal + WET · resonator`. WET and DRY are global knobs in the ALL column. The gain grows with the square of the knob position: WET 25 / 35 / 50 / 75 / 90 / 100 % corresponds to about −51 / −45 / −39 / −32 / −29 / −27 dB (default 90 %); DRY 30 % (default) corresponds to −21 dB. The range is tailored to a Rack measurement: a needle pulse adds up to its area in the resonator, and with a pulse height of 10 V it sounded good at about −45 dB (WET ≈ 35 %). Other material (noise burst, sustained tone) has a different level; adjust WET and DRY then.
-* **Direct path.** While V/OCT is patched, the direct signal runs through a first-order highpass (corner = half the note frequency, at least 150 Hz) and a first-order lowpass (4 kHz). This takes the DC component and the lows out of a unipolar needle pulse (envelope at IN), which would otherwise run through the open gate as a low "thump", and rounds the vertical edge. The resonator is fed from the unfiltered input.
-* **WET CV.** Polyphonic, 0…10 V = 0…100 % of the knob position (same curve as the knob); a mono cable is used for all four channels. A patched cable replaces the WET knob.
-* **Limiting.** The resonator output is soft-limited: linear up to 4 (the impulse response has amplitude 1), above that smoothly towards 8. Without the limiter, sustained noise with a long decay time adds up to 70 times the input and triggers the module's protection.
-* **Excitation.** Meant for short excitation: pulse, click or noise burst at IN. A sustained tone or sustained noise at IN feeds the resonator continuously.
-* **Old patches.** The WET and DRY knobs and the WET CV input are appended at the end; older patches load with the default values. A patch with a V/OCT cable from the earlier version (time scaling) sounds different now, because the resonator has taken its place.
-
-Measurements on the engine (48 kHz): pitch C2 to C8 at T60 0.1 / 0.5 / 3 s: deviation 0.0 cent (C8 +0.2…+0.3 cent). Decay between 50 and 300 ms, measured / target: −150.0 / −150.0, −30.0 / −30.0, −5.0 / −5.0 dB for T60 0.1 / 0.5 / 3 s. Without the resonator the output is bit-identical to the version before (3,385,728 samples across sample rates, modes, NL and vactrol variants). Stability test (pitch modulation ±2 octaves, FM, noise 20 s, T60 3 s): no NaN, peak 16.7 against a module limit of 50. The Rack tests (test plan section 12b) are still pending.
+* Signal after ATT ±2 V, velocity −4 V → −6 / −2 V.
+* Signal ±5 V, velocity −4 V → +1 / −9 V.
+* Signal ±5 V, velocity −7 V → −2 / −10 V (clipped).
+* Signal ±5 V, velocity +1 V → +6 / −4 V.
+* Signal ±5 V, velocity +7 V → +10 / +2 V (clipped).
+* At ATT 0 V there is no offset.
 
 ## 4. Gate behavior: THRESHOLD, DEPTH and control level
 
-This section describes the paper model: LOWPASS, and BOTH and VCA with "Gate response = Paper circuit". In BOTH with the linear gate part and the lowpass stage, the threshold values continue to apply to the filter part.
+This section describes the Paper model, that is LOWPASS as well as BOTH and VCA with "Gate response = Paper circuit". In BOTH with the linear gate path and the Lowpass stage, the threshold values continue to apply to the filter part.
 
-**Operation.** Internally the model has two quantities, *offset* (adds 10 V × offset to the control level) and *trim* (series resistor of the LED). Together they set the gate threshold. The panel instead offers **THRESHOLD** (the threshold in volts) and **DEPTH** (trim, how deep the gate closes, in the context menu). The module calculates the offset from the chosen threshold: `Offset = (T(Trim) + 0.05 V − THRESHOLD) / 10 V`. The THRESHOLD range is 0…7.5 V, default 7.5 V. At DEPTH 100 % (default) the offset at 7.5 V is 0 (the highest reachable threshold there is 7.41 V), so the gate is really closed without a control voltage. At a lower DEPTH the threshold at offset 0 is higher (T(Trim)); THRESHOLD 7.5 V then already means a small offset. If the range is exceeded, the module limits the offset and the tooltip shows the effective threshold. The conversion has been checked against the engine (36 combinations, largest deviation 0.008 V).
+**Operation.** Internally the model knows two quantities. *Offset* adds 10 V × offset to the control level. *Trim* is the series resistor of the LED. Together they determine the gate threshold. On the panel these are replaced by **THRESHOLD** (the threshold in volts) and **DEPTH** (the trim, in the context menu; it determines how deeply the gate closes).
 
-Old patches (OFFSET/TRIM, panel with 16 channels) are converted on load; gain and threshold are preserved, only the knobs look different. For patches from before the hardware signal path (ATT as gain ±400 %), ATT is set to 0 V on load; patches with a CV cable sound different because the CV is no longer scaled.
+The module calculates the offset from the chosen threshold:
 
-**How the threshold arises.** The gate opens when `control level + 10 V × offset` reaches about 9.12 V (at DEPTH 50 %). The 9.12 V is dictated by the circuit (series resistor and behavior of the LED stage). The offset branch supplies at most 10 V. It follows that `threshold = 9.12 V − 10 V × offset`:
+`offset = (T(trim) + 0.05 V − THRESHOLD) / 10 V`
+
+* The control range of THRESHOLD is 0…7.5 V, default 7.5 V.
+* At DEPTH 100 % (default) the offset at 7.5 V is 0. The highest reachable threshold there is 7.41 V. So without a control voltage the gate is really closed.
+* At a smaller DEPTH, the threshold at offset 0 is higher (T(trim)). THRESHOLD 7.5 V then already means a small offset.
+* Outside the range the module limits the offset. The tooltip names the effective threshold.
+* The conversion has been checked against the engine (36 combinations, largest deviation 0.008 V).
+
+Old patches (OFFSET/TRIM, panel with 16 channels) are converted when loaded. Gain and threshold are kept; only the knobs look different. For patches from before the hardware signal path (ATT as gain ±400 %), the module sets ATT to 0 V on loading. Patches with a CV cable sound different, because the CV is no longer scaled.
+
+**How the threshold comes about.** The gate opens when `control level + 10 V × offset` reaches about 9.12 V (at DEPTH 50 %). The 9.12 V is fixed by the circuit, namely by the series resistor and the behavior of the LED stage. The offset branch delivers at most 10 V. From this follows `threshold = 9.12 V − 10 V × offset`:
 
 | Offset (internal) | Threshold | Meaning |
 |---|---|---|
-| 0 | +9.1 V (DEPTH 50 %) | Gate opens only at 9.1 V control level |
+| 0 | +9.1 V (DEPTH 50 %) | Gate only opens at 9.1 V control level |
 | 0.5 | +4.1 V | Middle position |
-| 0.9 | +0.1 V | Gate just barely closed at 0 V control level |
-| 1.0 | −0.9 V | Gate already open at 0 V (outside the 0…7.5 V range of the knob) |
+| 0.9 | +0.1 V | Gate just still closed at 0 V control level |
+| 1.0 | −0.9 V | Gate already open at 0 V (outside the control range 0…7.5 V) |
 
-"Threshold" here is the control level at which the gate is half open, a comparison value and not a signal level. Since the module's control level never falls below 0 V, the panel has no negative threshold any more.
+"Threshold" is the control level at which the gate is half open. It is a reference value, not a signal level. The control level never falls below 0 V, so there is no negative threshold on the panel any more.
 
-**Where T(DEPTH) comes from.** DEPTH is shown as a knob position of 0…100 % (value 0…1) and is not a voltage. It is the trimmer of the original circuit (TP1, 20 kΩ), which changes the series resistor of the LED. From it the module computes the reference threshold T in volts:
+**Where T(DEPTH) comes from.** DEPTH is displayed as a knob travel of 0…100 % (value 0…1) and is not a voltage. It corresponds to the trimmer of the original (TP1, 20 kΩ), which changes the LED series resistor. From it the module calculates the reference threshold T in volts:
 
-`T = 390 000 / (20 000 · DEPTH + 33 000)`
+`T = 390,000 / (20,000 · DEPTH + 33,000)`
 
 | Value | Meaning |
 |---|---|
-| 390 000 | Numerator (V·Ω): according to the paper the zener voltage D1 (3.9 V) times R5 (100 kΩ). It sets the overall scale. |
-| 33 000 | R7 (33 kΩ), the fixed part of the series resistor; it remains at DEPTH 0 %. |
-| 20 000 · DEPTH | R6 = the trimmer. At DEPTH 0 % it is fully out; at 100 % the full 20 kΩ is in the series resistor. |
-| Result T | Control level in volts at which the knee of the LED characteristic is reached (the result is in volts because V·Ω is divided by Ω). |
+| 390,000 | Numerator (V·Ω): according to the paper, the Zener voltage D1 (3.9 V) times R5 (100 kΩ). It sets the overall scale. |
+| 33,000 | R7 (33 kΩ), the fixed part of the series resistor. It remains even at DEPTH 0 %. |
+| 20,000 · DEPTH | R6, the trimmer. At DEPTH 0 % it is fully out; at 100 % the full 20 kΩ are in the series resistor. |
+| Result T | Control level in volts at which the knee of the LED characteristic is reached. The unit is volts because the numerator (V·Ω) is divided by Ω. |
 
-**Direction:** More DEPTH makes the denominator larger and T smaller: the gate opens at a lower control voltage, i.e. more sensitively. Values: DEPTH 0 % → T = 11.82 V, 50 % → 9.07 V, 100 % → 7.36 V. With the margin of 0.05 V (THR_HALF) this gives 11.86 V, 9.12 V and 7.41 V; these are the thresholds at offset 0. If THRESHOLD is above that, the offset is 0; below it, the difference is added to the control level as an offset.
+**Direction:** More DEPTH makes the denominator larger and T smaller. The gate then opens at less control voltage, so it is more sensitive. The values are T = 11.82 V (DEPTH 0 %), 9.07 V (50 %) and 7.36 V (100 %). With the addition of 0.05 V (THR_HALF) this gives 11.86 V, 9.12 V and 7.41 V. These are the thresholds at offset 0. If THRESHOLD is above that, the offset is 0. If it is below, the difference is added to the control level as an offset.
 
-**Physical background.** In the original, the vactrol resistance does not fall evenly with the control voltage. The LED characteristic has a knee where the current Ia = VB / (R6 + R7) is reached. Below it the LED barely glows and the resistance stays high (rough estimate about 64 kΩ). A few tenths of a volt above it, the resistance drops steeply to a few kΩ (fully open). T is the control voltage at which this knee is reached: the trimmer shifts the knee current, and the module converts the distance between the knee and THRESHOLD into an offset on the control level. In the model the gate is half open at this voltage and fully open about 0.1 V above it (rough estimate, not measured on the component). The assignment of the numbers to the components D1, R5, R6 and R7 is derived from the paper and has not been checked against the source code.
+**Physical background.** In the original, the vactrol resistance does not fall evenly with the control voltage. The LED characteristic has a knee where the current Ia = VB / (R6 + R7) is reached. Below it the LED barely glows, and the resistance stays high (rough estimate: approx. 64 kΩ). A few tenths of a volt above it, the resistance falls steeply to a few kΩ, and the gate is then fully open.
+
+T is the control voltage at which this knee is reached. The trimmer shifts the knee current. The module converts the distance between the knee and THRESHOLD into an offset on the control level. In the model, the gate is half open at this voltage and fully open about 0.1 V above it. This is a rough estimate and not measured on the component. The assignment of the numbers to the components D1, R5, R6 and R7 is derived from the paper and not checked against the source code.
 
 **What THRESHOLD is useful for:**
 
-* **Put the threshold into the envelope.** An envelope of 0…10 V at the ATT CV opens the gate only once it exceeds the threshold. Lower THRESHOLD = open earlier and longer; higher = only the upper part of the envelope opens.
-* **Keep the gate open without an envelope.** At THRESHOLD 0 V the half-open point is at control level 0; with some ATT or positive velocity the gate is then open (drone, open filter).
-* **Shift the range.** Velocity (negative) shrinks the range of the ATT knob, THRESHOLD sets from which control level the gate opens; together they determine where on the ATT knob the transition lies.
+* **Placing the threshold within the envelope.** An envelope of 0…10 V at the ATT CV only opens the gate when it exceeds the threshold. A lower THRESHOLD opens earlier and longer, a higher one only in the upper part of the envelope.
+* **Holding the gate open without an envelope.** At THRESHOLD 0 V the half-open point lies at control level 0. With a little ATT or positive velocity the gate is then open (sustained tone, open filter).
+* **Shifting the range.** A negative velocity reduces the range of the ATT knob. THRESHOLD determines from which control level the gate opens. Together they determine where on the ATT knob the transition lies.
 * **Modulated, also at audio rate.** The THRESHOLD CV input (1 V per V, 0…7.5 V) shifts the threshold per sample.
 
-Caution: with THRESHOLD just above 0 V (±0.1 V) the threshold is so close to control level 0 V that the gate stays half open at ATT 0 V. For the selected value, the tooltip says whether the gate is open, half open or closed at ATT 0 V.
+Caution: With THRESHOLD just above 0 V (±0.1 V), the threshold lies so close to control level 0 V that the gate stays half open at ATT 0 V. For the set value, the tooltip shows whether the gate is open, half open or closed at ATT 0 V.
 
-The following tables use the internal quantities offset and trim; conversion THRESHOLD = T(Trim) + 0.05 V − 10 V · offset.
+The following tables use the internal quantities offset and trim. The conversion is THRESHOLD = T(trim) + 0.05 V − 10 V · offset.
 
-Effective threshold (gain 50 % of open gain), measured in VCA mode at 1 kHz:
+Effective threshold (gain 50 % of the open gain), measured in VCA mode at 1 kHz:
 
-`CV_threshold ≈ T(Trim) − 10 V · Offset`, with `T = 390 000 / (R6 + R7)`, `R6 = 20 kΩ · Trim`, `R7 = 33 kΩ`.
+`CV_threshold ≈ T(trim) − 10 V · offset`, with `T = 390,000 / (R6 + R7)`, `R6 = 20 kΩ · trim`, `R7 = 33 kΩ`.
 
-| Offset \ Trim | 0.0 | 0.5 | 1.0 |
+| Offset \ trim | 0.0 | 0.5 | 1.0 |
 |---|---|---|---|
 | 0.00 | never (> 10 V) | 9.12 V | 7.40 V |
 | 0.25 | 9.38 V | 6.62 V | 4.90 V |
@@ -178,9 +192,9 @@ Effective threshold (gain 50 % of open gain), measured in VCA mode at 1 kHz:
 | 0.75 | 4.38 V | 1.62 V | −0.10 V |
 | 1.00 | 1.88 V | −0.88 V | −2.60 V |
 
-That is: with offset 0 and trim 0 the gate never opens within ±10 V (on the panel: THRESHOLD +11.9 V, outside the knob range).
+So at offset 0 and trim 0 the gate never opens within the range ±10 V. On the panel this would correspond to THRESHOLD +11.9 V, outside the control range.
 
-**Characteristic curve** (offset 0.5, trim 0.5, VCA, 1 kHz):
+**Characteristic** (offset 0.5, trim 0.5, VCA, 1 kHz):
 
 | CV [V] | Rf | Gain | dB |
 |---|---|---|---|
@@ -191,84 +205,105 @@ That is: with offset 0 and trim 0 the gate never opens within ±10 V (on the pan
 | 4 | 63.5 kΩ | 0.0379 | −28 |
 | ≥ 4.5 | 1.5 kΩ | 0.633 | −4 |
 
-* **Below the threshold** (leak region) the gain rises only slowly: between −1 V and 4 V about 1.5–3 dB per volt, steeper below that (−4 → −2 V: 16 dB). The gate is "closed" but not silent: still −35 dB at CV 0 V.
-* **The opening is abrupt**: between 10 % and 90 % of the open gain there are only **0.19 V** (4.07…4.26 V). A CV signal that crosses the threshold therefore switches almost like a switch; soft envelopes only act in the leak region and in this narrow transition.
-* **Open gain**: VCA 0.633 (−4 dB), lowpass 1.009, independent of offset and trim.
-* The CV is internally limited to ±10 V.
+* **Below the threshold** (leakage range) the gain rises only slowly. Between −1 V and 4 V it is about 1.5–3 dB per volt, and steeper below that (−4 → −2 V: 16 dB). The gate is "closed", but not silent: at CV 0 V the gain is still −35 dB.
+* **The opening is abrupt.** Between 10 % and 90 % of the open gain there are only 0.19 V (4.07…4.26 V). A CV signal that exceeds the threshold therefore switches the gate almost like a switch. Gentle envelopes only act in the leakage range and in this narrow transition.
+* **Open gain:** VCA 0.633 (−4 dB), Lowpass 1.009, independent of offset and trim.
+* The CV is limited internally to ±10 V.
 
-Practical consequence: an envelope of 0…10 V at the ATT CV opens the gate at THRESHOLD 4.1 V only after 41 % of its rise and closes it again at 4.1 V (offset 0.5, trim 0.5; on the panel with DEPTH 50 %). With THRESHOLD you decide where.
+Practical consequence: An envelope of 0…10 V at the ATT CV opens the gate at THRESHOLD 4.1 V only after 41 % of its rise and closes it again at 4.1 V. This holds for offset 0.5 and trim 0.5, on the panel for DEPTH 50 %. With THRESHOLD you decide where this happens.
 
 ### 4b. THRESHOLD (offset), DEPTH (trim), ATT and velocity in detail
 
-Measurements: `tests/doku_offset_trim_att.cpp`, output `tests/doku_offset_trim_att_ausgabe.txt`.
+Measured values: `tests/doku_offset_trim_att.cpp`, output `tests/doku_offset_trim_att_ausgabe.txt`.
 
-**The principle.** Internally the gate has exactly one control quantity, the "effective control voltage". ATT, velocity, THRESHOLD and DEPTH determine how it arises and when the gate opens:
+**The principle.** Internally the gate has exactly one control quantity, the "effective control voltage". ATT, velocity, THRESHOLD and DEPTH determine how it arises and from when the gate opens:
 
 ```
 ATT (knob or CV) ─┐
                   ├─ + ─► limited to 0…10 V ─► shelving ─┐
-velocity (knob/CV) ┘                                       ├─► current ─► LED ─► vactrol resistance Rf ─► filter/VCA
-THRESHOLD ─► 10 V × offset (DC component) ────────────────┘            ▲
-DEPTH ─► series resistor of the LED (shifts the threshold) ────────────┘
+Velocity (knob/CV) ┘                                      ├─► current ─► LED ─► vactrol resistance Rf ─► filter/VCA
+THRESHOLD ─► 10 V × offset (DC offset) ──────────────────┘            ▲
+DEPTH ─► series resistor of the LED (shifts the threshold) ───────────┘
 ```
 
-The threshold (gate 50 % open) lies at **control level ≈ T(Trim) − 10 V·Offset**, with T = 11.82 V (trim 0), 9.07 V (0.5), 7.36 V (1).
+The threshold at which the gate is 50 % open lies at **control level ≈ T(trim) − 10 V·offset**. T is 11.82 V (trim 0), 9.07 V (0.5) and 7.36 V (1).
 
-**In this model the gate is more of a switch than a fader.** There are three regions:
+**In this model the gate is more of a switch than a regulator.** There are three ranges:
 
-| Region | Position relative to threshold | Filter (LOWPASS) | VCA |
+| Range | Position relative to threshold | Filter (LOWPASS) | VCA |
 |---|---|---|---|
-| **open** | above threshold + 0.1 V | cutoff 12.95 kHz, gain 1.0 | gain 0.633 |
-| **transition** | ± 0.1 V around the threshold (10…90 % within 0.17…0.22 V) | cutoff from ≈ 400 Hz to 13 kHz | gain from 0.04 to 0.63 |
-| **closed (leak)** | below | cutoff 383 Hz (0.5 V below), 296 Hz (2 V), 192 Hz (4 V), 39 Hz (8 V); values for trim 0.5 | −29 dB (0.5 V below), −31 dB (2 V), −35 dB (4 V), −56 dB (8 V) |
+| **open** | above threshold + 0.1 V | Cutoff 12.95 kHz, gain 1.0 | Gain 0.633 |
+| **transition** | ± 0.1 V around the threshold (10…90 % in 0.17…0.22 V) | Cutoff from ≈ 400 Hz to 13 kHz | Gain from 0.04 to 0.63 |
+| **closed (leakage)** | below | Cutoff 383 Hz (0.5 V below), 296 Hz (2 V), 192 Hz (4 V), 39 Hz (8 V); measured values trim 0.5 | −29 dB (0.5 V below), −31 dB (2 V), −35 dB (4 V), −56 dB (8 V) |
 
-That is: in the "closed" region the sound moves only slowly (near the threshold about one octave of cutoff per 4 V, faster further down), and when the threshold is crossed the gate opens in one step. Soft filter sweeps therefore arise mainly from the **vactrol** (rise 2.4 ms / fall 50 ms time constant, section 8), not from a slow CV. A slowly moving CV (LFO, envelope) only becomes "audible" once it crosses the threshold.
+In the "closed" range the sound moves only slowly. Near the threshold the cutoff changes by about one octave per 4 V, faster further below. When the threshold is crossed, the gate then opens in one step. Smooth filter sweeps therefore arise mainly from the **vactrol** (rise 2.4 ms, fall 50 ms, section 8) and not from a slow CV. A slow CV, for example from an LFO or an envelope, only becomes audible when it crosses the threshold.
 
 **THRESHOLD (internally: offset).**
-* Effect on the signal: a pure shift. Measured: the gain at (CV −3 V, offset 0.5), (CV 0 V, offset 0.2) and (CV −6 V, offset 0.8) is identical (0.00457); all have CV + 10·offset = 2 V.
-* Offset without a CV cable is a manual control for the gate. At trim 0.5 the gate is open from offset ≈ 0.91 (threshold 9.07 V). Below that it is "closed", and the knob only changes the leak: LOWPASS cutoff 26 Hz (offset 0), 64 Hz (0.2), 139 Hz (0.4), 236 Hz (0.6), 346 Hz (0.8), 404 Hz (0.9); VCA −110 dB (0), −47 dB (0.2), −38 dB (0.4), −33 dB (0.6), −30 dB (0.8), −28 dB (0.9). At 1.0: open.
-* With a CV cable, offset shifts the position of the threshold relative to the envelope. High offset = the gate opens earlier in the rise and closes later in the fall (longer open time); low offset = the gate opens only at high CV (short open time).
-* Dynamics: offset is a DC quantity and does **not** pass through the shelving filter; fast CV edges, on the other hand, get a short overshoot (section 8).
-* The offset voltage is added after the ±10 V limiting of the CV; effectively up to 20 V can act. Velocity, in contrast, acts before the limit (it is part of the control level, section 3).
+
+* **Effect on the signal:** Pure shift. The gain is identical at (CV −3 V, offset 0.5), (CV 0 V, offset 0.2) and (CV −6 V, offset 0.8) (0.00457). All three have CV + 10·offset = 2 V.
+* **Without a CV cable** the offset is a manual control for the gate. At trim 0.5 the gate is open from offset ≈ 0.91 (threshold 9.07 V). Below that it is "closed", and the knob only changes the leakage:
+  * LOWPASS cutoff: 26 Hz (offset 0), 64 Hz (0.2), 139 Hz (0.4), 236 Hz (0.6), 346 Hz (0.8), 404 Hz (0.9).
+  * VCA: −110 dB (0), −47 dB (0.2), −38 dB (0.4), −33 dB (0.6), −30 dB (0.8), −28 dB (0.9).
+  * At offset 1.0 the gate is open.
+* **With a CV cable** the offset shifts the position of the threshold relative to the envelope. A high offset opens the gate earlier in the rise and closes it later in the fall; the open time becomes longer. A low offset only opens at high CV; the open time is short.
+* **Dynamics:** The offset is a constant quantity and does not run through the shelving filter. Fast CV edges, on the other hand, get a short overshoot (section 8).
+* **Order:** The offset voltage is added after the ±10 V limiting of the CV, so up to 20 V are effective. Velocity, by contrast, acts before the limiting, because it is part of the control level (section 3).
 
 **DEPTH (internally: trim).**
-* Effect 1: shifts the threshold by up to 4.5 V (T = 11.82 → 7.36 V); high trim = the gate opens earlier. At offset 0.5 the threshold is 6.88 / 5.32 / 4.12 / 3.17 / 2.40 V for trim 0 / 0.25 / 0.5 / 0.75 / 1.
-* Effect 2: trim also changes the leak. The higher the trim, the more the gate falls off **far** below the threshold: 6 V below the threshold −36 dB (trim 0), −41 dB (0.5), −49 dB (1); LOWPASS cutoff 8 V below the threshold 101 Hz (trim 0), 39 Hz (0.5), 26 Hz (1). Near the threshold the difference is small (1 V below: −29 / −30 / −30 dB; 3 V below: −31 / −33 / −35 dB for trim 0 / 0.5 / 1).
-* Effect 3: the transition becomes minimally steeper with high trim (0.22 V at trim 0, 0.17 V at trim 1).
-* Rule of thumb on the panel: **THRESHOLD sets the threshold** (to match the height of the envelope), **DEPTH only determines how deep the gate closes below it**. If you have a fixed envelope of 0…10 V, set THRESHOLD so that the threshold lies within the envelope, and use DEPTH to choose how deep the gate closes below it.
+
+* **Effect 1:** DEPTH shifts the threshold by up to 4.5 V (T = 11.82 → 7.36 V). A high trim makes the gate open earlier. At offset 0.5 the threshold is 6.88 / 5.32 / 4.12 / 3.17 / 2.40 V for trim 0 / 0.25 / 0.5 / 0.75 / 1.
+* **Effect 2:** Trim also changes the leakage. The higher the trim, the more strongly the gate falls off far below the threshold:
+  * 6 V below the threshold: −36 dB (trim 0), −41 dB (0.5), −49 dB (1).
+  * LOWPASS cutoff 8 V below the threshold: 101 Hz (trim 0), 39 Hz (0.5), 26 Hz (1).
+  * Near the threshold the difference is small. 1 V below it is −29 / −30 / −30 dB, 3 V below −31 / −33 / −35 dB for trim 0 / 0.5 / 1.
+* **Effect 3:** The transition becomes minimally steeper with a high trim (0.22 V at trim 0, 0.17 V at trim 1).
+* **Rule of thumb on the panel:** THRESHOLD sets the threshold, matched to the height of the envelope. DEPTH only determines how deeply the gate closes below it. If you have a fixed envelope of 0…10 V, first set THRESHOLD so that the threshold lies within the envelope. Then use DEPTH to choose how deeply the gate closes.
 
 **ATT and velocity (control level).**
-* Effect on the signal: the control level is `clamp(ATT + velocity, 0 … 10 V)`. The gate opens when this level exceeds the threshold. The control level comes from the knob or, if patched, from the CV (which replaces the knob).
-* For an envelope 0…10 V at the ATT CV and threshold 4.12 V (offset 0.5, trim 0.5): the envelope opens the gate fully as soon as it reaches 4.2 V; an envelope with a peak of only 4.12 V sits exactly on the threshold (−13 dB), with a 2.5 V peak the gate no longer opens (−31 dB). With negative velocity the envelope is shifted down: the gate opens later in the rise and closes earlier in the fall (shorter open time). For an exponentially decaying envelope 10 V·e^(−t/200 ms), the geometry (without vactrol) gives open times of about 178 ms (peak 10 V), 120 ms (7.5 V) and 38 ms (5 V).
-* ATT 0 V without a CV holds the gate permanently at rest (control level 0 V plus velocity).
-* The control level cannot fall below 0 V; the inversion of the old version (CV ATT negative) and the gain above 100 % no longer exist in the Quad panel.
-* Control levels above 10 V are limited; measured on the model: 10, 15 and 20 V give the same open gain.
-* Order in the module: `ATT (knob or CV) + velocity` → limit to 0…10 V → shelving; the offset voltage (THRESHOLD) is added only **after** the limit. Consequence: a negative velocity does not cancel a low THRESHOLD.
+
+* **Effect on the signal:** The control level is `clamp(ATT + velocity, 0 … 10 V)`. The gate opens when this level exceeds the threshold. The control level comes from the knob or, if patched, from the CV, which replaces the knob.
+* **Envelope 0…10 V at the ATT CV, threshold 4.12 V** (offset 0.5, trim 0.5):
+  * The envelope opens the gate fully as soon as it reaches 4.2 V.
+  * An envelope with a peak of only 4.12 V lies exactly on the threshold (−13 dB).
+  * With a 2.5 V peak the gate no longer opens (−31 dB).
+  * A negative velocity shifts the envelope downward. The gate then opens later in the rise and closes earlier in the fall; the open time becomes shorter.
+  * For an exponentially falling envelope 10 V·e^(−t/200 ms), the geometry without vactrol gives open times of approx. 178 ms (peak 10 V), 120 ms (7.5 V) and 38 ms (5 V).
+* ATT 0 V without CV holds the gate permanently at the rest position (control level 0 V plus velocity).
+* The control level cannot fall below 0 V. The inversion of the old version (CV ATT negative) and the gain above 100 % no longer exist in the quad panel.
+* Control levels above 10 V are limited. In the model, 10, 15 and 20 V give the same open gain.
+* **Order in the module:** `ATT (knob or CV) + velocity` → limiting to 0…10 V → shelving. The offset voltage (THRESHOLD) is only added after the limiting. A negative velocity therefore does not cancel a low THRESHOLD.
 
 **Typical settings.**
 
 | Goal | Setting |
 |---|---|
-| Drone, filter fixed at ≈ 400 Hz without envelope | LOWPASS, THRESHOLD just above 0 V (e.g. 0.1 V), DEPTH 50 % |
-| Drone, open, without envelope | THRESHOLD 0 V, ATT a few volts |
+| Sustained tone, filter fixed at ≈ 400 Hz without envelope | LOWPASS, THRESHOLD just above 0 V (e.g. 0.1 V), DEPTH 50 % |
+| Sustained tone, open, without envelope | THRESHOLD 0 V, ATT a few volts |
 | Envelope 0…10 V should open in the middle | THRESHOLD 4.1 V, DEPTH 50 % |
-| Short ping from the same envelope | raise THRESHOLD or lower velocity: the gate is open only in the upper part |
-| Longer opening | lower THRESHOLD |
+| Short ping from the same envelope | Raise THRESHOLD or lower velocity: the gate is only open in the upper part |
+| Longer opening | Lower THRESHOLD |
 | Pluck with deep closing (0…10 V envelope) | MODE LOWPASS, DEPTH 100 %, THRESHOLD 7.5 V, Vactrol response = Conductance (section 14); model values for BOTH with State-based in section 4c |
 
-**Open question.** The model switches from "closed" to "open" at the threshold within about 0.2 V (zener behavior of the circuit in the model). Whether the original device switches this steeply has not been checked. In the listening test, a comparison with a video or device using a slow CV (LFO triangle) would be informative: does the original open abruptly as well?
+**Open question.** The model switches from "closed" to "open" at the threshold within about 0.2 V (Zener behavior of the circuit in the model). Whether the original device switches just as steeply has not been checked. In the listening test, a comparison with a video or device with a slow CV, such as an LFO triangle, would be informative: Does the original also open abruptly?
 
-### 4c. Pluck: a deeply closing gate
+### 4c. Pluck: deeply closing gate
 
-The gate closes only as deeply as the control level at rest lies below the threshold. A 0…10 V envelope rests at 0 V; at THRESHOLD 4.1 V that is only 4.1 V of distance, the gate stays "ajar" (floor at about −20 dB), and after the short burst mainly the bass remains. That sounds like a low-frequency click, not like a pluck. In the Quad panel the control level cannot fall below 0 V (ATT 0…10 V plus velocity, limited to 0…10 V); the rest position is therefore 0 V, and the distance to the threshold is the threshold itself. A high THRESHOLD at DEPTH 100 % then gives the largest distance.
+The gate only closes as deeply as the control level at rest lies below the threshold. A 0…10 V envelope rests at 0 V. At THRESHOLD 4.1 V that is only 4.1 V of distance. The gate stays "ajar" (floor at approx. −20 dB), and after the short burst mainly the bass remains. That sounds like a deep thud, not like a pluck.
 
-Measured on the model (paper variant, BOTH, State-based, noise, envelope 0…10 V, decay 100 ms; level in 10 ms windows): DEPTH 100 %, THRESHOLD 7.4 V gives rest −76 dB, peak −4 dB, level after 20 / 50 / 100 / 200 / 400 ms: 0 / −9 / −13 / −21 / −36 dB. The default 4.1 V (offset "medium") leaves the gate "ajar" (rest −21 dB).
+In the quad panel the control level cannot fall below 0 V, because ATT 0…10 V plus velocity is limited to 0…10 V. The rest position therefore lies at 0 V, and the distance to the threshold is the threshold itself. A high THRESHOLD at DEPTH 100 % then gives the greatest distance.
 
-A slow vactrol (VACTROL to the right) makes the tail longer but lowers the peak, because the gate no longer opens fully while the envelope is short. A fast envelope together with a fast vactrol (VACTROL left) sounds harder. Note: the numbers are model values, not listening results; they apply to the paper gate part. In the linear gate part of BOTH, the gate closes completely at ATT 0 V. The measured values above apply to BOTH with State-based; the pluck found in the listening test (section 14, example 1) instead runs in LOWPASS with Vactrol response = Conductance at THRESHOLD 7.5 V and DEPTH 100 %, where the rest position is also 0 V and the distance to the threshold is about 7.4 V.
+Measured on the model (Paper variant, BOTH, State-based, noise, envelope 0…10 V, fall 100 ms, level in 10 ms windows):
 
-### 4a. A closed gate is not silent
+* DEPTH 100 %, THRESHOLD 7.4 V: rest −76 dB, peak −4 dB. The level after 20 / 50 / 100 / 200 / 400 ms is 0 / −9 / −13 / −21 / −36 dB.
+* The default 4.1 V (offset "medium") leaves the gate "ajar" (rest −21 dB).
 
-As with the original, the input signal also appears at the output with the gate closed, filtered or attenuated (offset 0.5, trim 0.5, feedback 0, gain in dB):
+A slow vactrol (VACTROL right) makes the tail longer but lowers the peak. The gate does not open fully as long as the envelope is short. A fast envelope together with a fast vactrol (VACTROL left) sounds harder.
+
+The numbers are model values, not listening results, and apply to the Paper gate path. In the linear gate path of BOTH, the gate closes completely at ATT 0 V. The measured values above apply to BOTH with State-based. The pluck found in the listening test (section 14, example 1), by contrast, runs in LOWPASS with Vactrol response = Conductance, THRESHOLD 7.5 V and DEPTH 100 %. There the rest position is also at 0 V, and the distance to the threshold is approx. 7.4 V.
+
+### 4a. Closed gate is not silent
+
+As in the original, the input signal also appears at the output when the gate is closed, filtered or attenuated. The table shows the gain in dB (offset 0.5, trim 0.5, feedback 0):
 
 | Mode | CV 0 V | CV −4 V | CV −10 V |
 |---|---|---|---|
@@ -276,68 +311,83 @@ As with the original, the input signal also appears at the output with the gate 
 | BOTH | −0.6 / −7 / −21 | −7.5 / −28 / −53 | −42 / −80 / −109 |
 | VCA | all frequencies ≈ −35 | −55 … −69 | −91 … −125 |
 
-Only in LOWPASS and BOTH does a lowpass-filtered signal remain audible; VCA attenuates broadband. Whether the values correspond to the original device has not been checked (no measurement data from the original).
+Only in LOWPASS and BOTH does a low-pass-filtered signal remain audible. VCA attenuates broadband. Whether the values correspond to the original device has not been checked, as there are no measurement data from the original.
 
-This table applies to the paper model. With the linear gate part (default in VCA and BOTH) the gate closes completely in VCA at ATT 0 V (gain 0); in BOTH the gain is `cv / 10` times the gain of the filter stage.
+The table applies to the Paper model. With the linear gate path (default in VCA and BOTH), the gate in VCA closes completely at ATT 0 V (gain 0). In BOTH the gain is `cv / 10` times the gain of the filter stage.
 
 ## 5. Modes
 
-The mode per channel (MODE switch, or global MODE or MODE CV) determines the circuit. LOWPASS is always the paper model. For VCA and BOTH, the context menu **Gate response (VCA, BOTH)** chooses:
+The mode per channel determines the circuit. It is chosen by the MODE switch, the global MODE, or MODE CV. LOWPASS is always the Paper model. For VCA and BOTH, the context menu **Gate response (VCA, BOTH)** selects:
 
-* **Linear** (default): the gate is a linear VCA. The reference documentation of the hardware module describes the gate mode as a linear VCA and the combined mode as a combination of a linear gate and a lowpass; the linear part is the default for that reason.
-* **Paper circuit**: the paper model (vactrol divider with a knee at THRESHOLD) as in sections 4 to 8; switches steeply, and in VCA only 0.63 open gain.
+* **Linear** (default): The gate is a linear VCA. The reference documentation of the hardware module describes the gate mode as a linear VCA and the combined mode as a combination of linear gate and low-pass. That is why the linear path is the default.
+* **Paper circuit**: The Paper model (vactrol divider with a knee at THRESHOLD), as in sections 4 to 8. It switches steeply, and in VCA the open gain is only 0.63.
 
-**Linear gate part.** `g = clamp(cv, 0 … 10 V) / 10`, i.e. 10 V = gain 1 (assumption: the reference documentation gives no numbers). The gain is smoothed with the vactrol time constants (rise 2.4 ms, fall 50 ms, times the VACTROL factor); the direction follows the state (if g rises, the fast constant applies). Whether the hardware module has vactrol lag in the gate mode is not documented (assumption).
+**Linear gate path.** The gain is `g = clamp(cv, 0 … 10 V) / 10`, so 10 V = gain 1. This is an assumption, because the reference documentation gives no numbers. The gain is smoothed with the vactrol time constants (rise 2.4 ms, fall 50 ms, times the VACTROL factor). The direction follows the state: if g rises, the fast constant applies. Whether the hardware module has vactrol inertia in gate mode is not documented (assumption).
 
 | Mode | Gate response = Linear (default) | Gate response = Paper circuit |
 |---|---|---|
-| LOWPASS | Lowpass with C3 = 4.7 nF, Ra = 5 MΩ (paper gate), unchanged | same mode |
-| BOTH | First a linear VCA, then the filter stage (menu "BOTH filter stage") | Lowpass and VCA at once (C3 = 0, Ra = 5 MΩ), as before the change |
+| LOWPASS | Low-pass with C3 = 4.7 nF, Ra = 5 MΩ (Paper gate), unchanged | same mode |
+| BOTH | First linear VCA, then filter stage (menu "BOTH filter stage") | Low-pass and VCA simultaneously (C3 = 0, Ra = 5 MΩ), as before the change |
 | VCA | Pure linear VCA: `output = g · input`, no filter | Pure VCA (C3 = 0, Ra = 5 kΩ), open gain 0.633 |
 
-Sonic character:
+Sonic classification:
 
-* **LOWPASS**: the level stays near 1 in the passband, only the highs close. The gate acts like a filter with CV-controlled cutoff (404 Hz at control level 4 V in the example of section 4). Feedback is always active here.
-* **BOTH** (linear): VCA and lowpass gate in series. The loudness follows the control level linearly, and in addition the filter closes the highs. Menu **BOTH filter stage**: *Lowpass* (default) uses the filter stage of LOWPASS; THRESHOLD, DEPTH, FEEDBACK and FB NL act there as in LOWPASS, and the filter rings quietly after the gate closes. *Paper BOTH* uses C3 = 0: the filter hardly filters and has no resonance (FEEDBACK and FB NL without effect); BOTH is then the paper BOTH with a linear gate in front. The lowpass stage is the default because the author finds it more sensible and wants to stay flexible.
-* **VCA** (linear): no filter, level only; THRESHOLD, DEPTH, FEEDBACK and FB NL have no effect. The loudness is exactly `cv / 10`.
+* **LOWPASS:** The level stays near 1 in the passband, only the highs close. The gate acts like a filter with a CV-controlled cutoff (404 Hz at control level 4 V in the example of section 4). Feedback is always effective here.
+* **BOTH (linear):** VCA and low-pass gate are in series. The loudness follows the control level linearly, and the filter additionally closes the highs. The menu **BOTH filter stage** offers two filter stages:
+  * *Lowpass* (default) uses the filter stage of LOWPASS. THRESHOLD, DEPTH, FEEDBACK and FB NL act there as in LOWPASS, and the filter rings quietly after the gate closes. It is the default because Kinovice considers it more sensible and wants to stay flexible.
+  * *Paper BOTH* uses C3 = 0. The filter hardly filters and has no resonance; FEEDBACK and FB NL remain without effect. BOTH is then the Paper BOTH with a linear gate in front.
+* **VCA (linear):** There is no filter, only level. THRESHOLD, DEPTH, FEEDBACK and FB NL have no effect. The loudness is exactly `cv / 10`.
 
-Measurements on the model (48 kHz):
+Measured values on the model (48 kHz):
 
-* VCA linear, sine 100 Hz: control level 0 / 0.5 / 1 / 2.5 / 5 / 7.5 / 10 V = gain 0 / 0.05 / 0.1 / 0.25 / 0.5 / 0.75 / 1.0, independent of THRESHOLD, DEPTH and FEEDBACK. Time (step 0 ↔ 10 V, VACTROL ×1): up to 63 % after 2.40 ms, 95 % after 7.19 ms; down to 37 % after 50.0 ms, 5 % after 149.8 ms.
-* BOTH linear, stationary (THRESHOLD 7.5 V, DEPTH 100 %, FEEDBACK 0, sine 100 Hz), gain for control level 1 / 3 / 5 / 7 / 10 V: lowpass stage 0.019 / 0.213 / 0.443 / 0.659 / 0.999; paper stage 0.051 / 0.266 / 0.474 / 0.679 / 0.999; for comparison paper BOTH without the linear part 0.505 / 0.886 / 0.949 / 0.969 / 0.999. BOTH linear with the lowpass stage = LOWPASS × `cv / 10`.
-* Ringing of BOTH after the gate closes (ping: 20 ms burst 600 Hz amplitude 1, then input 0 and gate closed, THRESHOLD 7.5 V, FEEDBACK 90 %): lowpass stage 0.0081 (20–50 ms) and 0.0025 (100–200 ms); paper stage 0.0000. The ringing is quiet (about 0.8 % of the burst amplitude).
-* Stability of BOTH linear (lowpass stage, FEEDBACK 100 %, normalized, NL off): peak 33.7 against 43.7 in LOWPASS for the same input; the module's protection triggers at 50. No NaN.
+* **VCA linear, sine 100 Hz:** Control levels 0 / 0.5 / 1 / 2.5 / 5 / 7.5 / 10 V give the gain 0 / 0.05 / 0.1 / 0.25 / 0.5 / 0.75 / 1.0, independent of THRESHOLD, DEPTH and FEEDBACK. For a step 0 ↔ 10 V (VACTROL ×1) the rise reaches 63 % after 2.40 ms and 95 % after 7.19 ms. In the fall it is 37 % after 50.0 ms and 5 % after 149.8 ms.
+* **BOTH linear, steady state** (THRESHOLD 7.5 V, DEPTH 100 %, FEEDBACK 0, sine 100 Hz). Gain for control levels 1 / 3 / 5 / 7 / 10 V:
+  * Lowpass stage: 0.019 / 0.213 / 0.443 / 0.659 / 0.999.
+  * Paper stage: 0.051 / 0.266 / 0.474 / 0.679 / 0.999.
+  * For comparison, Paper BOTH without the linear path: 0.505 / 0.886 / 0.949 / 0.969 / 0.999.
+  * BOTH linear with the Lowpass stage corresponds to LOWPASS × `cv / 10`.
+* **Ringing of BOTH after the gate closes.** The ping consists of a 20 ms burst at 600 Hz with amplitude 1. Afterwards the input is 0 and the gate is closed (THRESHOLD 7.5 V, FEEDBACK 90 %). The Lowpass stage rings at 0.0081 (20–50 ms) and 0.0025 (100–200 ms), the Paper stage at 0.0000. The ringing is thus quiet, about 0.8 % of the burst amplitude.
+* **Stability BOTH linear** (Lowpass stage, FEEDBACK 100 %, normalized, NL off): The peak is 33.7, in LOWPASS with the same input 43.7. The module's protection kicks in at 50. No NaN occurs.
 
-Switching modes during operation: LOWPASS ↔ BOTH without a jump (deviation 6e-4, DC gain of the lowpass stage). Returning from the pure linear VCA to LOWPASS or BOTH starts the filter with empty states (a short transient is possible). Switching the filter stage during operation produces no NaN and no jump above the normal signal.
+Mode switching during operation:
 
-Paper values (for orientation, Gate response = Paper circuit):
+* LOWPASS ↔ BOTH happens without a jump (deviation 6e-4, the DC gain of the Lowpass stage).
+* From the pure linear VCA back to LOWPASS or BOTH, the filter starts with empty states. A short settling transient is possible.
+* Switching the filter stage during operation produces neither NaN nor a jump above the normal signal.
+
+Paper values for orientation (Gate response = Paper circuit):
 
 | Mode | Circuit | Open gain (20 Hz) | Cutoff open (−3 dB) | at control level 4.0 V (Rf 63.5 kΩ) | at 3.0 V (Rf 74.6 kΩ) |
 |---|---|---|---|---|---|
-| LOWPASS | lowpass with C3 = 4.7 nF, Ra = 5 MΩ | 1.009 | 12.95 kHz | gain 0.98, f = 404 Hz | 346 Hz |
-| BOTH | lowpass and VCA at once (C3 = 0, Ra = 5 MΩ) | 1.009 | 19.4 kHz | gain 0.98, f = 1188 Hz | 1014 Hz |
-| VCA | pure VCA (C3 = 0, Ra = 5 kΩ) | 0.639 | above 20 kHz | gain 0.038 | 0.033 |
+| LOWPASS | Low-pass with C3 = 4.7 nF, Ra = 5 MΩ | 1.009 | 12.95 kHz | Gain 0.98, f = 404 Hz | 346 Hz |
+| BOTH | Low-pass and VCA simultaneously (C3 = 0, Ra = 5 MΩ) | 1.009 | 19.4 kHz | Gain 0.98, f = 1188 Hz | 1014 Hz |
+| VCA | pure VCA (C3 = 0, Ra = 5 kΩ) | 0.639 | above 20 kHz | Gain 0.038 | 0.033 |
 
-Open question: whether the middle position of the hardware module is a lowpass with quiet resonance or (according to one possible reading of the circuit) a branch without the filter capacitor cannot be decided with certainty; that is why the filter stage of BOTH is selectable.
+Open question: According to one possible reading of the circuit, the middle position of the hardware module uses a branch without a filter capacitor. According to the description, it would instead be a low-pass with quiet resonance. Neither can be decided with certainty. That is why the filter stage of BOTH is selectable.
 
 ## 6. Feedback (resonance)
 
 ### 6.0 What FEEDBACK does
 
-In LOWPASS mode, FEEDBACK feeds a portion of the output back to the filter input through a differentiator. This creates a **resonance** (emphasis) around the cutoff frequency: without feedback the filter is a soft lowpass, with feedback it "sings" at one point of the spectrum.
+In LOWPASS mode, FEEDBACK feeds part of the output back to the filter input via a differentiator. This creates a resonance, that is an emphasis around the cutoff frequency. Without feedback the filter is a soft low-pass; with feedback it "sings" at one point of the spectrum.
 
-* **Where FEEDBACK works:** in LOWPASS always. In BOTH only with "Gate response = Linear" and "BOTH filter stage = Lowpass" (both default). **In VCA, FEEDBACK has no effect** (and neither has FB NL), nor in BOTH with the paper stage or the paper gate (there the capacitor C3 of the feedback path is switched off in the model, C3 = 0). The knob position stays saved in the patch and is effective again when you switch back. Measured: BOTH paper and VCA with FEEDBACK 90 % versus 0 % give the same peak. The tooltip points this out.
-* **With V/OCT patched, FEEDBACK changes its meaning:** it then sets the decay time of the resonator (section 3b), and the gate's own resonance is off.
-* **The peak lies well above the cutoff frequency**, at roughly 2.3 to 2.9 times the −3 dB frequency without feedback (example below: cutoff 407 Hz, peak at 951…1162 Hz). This is the behavior of the model from the paper, not that of a classic resonant lowpass with the peak at the cutoff.
+* **Where FEEDBACK acts:**
+  * In LOWPASS always.
+  * In BOTH only with "Gate response = Linear" and "BOTH filter stage = Lowpass" (both default).
+  * In VCA, neither FEEDBACK nor FB NL acts. The same applies to BOTH with the Paper stage or the Paper gate, because the capacitor C3 of the feedback path is switched off there in the model (C3 = 0).
+  * The knob position stays saved in the patch and is effective again when you switch back.
+  * Measured: BOTH Paper and VCA give the same peak with FEEDBACK 90 % as with 0 %. The tooltip points this out.
+  * With a V/OCT cable patched, FEEDBACK no longer acts on the filter but sets the ring time of the resonator (section 6a). The feedback of the filter is then 0.
+* **The peak lies clearly above the cutoff frequency,** at about 2.3 to 2.9 times the −3 dB frequency without feedback. In the example below the cutoff is 407 Hz and the peak at 951…1162 Hz. This is the behavior of the model from the paper, not that of a classic resonant low-pass with the peak at the cutoff.
 * **Low frequencies remain almost untouched** (−0.2 dB at 50 Hz). The feedback only raises the region around the peak.
-* **The peak travels with the gate.** When the gate opens, the cutoff rises and the resonance moves up with it: the typical "wah" or "ping" sound. With a wide-open gate (cutoff 13 kHz) the peak is at about 19 kHz and barely audible.
-* **When excited, the filter rings.** An impulse, a gate edge or a noise burst makes the filter ring out at the resonance frequency, the longer the closer to 100 %. At 100 % it no longer decays.
-* **FB NL off** (default): the signal stays a sine, only level and phase change. **FB NL on**: a tanh limits the feedback, distortion arises, especially at high DRIVE and with signals near the resonance frequency (section 7).
-* **In practice:** for "ping" or "wah" use 75–90 %, a short gate and an input frequency near the peak, or noise. From about 95 % the resonance becomes an almost tonal whistle that moves with the gate opening.
+* **The peak moves with the gate.** When the gate opens, the cutoff rises and the resonance moves up with it. This is the typical "wah" or "ping" sound. With the gate wide open (cutoff 13 kHz), the peak lies at about 19 kHz and is barely audible any more.
+* **When excited, the filter rings.** An impulse, a gate edge or a noise burst makes the filter ring out at the resonance frequency, the longer the closer FEEDBACK is to 100 %. At 100 % it no longer decays.
+* **FB NL off** (default): A sine stays a sine; only level and phase change. **FB NL on:** A tanh limits the feedback and distortion arises. It occurs mainly with high DRIVE and with signals near the resonance frequency (section 7).
+* **In practice:** For "ping" or "wah", 75–90 %, a short gate and an input frequency near the peak, or noise, are suitable. From about 95 % the resonance turns into an almost tonal whistle that moves with the gate opening.
 
-### 6.1 Measurements
+### 6.1 Measured values
 
-LOWPASS mode only. The resonance peak lies above the −3 dB frequency without feedback.
+The measurements apply only to LOWPASS mode. The resonance peak lies above the −3 dB frequency without feedback.
 
 Operating point CV 4.05 V, f(−3 dB, without feedback) = 407 Hz, **normalized**:
 
@@ -349,14 +399,16 @@ Operating point CV 4.05 V, f(−3 dB, without feedback) = 407 Hz, **normalized**
 | 95 % | +15.8 dB | 1162 Hz |
 | 99 % | +28.6 dB | 1162 Hz |
 
-* Up to 50 % little happens sonically; the resonance only arises from 75 %. The stretch between 75 % and 99 % covers 26 dB.
-* At 100 % the model sits exactly on the stability limit: an impulse does not decay, a constant oscillation of small amplitude remains (impulse 1.0 → peak 0.145). The module does not run away (protection against overflow is built in anyway).
+* Up to 50 % little happens sonically; the resonance only arises from 75 %. The stretch from 75 % to 99 % spans 26 dB.
+* At 100 % the model lies exactly on the stability limit. An impulse does not decay; a constant oscillation of small amplitude arises (impulse 1.0 → peak 0.145). The module does not run away. A protection against overflow is built in anyway.
 * The resonance frequency follows the CV with the gate.
 
 **Normalized vs. circuit-accurate (context menu "Resonance"):**
 
-* *Normalized*: the knob 0…100 % is scaled to the respective stability limit; the same knob position = the same resonance strength, independent of the gate state.
-* *Circuit-accurate*: the knob 0…100 % corresponds to the absolute feedback 0…1.472. With the gate open (Rf small) practically the same as the normalized mode; with a nearly closed gate the resonance becomes weaker. Example FEEDBACK 90 %:
+* *Normalized:* The 0…100 % knob is scaled to the respective stability limit. The same knob position means the same resonance strength, independent of the gate state.
+* *Circuit-accurate:* The 0…100 % knob corresponds to the absolute feedback 0…1.472. With the gate open (Rf small) this is practically the same as the normalized mode. With the gate almost closed, the resonance becomes weaker.
+
+Example FEEDBACK 90 %:
 
 | CV | Rf | normalized | absolute |
 |---|---|---|---|
@@ -367,13 +419,58 @@ Operating point CV 4.05 V, f(−3 dB, without feedback) = 407 Hz, **normalized**
 | −2.0 | 291 kΩ | 9.3 dB | 6.8 dB |
 | −4.0 | 1352 kΩ | 6.8 dB | −0.4 dB (no resonance) |
 
-  In practice: as long as the gate is open or half open, both modes are nearly identical. The difference only appears in the almost-closed region; there the absolute mode "swallows" the resonance.
+In practice: As long as the gate is open or half open, both modes are nearly the same. A difference only appears in the almost closed range. There the absolute mode "swallows" the resonance.
+
+## 6a. V/OCT, resonator and WET
+
+The V/OCT input turns the gate into an instrument for ping and pluck at a fixed pitch. For this, a resonator tuned to the note sits in front of the gate. The gate itself remains unchanged and continues to determine how long the tone is audible.
+
+**Structure.**
+
+* The input of the gate is `x + WET · res(x)`. `x` is the input signal, `res(x)` the tuned resonator. The direct path stays exactly as without V/OCT.
+* The resonator has the same level at every note. Its impulse response is a decaying sine with amplitude 1.
+* A soft limiter at the resonator output prevents sustained noise with a long ring time from summing up the level. It is linear up to 4 model units; above that it approaches 8 continuously.
+* As long as V/OCT is patched, the feedback of the filter itself is 0. The resonance comes only from the resonator.
+* The resonator only acts with a resonance stage: in LOWPASS and in BOTH with "Gate response = Linear" and "BOTH filter stage = Lowpass". In VCA and in Paper BOTH, V/OCT has no effect.
+* Without a patched V/OCT cable, everything is bit-identical to the state without the resonator.
+
+**Operation.**
+
+* **V/OCT:** 0 V = C4 (261.6256 Hz), range ±6 octaves. An audio-rate signal is possible (FM).
+* **FEEDBACK** (knob or CV) is, with V/OCT patched, the ring time T60 of the resonator: `T60 = 0.05 s · 60^FEEDBACK`. That is 0.05 s at 0 %, 0.39 s at 50 % and 3 s at 100 %. The tooltip shows the time.
+* **WET** (knob 0…100 %, global, default 35 %): The gain of the resonator is `0.05 · k²` with k = WET. This gives:
+
+| WET | 25 % | 35 % (default) | 50 % | 75 % | 100 % |
+|---|---|---|---|---|---|
+| Gain | 0.0031 | 0.0061 | 0.0125 | 0.028 | 0.05 |
+| dB | −50 | −44 | −38 | −31 | −26 |
+
+* **WET CV** (polyphonic): 0…10 V correspond to 0…100 % of the knob, with the same curve. A patched WET CV replaces the knob. Channels 1–4 of the cable control LPG 1–4; a monophonic cable applies to all channels. With the cable removed, the knob acts again.
+
+**Level calibration.** The value range is tailored to a pulse as excitation. A pulse sums up to its area in the resonator, so the required gain is small. For Kinovice it sounded good at an output level of about 10 V and −45 dB, which corresponds to WET around 33 %. Upward there remain about 19 dB of headroom. With other material, such as a noise burst or sustained noise, the suitable value may differ.
+
+**Accuracy (model, 48 kHz).**
+
+* The pitch is correct from C2 to C8 at T60 0.1 / 0.5 / 3 s to 0.0 cents (C8: +0.2 to +0.3 cents). The decay between 50 and 300 ms matches the target (−150, −30 and −5 dB).
+* The ring level with noise excitation is flat across pitch (C2 to C7 within −0.8 to +0.1 dB). A level compensation for low notes is therefore not necessary.
+* When the gate closes, the pitch deviates by −4 to −12 cents with a 200 ms envelope (C3 to C6, in later windows). With a 20 ms envelope it is up to about ±40 cents, but only in quiet decays (−20 to −50 dB). The signal does not glide downward.
+* Stability: With audio-rate V/OCT (±2 octaves at 0.7 Hz plus ±1.5 octaves FM at 220 Hz), T60 3 s and 20 s of noise, no NaN occurs. The peak is 16.7, the module limit 50. This test ran with a larger gain than the current one.
+
+**Notes on use.**
+
+* V/OCT does not produce a tone. It only tunes the resonance. A sustained tone or LFO at IN stays audible at its own pitch; V/OCT then only changes the timbre.
+* To hear the pitch, the resonator needs a broadband excitation: noise, or a short impulse or trigger. The gate should be open (ATT 10 V), FEEDBACK high (long ring time).
+* With noise at IN, the pitch rises with rising voltage (confirmed).
+
+**Compared with the earlier version.** A first version tuned the whole filter to the note by time scaling. It sounded dull: With the gate open and V/OCT at C4, the gain for 1 kHz dropped from −0.0 to −20.5 dB, and for 4 kHz from −0.5 to −42.3 dB. In addition, the tone sounded much shorter at high notes. That is why there is now the resonator in front of the gate. The direct path stays untouched, and the gate sounds as without V/OCT. The former menu item "Pitch level compensation" has been dropped, because the level is now flat across pitch by itself. An old patch with V/OCT patched sounds different (resonator instead of time scaling). A saved key `pitchComp` is ignored.
+
+**Open.** The Rack test series (pitch C1 to C7, WET series, WET CV, ring time, V/OCT removed, audio-rate V/OCT, gate closing, old patch) and the listening comparison with a comparison module are still pending. Possible extensions: a hold mode (constant pitch over the whole tone), an adjustable ring-time range (currently 0.05 to 3 s), and a level curve for WET via the menu.
 
 ## 7. Nonlinearity (FB NL) and DRIVE
 
-With FB NL = on, the feedback passes through a tanh limiter. It only acts when the signal is large enough; DRIVE determines how large the signal is in the model (section 3).
+With FB NL = on, the feedback passes through a tanh limiter. This only acts with a sufficiently large signal. DRIVE determines how large the signal is in the model (section 3).
 
-Harmonic content (root of the sum of harmonics 2…8, relative to the fundamental), input ±5 V, FEEDBACK 90 %, **NL solver "Corrected"**:
+Overtone content (root of the sum of harmonics 2…8, relative to the fundamental), input ±5 V, FEEDBACK 90 %, **NL solver "Corrected"**:
 
 | CV | f | Drive 0 | 2.5 | 5 | 7.5 | 10 | Fundamental Drive 0 / 10 |
 |---|---|---|---|---|---|---|---|
@@ -382,22 +479,22 @@ Harmonic content (root of the sum of harmonics 2…8, relative to the fundamenta
 | 4.0 V | 500 Hz | 0.0282 | 0.0754 | 0.1196 | 0.1282 | 0.1066 | 5.91 / 4.08 V |
 | 4.0 V | 2000 Hz | 0.0007 | 0.0025 | 0.0090 | 0.0250 | 0.0460 | 2.26 / 1.70 V |
 
-(For comparison, the "Reference" solver: 0.0031 / 0.0122 / 0.0391 / 0.0724 / 0.0811 for CV 3.0 V, 500 Hz.)
+For comparison, the solver "Reference": 0.0031 / 0.0122 / 0.0391 / 0.0724 / 0.0811 for CV 3.0 V, 500 Hz.
 
 What you hear:
 
-* **With the gate open and no resonance peak at the signal**, the NL stays practically inaudible (harmonic content < 0.5 %).
-* **At the resonance peak** (gate half open, signal near the resonance frequency) clear distortion arises (up to ~13 % harmonics) and the level drops (fundamental 5.9 → 4.1 V).
-* At 500 Hz the harmonic content rises with DRIVE up to about 7.5 and then falls again; at 2 kHz it keeps rising up to Drive 10.
-* DRIVE without NL: **no** effect.
-* With NL and FEEDBACK 100 % (solver "Corrected", CV 4 V) a small oscillation remains after an impulse (peak in the output after 5 s: 0.094 V at Drive 0, 0.030 V at Drive 5, 0.008 V at Drive 10). With the "Reference" solver it decays (0 V).
+* **With the gate open and no resonance peak at the signal,** the NL remains practically inaudible (harmonic content below 0.5 %).
+* **At the resonance peak** clear distortion arises (up to approx. 13 % harmonics) and the level drops (fundamental 5.9 → 4.1 V). This applies with the gate half open and a signal near the resonance frequency.
+* **At 500 Hz** the harmonic content rises with DRIVE up to approx. 7.5 and then falls again. At 2 kHz it keeps rising up to Drive 10.
+* **DRIVE without NL** has no effect.
+* **With NL and FEEDBACK 100 %** (solver "Corrected", CV 4 V), a small oscillation remains after an impulse. The peak in the output after 5 s is 0.094 V at Drive 0, 0.030 V at Drive 5 and 0.008 V at Drive 10. With the solver "Reference" it decays (0 V).
 
-## 7a. Saturation (addition, menu "Saturation")
+## 7a. Saturation (add-on, menu "Saturation")
 
-Not part of the paper model. Background: on scope recordings of the original, a sine has a slightly flattened peak, but the model has no saturation in the audio path. With "Saturation = On" the model output signal (in model units) runs through `tanh`, then is scaled back to volts. Default is Off.
+Saturation is not part of the Paper model. On scope recordings of the original, a sine has a slightly flattened peak, but the model has no saturation in the audio path. With "Saturation = On" the model output signal (in model units) runs through `tanh` and is then scaled back to volts. Default is Off.
 
-* The intensity is determined by **DRIVE** (level in the model, section 3). The small-signal gain stays 1; only the shape of large amplitudes changes. It works in all modes and also at feedback 0.
-* Measured for a sine with 5 V peak when the model has gain 1 (LOWPASS open 1.009):
+* **DRIVE** determines the intensity (level in the model, section 3). The small-signal gain remains 1; only the course of large amplitudes changes. The saturation acts in all modes and also at feedback 0.
+* Measured for a sine with 5 V peak, when the model has gain 1 (LOWPASS open 1.009):
 
 | DRIVE | Model amplitude | Harmonics 3…9 / fundamental | Output peak |
 |---|---|---|---|
@@ -407,20 +504,23 @@ Not part of the paper model. Background: on scope recordings of the original, a 
 | 7.5 | 2.00 | 17.3 % | 2.41 V |
 | 10 | 4.00 | 30.0 % | 1.25 V |
 
-* Only odd harmonics arise (symmetric curve).
-* **The output level falls with rising DRIVE**: the output peak is limited to the level factor (20 / 5 / 1.25 V at Drive 0 / 5 / 10). At high drive you may therefore want to raise the level afterwards.
-* In VCA mode (open gain 0.63) and with a partially closed gate the amplitude in the model is smaller and the saturation correspondingly weaker: it acts most strongly with an open gate and a loud signal.
-* **Listening test (Kinovice, Rack):** the warm sound of a sine appears when DRIVE is at about 75 % (≈ 7.5), i.e. at roughly 17 % harmonics (table). At Drive 5 the effect is too weak.
-* The stage is an addition, not a measurement of the original. The measured effect corresponds to the computational model, not necessarily to the sound of the device.
+* Only odd-order overtones arise, because the characteristic is symmetric.
+* **The output level falls with increasing DRIVE.** The output peak is limited to the level factor (20 / 5 / 1.25 V at Drive 0 / 5 / 10). With high drive you should therefore raise the level afterwards.
+* In VCA mode (open gain 0.63) and with a partially closed gate, the amplitude in the model is smaller and the saturation correspondingly weaker. It acts most strongly with the gate open and a loud signal.
+* **Listening test (Kinovice, Rack):** The warm sound of a sine appears when DRIVE is at about 75 % (≈ 7.5). That corresponds to around 17 % harmonics (table). At Drive 5 the effect is too weak.
+* This stage is an add-on and not a measurement of the original. The measured effect corresponds to the computational model, not necessarily to the sound of the device.
 
-## 8. Timing: vactrol
+## 8. Time behavior: vactrol
 
-Time constants of the model: opening 2.4 ms, closing 50 ms (lowpass on the resistance Rf). The **VACTROL** knob (one knob for all channels) scales both values by a factor of ×0.1…×10 (centre ×1 = values of the paper, verified bit-accurately against the reference). It also sets the lag of the linear gate part (section 5). Measured (State-based, paper VCA, step −10 → +10 V): rise 10 → 90 % at ×0.3 = 3.2 ms, ×1 = 10.5 ms, ×3 = 31.6 ms. The tables in this section apply to ×1.
+The model has two time constants: opening 2.4 ms, closing 50 ms (low-pass on the resistance Rf). The **VACTROL** knob scales both values by a factor of ×0.1…×10 and applies to all channels. The center (×1) corresponds to the values of the paper and is checked bit-exactly against the reference. VACTROL also sets the inertia of the linear gate path (section 5).
 
-Context menu **Vactrol response**:
+Measured (State-based, Paper VCA, step −10 → +10 V): The rise from 10 to 90 % takes 3.2 ms at ×0.3, 10.5 ms at ×1 and 31.6 ms at ×3. The tables in this section apply to ×1.
 
-* *Reference (as published)*: like the Octave reference. The reference picks the fast constant only if the target Rf is falling in that sample. With a gate-like CV this happens only in the first sample; afterwards the vactrol opens with the slow constant.
-* *State-based*: direction from comparing the target with the current vactrol state. Behaves like a real LPG.
+The context menu **Vactrol response** offers:
+
+* *Reference (as published):* like the Octave reference. The reference chooses the fast constant only if the target value Rf falls in this sample. With a gate-like CV this happens only in the first sample. After that the vactrol opens with the slow constant.
+* *State-based:* The direction results from comparing the target with the current vactrol state. This behaves like a real LPG.
+* *Conductance:* an add-on that provides a longer trailing response (see below and section 14).
 
 Gate step −10 V → +10 V (VCA, DC at the input):
 
@@ -429,7 +529,7 @@ Gate step −10 V → +10 V (VCA, DC at the input):
 | Rise 10 → 90 % | **219.7 ms** | **10.5 ms** |
 | Closing 90 → 10 % | 0.1 ms | 0.1 ms |
 
-The very fast closing on the step from +10 V to −10 V comes from the shelving filter in the control path: the steep CV edge overshoots, and the vactrol is briefly driven to an extremely high resistance. With a gentler fall of the CV it closes more slowly (table below).
+The very fast closing at the step from +10 V to −10 V comes from the shelving filter in the control path. The steep CV edge overshoots, and the vactrol is briefly driven to extremely high resistance. With a gentler fall of the CV it closes more slowly (table below).
 
 Short gate pulses (CV −10 → +10 V), peak gain reached relative to open:
 
@@ -442,9 +542,9 @@ Short gate pulses (CV −10 → +10 V), peak gain reached relative to open:
 | 100 ms | 0.001 | 1.00 |
 | 200 ms | 0.006 | – (1.00) |
 
-With the Reference setting the module therefore practically does not respond to triggers/short gates (the gate has to be far longer than 200 ms). For pluck sounds please choose "State-based" or "Conductance"; "Conductance" provides the tail with which the pluck in section 14 was found.
+With the "Reference" setting the module practically does not respond to triggers and short gates. The gate would have to be well over 200 ms long. For pluck sounds you should choose "State-based" or "Conductance". "Conductance" provides the trailing response with which the pluck in section 14 was found.
 
-Closing time after a 100 ms gate (+10 V), State-based, depending on the rest CV (time to 50 % / 10 % of the peak gain):
+Closing time after a 100 ms gate (+10 V), State-based, depending on the rest CV (time to 50 % and 10 % of the peak gain):
 
 | Rest CV | 50 % | 10 % | Final value (rel.) |
 |---|---|---|---|
@@ -456,55 +556,71 @@ Closing time after a 100 ms gate (+10 V), State-based, depending on the rest CV 
 | 3 V | 2.5 ms | 33.0 ms | 0.051 |
 | 3.5 V | 2.8 ms | 37.4 ms | 0.056 |
 
-The "decay" is therefore not a free parameter but depends on **where** the CV falls back to. A low rest CV (≤ −4 V) switches off practically instantly; a rest CV just below the threshold (3…3.5 V) produces a longer, softer decay (33…37 ms to −20 dB). THRESHOLD changes the position of the rest CV relative to the threshold.
+So the "decay" is not a free parameter. It depends on where the CV falls back to. A low rest CV (≤ −4 V) switches off practically at once. A rest CV just below the threshold (3…3.5 V) produces a longer, softer decay of 33…37 ms down to −20 dB. With THRESHOLD, the position of the rest CV relative to the threshold can be changed.
 
-## 9. Channels and inputs
+## 9. Channels, inputs and old patches
 
-* Four separate monophonic channels; each has its own state, its own knobs and its own switches. IN 1 is normalled to IN 2–4 when nothing is patched there.
-* A channel without an audio source (neither its own IN nor IN 1) is not computed; its output sits at 0 V. A channel without an OUT cable is skipped as long as ALL is not patched. This saves up to three quarters of the CPU time. When a channel is reactivated it starts in the settled state (no vactrol settling).
-* Old patches of the polyphonic version (16 channels) land on channels 1–4; the param blocks of the old version stay in place so the indices match. Their cables on AUDIO and CV sit on channel 1; only channel 1 of the polyphony is read (poly inputs are no longer fanned out).
+**Channels and inputs.**
+
+* There are four separate, monophonic channels. Each has its own state, its own knobs and its own switches. IN 1 is normalled to IN 2–4 as long as nothing is patched there.
+* Each channel has its own V/OCT input. The WET CV input in the ALL column is polyphonic: Channels 1–4 of the cable control LPG 1–4.
+* A channel without an audio source (neither its own IN nor IN 1) is not computed; its output sits at 0 V. A channel without an OUT cable is skipped as long as ALL is not patched. This saves up to three quarters of the CPU time. When reactivated, the channel starts in the settled state, so the vactrol does not have to settle.
+
+**Old patches.**
+
+* Old patches of the polyphonic version (16 channels) end up on channels 1–4. The param blocks of the old version remain so that the indices match. Their cables on AUDIO and CV sit on channel 1. Only channel 1 of the polyphony is read; poly inputs are not fanned out (exception: WET CV).
+* Patches from before the hardware signal path get ATT 0 V, and their CV cables are no longer scaled (section 4).
+* New inputs (THRESHOLD CV, FEEDBACK CV, V/OCT, WET CV) are appended at the end of the input list. Old patches thereby keep their cables.
+* A patch with V/OCT patched from the time of time scaling now sounds different (section 6a).
 
 ## 10. Context menu
 
-The knobs are on the panel; the context menu contains DEPTH and the model settings.
+The knobs are on the panel. The context menu contains DEPTH and the model settings.
 
-| Entry | Options (default bold) | Effect |
+| Entry | Options (default in bold) | Effect |
 |---|---|---|
-| Depth | Slider "All channels" and one each for channels 1–4 (default 100 %) | How deep the gate closes below the threshold (section 3) |
+| Depth | Slider "All channels" and one each for channels 1–4 (default 100 %) | How deeply the gate closes below the threshold (section 3) |
 | Resonance | **Normalized** / Circuit-accurate | Section 6 |
 | Vactrol response | **Reference** / State-based / Conductance | Section 8 |
 | NL solver | Reference / **Corrected** | Section 11 (model limits) |
-| Circuit variant | **Paper** / Reproduction board | Component values after the paper or after a variant with changed component values (section 11a) |
-| Gate response (VCA, BOTH) | **Linear** / Paper circuit | Linear gate part or paper model (section 5) |
+| Circuit variant | **Paper** / Reproduction board | Component values per the paper or per a variant with changed component values (section 11a) |
+| Gate response (VCA, BOTH) | **Linear** / Paper circuit | Linear gate path or Paper model (section 5) |
 | Velocity target | **Control level** / Audio offset | Where velocity acts (section 3a) |
-| BOTH filter stage | **Lowpass** / Paper BOTH | Filter stage of BOTH, only with the linear gate part (section 5) |
-| Saturation | **Off** / On | Addition, not in the paper model (section 7a) |
-| Oversampling | **Off** / 2x | 2× oversampling of the audio path; doubles the CPU time, may reduce aliasing caused by the nonlinearity (to be checked in the listening test) |
+| BOTH filter stage | **Lowpass** / Paper BOTH | Filter stage of BOTH, only with the linear gate path (section 5) |
+| Saturation | **Off** / On | Add-on, not in the Paper model (section 7a) |
+| Oversampling | **Off** / 2x | 2× oversampling of the audio path. It doubles the CPU time and can reduce aliasing caused by the nonlinearity (to be checked in the listening test). |
 
-Settings are saved in the patch. Older patches without the keys for Gate response, BOTH filter stage and Velocity target load with the default values (Linear, Lowpass, Control level).
+The settings are saved in the patch. Older patches without the keys for Gate response, BOTH filter stage and Velocity target load with the default values (Linear, Lowpass, Control level).
 
 ## 11. Model limits and peculiarities of the reference
 
-Three points were found when recomputing the reference:
+Three points were noticed when recalculating the reference:
 
-1. **Paper equation (20)** is wrong in the PDF; the reference code is correct. The code is implemented.
-2. **Vactrol direction**: see section 8. With a gate CV the reference opens in about 220 ms. Available as the option "State-based".
-3. **NL solver**: `yxden` contains `+a1·d1·t2m1`; the derivation gives `−a1·d1·t2m1`. Consequence: the NL branch does **not** merge into the linear branch for small signals. Measured: deviation NL vs. linear at 1 µV: **52 %** (Reference) versus 1.4·10⁻¹² (Corrected). Available as the option "Corrected" and, since the listening test, the default in the module.
+1. **Paper equation (20):** It is faulty in the PDF; the code of the reference is correct. The code is what is implemented.
+2. **Vactrol direction:** See section 8. With gate CV, the reference opens in about 220 ms. "State-based" is available as an option.
+3. **NL solver:** In `yxden` there is `+a1·d1·t2m1`, but the derivation gives `−a1·d1·t2m1`. The NL branch therefore does not merge into the linear branch at small signal. Measured, the NL deviates from the linear branch by 52 % at 1 µV ("Reference"); with "Corrected" it is 1.4·10⁻¹². "Corrected" is available as an option and has been the module default since the listening test.
 
-Default: NL solver = **Corrected** (decision after the listening test), Vactrol response = Reference (still open). The engine itself (`AnnaMariaLpg`) still has the reference as its preset and is verified bit-accurately against Octave that way; the module sets Corrected explicitly. Further limits:
+The default is NL solver = **Corrected** (decision after the listening test). For Vactrol response, Reference applies; this decision is still open. The engine itself (`AnnaMariaLpg`) still has the reference as its preset and is checked bit-exactly against Octave that way. The module explicitly sets Corrected.
+
+Further limits:
 
 * The parameters of the vactrol model are taken from the paper, not measured.
 * Component tolerances and temperature are not modeled.
-* At very high frequencies near Nyquist the trapezoidal integration takes effect; 2× oversampling helps.
+* At very high frequencies near Nyquist the trapezoidal integration acts. 2× oversampling helps.
 
 ## 11a. Comparison with a component variant
 
-Source: reference documentation of a circuit variant of the lowpass gate. The values were read from it and not checked against measurement data.
+The source is the reference documentation of a circuit variant of the low-pass gate. The values were read from it and not checked against measurement data.
 
-* **Differences compared with the paper:** R8 = 10 k instead of 4.7 k; in VCA mode shunt resistor R16 = 10 k instead of 5 k and an input stage with gain 2 (R11 = R12 = 15 k). The original also has a DEEP switch that makes the gate close deeper at the same knob position (roughly like a THRESHOLD a few volts higher). DEEP is not modeled; an exact model would need the LED forward voltage.
-* **Menu "Circuit variant = Reproduction board"** sets R8 = 10 k, VCA shunt 10 k and input gain 2 in VCA mode. Default stays Paper.
+**Deviations from the paper:**
 
-Measurements (sine 1 kHz, THRESHOLD 4.1 V, DEPTH 50 %, State-based, gain in dB):
+* R8 = 10 k instead of 4.7 k.
+* In VCA mode the shunt resistor R16 = 10 k instead of 5 k, and there is an input stage with gain 2 (R11 = R12 = 15 k).
+* The original also has a DEEP switch. It makes the gate close more deeply at the same knob position, roughly like a THRESHOLD a few volts higher. DEEP is not modeled. An exact reproduction would need the LED forward voltage.
+
+**Menu "Circuit variant = Reproduction board":** It sets R8 = 10 k, the VCA shunt resistor to 10 k, and in VCA mode the input gain to 2. Default remains Paper.
+
+Measured values (sine 1 kHz, THRESHOLD 4.1 V, DEPTH 50 %, State-based, gain in dB):
 
 | Mode | Variant | CV −4 V | 0 V | 4 V | 8 V |
 |---|---|---|---|---|---|
@@ -515,37 +631,57 @@ Measurements (sine 1 kHz, THRESHOLD 4.1 V, DEPTH 50 %, State-based, gain in dB):
 | VCA | Paper | −57.1 | −35.3 | −28.4 | −4.0 |
 | VCA | Reproduction | −58.2 | −31.3 | −24.2 | +3.8 |
 
-The threshold does not change; the closed gate becomes 6…12 dB deeper in LOWPASS/BOTH. In VCA mode open is +3.8 dB instead of −4 dB (mind the level in that mode).
+The threshold does not change. The closed gate lies 6…12 dB lower in LOWPASS and BOTH. In VCA mode the open gain is +3.8 dB instead of −4 dB; watch the level here.
 
-**Pluck without new controls** (Paper variant, BOTH, State-based, noise, envelope 0…10 V, decay 100 ms): DEPTH 100 %, THRESHOLD 7.4 V (corresponds to offset at its lower stop) gives rest −76 dB, peak −4 dB, level after 20 / 50 / 100 / 200 / 400 ms: 0 / −9 / −13 / −21 / −36 dB. The default 4.1 V (offset "medium") leaves the gate "ajar" (rest −21 dB).
+**Pluck without new knobs** (Paper variant, BOTH, State-based, noise, envelope 0…10 V, fall 100 ms): DEPTH 100 % and THRESHOLD 7.4 V (offset at the lower stop) give rest −76 dB and peak −4 dB. The level after 20 / 50 / 100 / 200 / 400 ms is 0 / −9 / −13 / −21 / −36 dB. The default 4.1 V (offset "medium") leaves the gate "ajar" (rest −21 dB).
 
 ## 12. CPU load
 
-Engine (measuring machine, double, -O2, one channel): 70–90 ns per sample with a moving CV, 20–26 ns with a constant CV (cache for the control path and audio coefficients, bit-identical to the original). Measured in Rack: one active channel 0.2–0.4 %, ALL patched (four channels) 1.5 % (about 0.35 % per channel with a moving CV). With 2× oversampling about double. The CV inputs for THRESHOLD and FEEDBACK at audio rate cost more because the coefficients change in every sample. The linear gate part in VCA is cheaper than the paper model.
+* **Engine** (measuring machine, double, -O2, one channel): 70–90 ns per sample with moving CV. With constant CV it is 20–26 ns, because the control path and audio coefficients are cached (bit-identical to the original).
+* **Rack:** One active channel needs 0.2–0.4 %. With ALL patched (four channels) it is 1.5 %, which is about 0.35 % per channel with moving CV.
+* With 2× oversampling the load roughly doubles.
+* The CV inputs for THRESHOLD and FEEDBACK at audio rate cost more, because the coefficients change in every sample.
+* The resonator with V/OCT costs additional CPU. With audio-rate V/OCT the coefficients change in every sample, and sin, cos and pow run per sample and channel. This has not yet been measured in Rack.
+* The linear gate path in VCA is cheaper than the Paper model.
 
 ## 13. License and sources
 
-Plugin: GPL-3.0-or-later. The formulas follow `buchla_lp_gate.m` (Copyright 2014 Stefano D'Angelo, MIT; notice in `AnnaMariaLpg.hpp`) and the paper *Parker, D'Angelo: A Digital Model of the Buchla Lowpass-Gate*, DAFx-13.
+The plugin is licensed under GPL-3.0-or-later. The formulas follow `buchla_lp_gate.m` (Copyright 2014 Stefano D'Angelo, MIT; notice in `AnnaMariaLpg.hpp`) and the paper *Parker, D'Angelo: A Digital Model of the Buchla Lowpass-Gate*, DAFx-13.
 
-## 14. Patch examples (to be verified in the listening test)
+## 14. Patch examples (to be checked in the listening test)
 
-1. **Pluck / marimba** (found in the listening test): MODE LOWPASS, THRESHOLD 7.5 V, DEPTH 100 % (default), Vactrol response = Conductance, VACTROL ×1. Envelope into the ATT CV, VEL 0: delay 700 ms, attack 5 ms, hold 0 ms, release 200 ms, peak 10 V (generated with the envelope module Europa). A sawtooth (100 Hz) or a triangle (2 kHz, sounds bell- or marimba-like) at IN. DRIVE 1.9, FEEDBACK 63–80 %, FB NL on, Resonance = Normalized, NL solver = Corrected, Circuit variant = Paper, Saturation = On, Oversampling off. "Gate response" and "BOTH filter stage" act only in BOTH and VCA and have no meaning here. Because THRESHOLD is 7.5 V, only the upper part of the envelope opens the gate (from about 7.4 V control level); the decay comes from the tail of the vactrol model (section 8). For a softer decay turn VACTROL to the right, for a harder one to the left. Variant with BOTH: see section 4c (model values).
-2. **Linear VCA**: MODE VCA, envelope or knob at ATT: the loudness follows exactly `cv / 10`; velocity shifts the range (section 3).
-3. **Filter drone**: MODE LOWPASS, THRESHOLD just above 0 V (e.g. 0.1 V), so that the gate sits at the desired cutoff without an envelope; LFO into the ATT CV with a small amplitude; FEEDBACK 75–90 %.
-4. **Resonance distortion**: MODE LOWPASS, FB NL on, FEEDBACK 90 %, DRIVE 6–8, gate half open (control level at the threshold).
-5. **DC offset shift**: Velocity target = Audio offset, ATT 10 V, signal ±5 V at IN, velocity from 0 to −4 V: the signal slides down (+1 / −9 V), with further lowering it is cut at −10 V at the bottom (section 3a).
-6. **Tuned ping**: MODE LOWPASS, V/OCT from a keyboard or sequencer, a short envelope or impulse at IN, ATT 10 V (gate open, THRESHOLD 7.5 V), FEEDBACK 50 % (≈ 0.4 s), WET 35–90 %, DRY 30 %. Starting values, not yet confirmed in the listening test.
+1. **Pluck / marimba** (found in the listening test):
+   * Module: MODE LOWPASS, THRESHOLD 7.5 V, DEPTH 100 % (default), Vactrol response = Conductance, VACTROL ×1.
+   * Envelope to the ATT CV, VEL 0: delay 700 ms, attack 5 ms, hold 0 ms, release 200 ms, peak 10 V (generated with the envelope module Europa).
+   * At IN there is a sawtooth (100 Hz) or a triangle (2 kHz). The triangle sounds bell-like or marimba-like.
+   * Further settings: DRIVE 1.9, FEEDBACK 63–80 %, FB NL on, Resonance = Normalized, NL solver = Corrected, Circuit variant = Paper, Saturation = On, Oversampling off.
+   * "Gate response" and "BOTH filter stage" only act in BOTH and VCA and are irrelevant here.
+   * Because THRESHOLD is 7.5 V, only the upper part of the envelope opens the gate (from approx. 7.4 V control level). The decay comes from the trailing response of the vactrol model (section 8).
+   * For a softer decay turn VACTROL to the right, for a harder one to the left.
+   * A variant with BOTH is given in section 4c (model values).
+   * On one note: Patch a V/OCT input, give a short impulse or noise burst at IN, and set FEEDBACK high (section 6a). The envelope at the ATT CV stays.
+2. **Linear VCA:** MODE VCA, envelope or knob at ATT. The loudness follows exactly `cv / 10`. Velocity shifts the range (section 3).
+3. **Filter drone:** MODE LOWPASS, THRESHOLD just above 0 V (e.g. 0.1 V), so that the gate sits at the desired cutoff without an envelope. An LFO with small amplitude goes to the ATT CV, FEEDBACK 75–90 %.
+4. **Resonance distortion:** MODE LOWPASS, FB NL on, FEEDBACK 90 %, DRIVE 6–8, gate half open (control level at the threshold).
+5. **DC offset shift:** Velocity target = Audio offset, ATT 10 V, signal ±5 V at IN, velocity from 0 to −4 V. The signal slides downward (+1 / −9 V). With further lowering it is clipped at the bottom at −10 V (section 3a).
 
 ## 15. Decisions (log)
 
-Decisions by the user (Kinovice); the order is chronological.
+Decisions by Kinovice, in chronological order:
 
-* **Quad layout (2026-10-14).** Four monophonic channels instead of 16 polyphonic ones, 31 HP, ALL column (ALL OUT, global MODE, MODE CV, DRIVE, VACTROL, DEEP). Order per channel: IN | OUT, ATT | VEL, CV | CV, THRESH | FEEDBACK, CV | CV, FB NL, MODE | DEEP. ALL: sum first, then soft-limit at ±10 V (no division by 4, which was too quiet). IN 1 is passed on to IN 2–4.
-* **Signal path after the hardware module (2026-10-14).** ATT = control level 0…10 V, velocity = DC offset on it, sum limited to 0…10 V; a patched CV replaces the respective knob (ATT and velocity). THRESHOLD CV 1 V/V over 0…7.5 V, FEEDBACK CV 0…10 V = 0…100 %.
-* **Linear VCA (2026-10-15).** According to the reference documentation, VCA should be a linear VCA (paper circuit ineffective there). BOTH gets the linear part as well.
-* **Order in BOTH (2026-10-15).** First VCA, then LPG, both in series (matches a statement in a video about the hardware).
-* **Filter stage of BOTH (2026-10-15).** Selectable in the menu ("stay flexible"), default Lowpass ("more sensible for me").
-* **Velocity target (2026-10-15).** The menu "Velocity target" with "Control level" (default) and "Audio offset". Rule for "Audio offset": velocity as a DC offset after the gate/ATT; velocity 0 = no effect; cut in the direction of the shift at ±10 V; the offset acts only while the gate is open, then at full value (rejected: offset before the gate, fixed lower limit 0 V or −5 V, cut at +5 V or +10 V at the input).
-* **Documentation (2026-09-30).** The documentation is public in the repo; original names, model numbers, links and verbatim quotes from manufacturer manuals are avoided, sources only as "reference documentation".
-* **V/Oct as a tuned resonator (2026-10-24).** Listening sample 04 (resonator in front of the LPG) is the favourite ("sounds different, but round"); it replaces the time scaling of the filter, which damped the sound. WET as a global knob; a polyphonic WET CV input (4 channels) replaces the knob when patched. Level: Rack measurement with a pulse at IN: 30 V peak at WET −6 dB; good sound at 10 V and −45 dB; the range is tailored to that region. The menu "Pitch level compensation" is dropped because the level is flat across pitch on its own.
-* **Panel (2026-10-24).** The global DEEP switch in the ALL column is gone from the panel (room for WET, DRY and WET CV); the parameters stay, and the channel DEEP switches remain placeholders.
+* **Documentation (2026-09-30).** The documentation is public in the repo. Original names, model numbers, links and verbatim quotes from manufacturer manuals are avoided. Sources are called only "reference documentation".
+* **Quad layout (2026-10-14).** Four monophonic channels instead of 16 polyphonic, 31 HP, ALL column (ALL OUT, global MODE, MODE CV, DRIVE, VACTROL, DEEP; status of this entry, the column changed on 2026-10-24). Order per channel: IN | OUT, ATT | VEL, CV | CV, THRESH | FEEDBACK, CV | CV, FB NL, MODE | DEEP. ALL first sums and then soft-limits to ±10 V. It is not divided by 4, because the signal would otherwise be too quiet. IN 1 is passed through to IN 2–4.
+* **Signal path after the hardware original (2026-10-14).** ATT is the control level 0…10 V, velocity a DC offset on top of it. The sum is limited to 0…10 V, and a patched CV replaces the respective knob (ATT and velocity). THRESHOLD CV: 1 V/V over 0…7.5 V. FEEDBACK CV: 0…10 V = 0…100 %.
+* **Linear VCA (2026-10-15).** According to the reference documentation, VCA should be a linear VCA; the Paper circuit is ineffective there. BOTH also gets the linear path.
+* **Order in BOTH (2026-10-15).** First VCA, then LPG, both in series. This corresponds to the statement in a video about the hardware.
+* **Filter stage of BOTH (2026-10-15).** The stage is selectable via the menu ("stay flexible"). Default is Lowpass ("more sensible for me").
+* **Velocity target (2026-10-15).** The menu "Velocity target" offers "Control level" (default) and "Audio offset". For "Audio offset" the following applies:
+  * Velocity is a DC offset after the gate/ATT.
+  * Velocity 0 has no effect.
+  * Clipping takes place in the direction of the shift at ±10 V.
+  * The offset only acts when the gate is open, then with its full value.
+  * Rejected were: offset before the gate, fixed lower limit 0 V or −5 V, capping at +5 V or +10 V at the input.
+* **V/OCT input (2026-10-20).** Each channel gets its own input for patching the pitch, without a menu item. The first version tuned the whole filter by time scaling. A level compensation for low notes was built in as an option, but stayed off by default.
+* **Resonator instead of time scaling (2026-10-24).** With time scaling, Kinovice heard a clearly worse sound than without V/OCT. The listening sample "resonator in front of the gate" was the favorite ("sounds different, but round"). Time scaling and the level compensation have been dropped.
+* **WET (2026-10-24).** The level of the resonator is a global knob. A polyphonic CV input replaces the knob when patched. The value range is tailored to Kinovice's Rack measurement (good sound at 10 V and −45 dB).
+* **Panel (2026-10-24).** The global DEEP switch has been removed from the panel to make room for WET and WET CV. The channel DEEP switches remain as placeholders.
