@@ -2268,7 +2268,7 @@ sit in `docs/figures/` alongside this file.
 #### Figure 1 – Sofonisba Panel Column Layout (schematic overview)
 *[[#Figure 1 – Sofonisba Panel Column Layout (schematic overview)|Obsidian]]*
 
-![Sofonisba Panel Overview](figures/Marf248_PanelOverview.svg)<br>
+![Sofonisba Panel Overview](figures/Sofonisba_PanelOverview.svg)<br>
 Referenced from [3.1](#sec3-1) · [[#3.1 Panel Layout|Obsidian]]. Shows the column structure described
 there (External CV / Section A Controls-Jacks-Outputs / 16× Stage / Section
 B Outputs-Jacks-Controls / Preset column). Since all 16 stage columns are
@@ -2285,7 +2285,7 @@ session.
 #### Figure 2 – Sofonisba Stage Column Detail
 *[[#Figure 2 – Sofonisba Stage Column Detail|Obsidian]]*
 
-![Sofonisba Stage Column Detail](figures/Marf248_StageColumnDetail.svg)<br>
+![Sofonisba Stage Column Detail](figures/Sofonisba_StageColumnDetail.svg)<br>
 Referenced from [3.2](#sec3-2) · [[#3.2 Per-Stage Controls|Obsidian]]. One representative stage column (all 16
 are identical, `xStep=36mm` apart), showing the Voltage/Time sliders,
 the two Stage LEDs, all 8 button rows (2 columns each, `buttonRowsY`/
@@ -2297,7 +2297,7 @@ button next to Slope, and the Shape/Curve/Time-Range/Range block.
 #### Figure 3 – Amilcare Panel (42HP)
 *[[#Figure 3 – Amilcare Panel (42HP)|Obsidian]]*
 
-![Amilcare Panel](figures/Marf248TriggerExpander_Panel.svg)<br>
+![Amilcare Panel](figures/SofonisbaTriggerExpander_Panel.svg)<br>
 Referenced from [6.](#sec6) · [[#6. Amilcare – Trigger Expander|Obsidian]]. All 6 columns × 7 rows plus the LINK light,
 matching the coordinate table in the Panel Layout subsection, including
 the Stage Range CV (row 2E) and Quantized Glide (row 3E) inputs, plus the
@@ -2309,7 +2309,7 @@ row 7).
 #### Figure 4 – Bianca Panel (12HP)
 *[[#Figure 4 – Bianca Panel (12HP)|Obsidian]]*
 
-![Bianca Panel](figures/Marf248CvExpander_Panel.svg)<br>
+![Bianca Panel](figures/SofonisbaCvExpander_Panel.svg)<br>
 Referenced from [7.](#sec7) · [[#7. Bianca – CV Expander|Obsidian]]. Stage Time CV / Slew Curve CV inputs with
 their attenuverters and offset/bias controls, the new Ratchet Warp Blend
 row (CV, attenuverter, global bias) below them, plus Gate A/B outputs

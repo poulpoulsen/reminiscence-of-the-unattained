@@ -1,6 +1,6 @@
-#include "Marf248.hpp"
-#include "Marf248TriggerExpander.hpp"
-#include "Marf248CvExpander.hpp"
+#include "Sofonisba.hpp"
+#include "SofonisbaTriggerExpander.hpp"
+#include "SofonisbaCvExpander.hpp"
 #include "PanelLabel.hpp"
 // Fuer den Stage-Number-Broadcast (Rechtsklick "Apply to all stages" auf
 // Modifier-Buttons/Slidern/Reglern, siehe weiter unten): history::Action/
@@ -4061,7 +4061,7 @@ struct Marf248Widget : ModuleWidget {
 			//
 			// LICHTFARBEN-SCHEMA (nachtraeglich festgelegt und dokumentiert,
 			// ausgeloest durch eine Kinovice-Nachfrage zur Mute-Farbe - siehe
-			// Marf248-Dokumentation_DE.md Kapitel 11 fuer die vollstaendige
+			// Sofonisba-Dokumentation_DE.md Kapitel 11 fuer die vollstaendige
 			// Begruendung, hier nur die Kurzfassung als Code-Referenz):
 			//   Rot    = Ablauf-/Ausgabe-Verhalten der Stage weicht vom
 			//            Normalzustand ab (Pulse1/Pulse2 feuern Trigger,

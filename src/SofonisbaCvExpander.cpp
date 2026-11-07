@@ -1,4 +1,4 @@
-#include "Marf248CvExpander.hpp"
+#include "SofonisbaCvExpander.hpp"
 #include "PanelLabel.hpp"
 
 // Gleiche schlichte Panel-Optik wie die anderen Marf248-Module (siehe

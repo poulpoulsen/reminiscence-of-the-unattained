@@ -1,6 +1,6 @@
 #pragma once
 #include "plugin.hpp"
-#include "Marf248.hpp"
+#include "Sofonisba.hpp"
 
 // modelMarf248 und modelMarf248TriggerExpander sind jetzt final in
 // plugin.hpp deklariert (siehe dort) - die frueheren lokalen extern-

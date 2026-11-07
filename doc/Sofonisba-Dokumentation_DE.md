@@ -2303,7 +2303,7 @@ verlustfrei skalierbar) im Ordner `docs/figures/` neben dieser Datei.
 #### Abbildung 1 – Sofonisba Panel-Spaltenlayout (schematische Übersicht)
 *[[#Abbildung 1 – Sofonisba Panel-Spaltenlayout (schematische Übersicht)|Obsidian]]*
 
-![Sofonisba Panel Overview](figures/Marf248_PanelOverview.svg)<br>
+![Sofonisba Panel Overview](figures/Sofonisba_PanelOverview.svg)<br>
 Referenziert aus [3.1](#sec3-1) · [[#3.1 Panel-Layout|Obsidian]]. Zeigt die dort beschriebene Spaltenstruktur
 (External CV / Section-A-Controls-Jacks-Ausgänge / 16× Stage / Section-B-
 Ausgänge-Jacks-Controls / Preset-Spalte). Da alle 16 Stage-Spalten
@@ -2320,7 +2320,7 @@ Teil dieser Session.
 #### Abbildung 2 – Sofonisba Stage-Spalten-Detail
 *[[#Abbildung 2 – Sofonisba Stage-Spalten-Detail|Obsidian]]*
 
-![Sofonisba Stage Column Detail](figures/Marf248_StageColumnDetail.svg)<br>
+![Sofonisba Stage Column Detail](figures/Sofonisba_StageColumnDetail.svg)<br>
 Referenziert aus [3.2](#sec3-2) · [[#3.2 Bedienelemente pro Stage|Obsidian]]. Eine repräsentative Stage-Spalte (alle 16
 sind identisch, `xStep=36mm` Abstand), mit Voltage-/Time-Slidern, den
 beiden Stage-LEDs, allen 8 Button-Reihen (je 2 Spalten,
@@ -2333,7 +2333,7 @@ Range-Block.
 #### Abbildung 3 – Amilcare Panel (42HP)
 *[[#Abbildung 3 – Amilcare Panel (42HP)|Obsidian]]*
 
-![Amilcare Panel](figures/Marf248TriggerExpander_Panel.svg)<br>
+![Amilcare Panel](figures/SofonisbaTriggerExpander_Panel.svg)<br>
 Referenziert aus [6.](#sec6) · [[#6. Amilcare – Trigger-Expander|Obsidian]]. Alle 6 Spalten × 7 Reihen plus das LINK-
 Licht, passend zur Koordinatentabelle im Panel-Layout-Unterabschnitt,
 inklusive Stage-Range-CV (Reihe 2E), Quantized Glide (Reihe 3E) sowie den
@@ -2345,7 +2345,7 @@ Count Reihe 7).
 #### Abbildung 4 – Bianca Panel (12HP)
 *[[#Abbildung 4 – Bianca Panel (12HP)|Obsidian]]*
 
-![Bianca Panel](figures/Marf248CvExpander_Panel.svg)<br>
+![Bianca Panel](figures/SofonisbaCvExpander_Panel.svg)<br>
 Referenziert aus [7.](#sec7) · [[#7. Bianca – CV-Expander|Obsidian]]. Stage-Time-CV-/Slew-Curve-CV-Eingänge mit
 ihren Attenuvertern und Offset-/Bias-Reglern, die neue Ratchet-Warp-Blend-
 Zeile (CV, Attenuverter, globaler Bias) darunter, sowie Gate-A/B-Ausgänge

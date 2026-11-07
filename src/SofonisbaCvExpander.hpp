@@ -1,6 +1,6 @@
 #pragma once
 #include "plugin.hpp"
-#include "Marf248.hpp"
+#include "Sofonisba.hpp"
 
 // Marf248CvExpander: zweiter Expander fuer Marf248 (nach dem Trigger-
 // Expander), diesmal mit Poly-Kabeln statt Einzel-Jacks - passt fuer
