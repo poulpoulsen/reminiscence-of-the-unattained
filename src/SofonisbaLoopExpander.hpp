@@ -1,6 +1,6 @@
 #pragma once
 #include "plugin.hpp"
-#include "Marf248.hpp"
+#include "Sofonisba.hpp"
 
 // Ritornello (interner Name Marf248LoopExpander): Loop-Expander fuer
 // Sofonisba/Lucia. Wie Amilcare/Bianca ein reiner Jack-Traeger ohne eigene

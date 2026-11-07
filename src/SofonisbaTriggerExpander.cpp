@@ -1,4 +1,4 @@
-#include "Marf248TriggerExpander.hpp"
+#include "SofonisbaTriggerExpander.hpp"
 #include "PanelLabel.hpp"
 
 // Gleiche schlichte Panel-Optik wie Marf248 (kein SVG-Asset, nur eine

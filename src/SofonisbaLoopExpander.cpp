@@ -1,4 +1,4 @@
-#include "Marf248LoopExpander.hpp"
+#include "SofonisbaLoopExpander.hpp"
 #include "PanelLabel.hpp"
 
 // Gleiche schlichte Panel-Optik wie Marf248/Amilcare/Bianca. WORTIDENTISCHE

@@ -12,7 +12,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=${TMPDIR:-/tmp}/marf_loop_tests
 NEWDIR="$OUT/new"
 mkdir -p "$OUT" "$NEWDIR"
-cp "$HERE/../src/Marf248.hpp" "$NEWDIR/Marf248.hpp"
+cp "$HERE/../src/Sofonisba.hpp" "$NEWDIR/Marf248.hpp"
 CXX=${CXX:-g++}
 FLAGS="-std=c++17 -O1 -Wall -I$HERE/rack_stub -I$HERE"
 echo "== Szenario-Tests =="

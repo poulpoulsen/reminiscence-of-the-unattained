@@ -45,7 +45,7 @@ Je Section eine Ziffernanzeige auf dem Expander-Panel (Muster `TempoBpmDisplay`,
 - Zeigt den Restwert der innersten Schleife wie `outLoopRest` (1 bis 10, zweistellig möglich).
 - **Beim Austritt blinkt eine 0:** insgesamt 0,5 s, 0,1 s an und 0,1 s aus (an, aus, an, aus, an), danach steht der Wert des neuen Zustands da. Bei einem inneren Austritt ist das der Wert der äußeren Schleife, bei einem äußeren Austritt „–“.
 - Bei endlos oder ohne Schleife zeigt die Anzeige „–“ (als Rechteck gezeichnet, nicht als Zeichen).
-- Technik: Das Modul hält pro Section einen Blink-Timer, der bei der steigenden Flanke des Austrittsimpulses in `Marf248::process()` gesetzt und heruntergezählt wird. Das Widget liest ihn nur (keine GUI-Zugriffe aus dem Echtzeit-Thread). Konstanten `LOOP_BLINK_SECONDS` (0,5 s) und `LOOP_BLINK_PERIOD` (0,1 s) in `Marf248LoopExpander.hpp`; die Gesamtdauer sollte ein ungerades Vielfaches der Phase sein.
+- Technik: Das Modul hält pro Section einen Blink-Timer, der bei der steigenden Flanke des Austrittsimpulses in `Marf248::process()` gesetzt und heruntergezählt wird. Das Widget liest ihn nur (keine GUI-Zugriffe aus dem Echtzeit-Thread). Konstanten `LOOP_BLINK_SECONDS` (0,5 s) und `LOOP_BLINK_PERIOD` (0,1 s) in `SofonisbaLoopExpander.hpp`; die Gesamtdauer sollte ein ungerades Vielfaches der Phase sein.
 
 ## Ausgänge und Eingänge des Loop-Expanders
 

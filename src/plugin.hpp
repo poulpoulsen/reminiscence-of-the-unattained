@@ -42,5 +42,5 @@ extern Model* modelAnnaMaria;
 // Neuntes Modul "Ritornello" (Loop-Expander fuer Sofonisba/Lucia, interner
 // Name Marf248LoopExpander): Begin/End-Schleifen mit Zaehler, Austrittsimpuls,
 // Restwert und Panel-Ziffernanzeige. Reiner Jack-Traeger wie Amilcare/Bianca,
-// eigene Dateien src/Marf248LoopExpander.hpp/.cpp, Logik in Afg (Marf248.hpp).
+// eigene Dateien src/SofonisbaLoopExpander.hpp/.cpp, Logik in Afg (Marf248.hpp).
 extern Model* modelMarf248LoopExpander;

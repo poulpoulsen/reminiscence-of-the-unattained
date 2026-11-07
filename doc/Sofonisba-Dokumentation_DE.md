@@ -89,7 +89,7 @@ Siebtes Modul: digitaler CV-Prozessor (42HP) mit A/B-Transformationssektionen (E
 **Anna-Maria** *(`AnnaMaria.cpp`, `AnnaMariaLpg.hpp`, `modelAnnaMaria`)*<br>
 Achtes Modul: Quad-Lowpass-Gate (31HP) mit VCA-Modus, Vactrol-artigem Verhalten und optionaler Resonanz; vier monophone Kanäle plus Summenspalte ALL. Eigene Engine, technisch unabhängig von Sofonisba (siehe `AnnaMaria-Dokumentation_DE.md`).
 
-**Ritornello** *(`Marf248LoopExpander.hpp/.cpp`, `modelMarf248LoopExpander`)*<br>
+**Ritornello** *(`SofonisbaLoopExpander.hpp/.cpp`, `modelMarf248LoopExpander`)*<br>
 Neuntes Modul: Loop-Expander (12HP) für Sofonisba und Lucia. Über polyphone Gate-Eingänge markiert er Anfang und Ende von Schleifen über beliebige Stages (auch verschachtelt), zählt die Durchläufe über eine polyphone CV und gibt je Section einen Austrittsimpuls, eine Restwert-CV und eine Ziffernanzeige aus. Wie Amilcare und Bianca ist er ein reiner Jack-Träger; die Schleifenlogik liegt in `Afg` (siehe `Ritornello-Dokumentation_DE.md` und [Abschnitt 8](#sec8)). Der Name verlässt bewusst das Namensschema der Anguissola-Familie.
 
 Alle neun Module werden in `plugin.cpp`/`plugin.hpp` registriert (`modelMarf248`, `modelMarf248Compact`, `modelMarf248TriggerExpander`, `modelMarf248CvExpander`, `modelEuropa`, `modelMinerva`, `modelElena`, `modelAnnaMaria`, `modelMarf248LoopExpander`).
@@ -1178,7 +1178,7 @@ Die folgenden Abbildungen sind schematische Panel-Diagramme (kein fotorealistisc
 #### Abbildung 1 – Sofonisba Panel-Spaltenlayout (schematische Übersicht)
 *[[#Abbildung 1 – Sofonisba Panel-Spaltenlayout (schematische Übersicht)|Obsidian]]*
 
-![Sofonisba Panel Overview](figures/Marf248_PanelOverview.svg)<br>
+![Sofonisba Panel Overview](figures/Sofonisba_PanelOverview.svg)<br>
 Referenziert aus [3.1](#sec3-1) · [[#3.1 Panel-Layout|Obsidian]]. Zeigt die dort beschriebene Spaltenstruktur (External CV / Section-A-Controls-Jacks-Ausgänge / 16× Stage / Section-B-Ausgänge-Jacks-Controls / Preset-Spalte). Da alle 16 Stage-Spalten strukturell identisch sind, sind nur die ersten zwei sowie die letzte vollständig gezeichnet; der Rest ist zu „…" zusammengefasst – siehe Abbildung 2 für das detaillierte Pro-Stage-Layout. Stand veraltet (Session „Time/Reference-Output-Trennung"): Die Ausgangsspalte zeigt noch nur VOUT/TOUT; die neue `TIMESTATIC_A/B_OUTPUT`-Buchse direkt unter TOUT (siehe [3.3](#sec3-3)) fehlt – die SVG-Regenerierung war nicht Teil dieser Session.
 
 <a id="fig2"></a>
@@ -1186,7 +1186,7 @@ Referenziert aus [3.1](#sec3-1) · [[#3.1 Panel-Layout|Obsidian]]. Zeigt die dor
 #### Abbildung 2 – Sofonisba Stage-Spalten-Detail
 *[[#Abbildung 2 – Sofonisba Stage-Spalten-Detail|Obsidian]]*
 
-![Sofonisba Stage Column Detail](figures/Marf248_StageColumnDetail.svg)<br>
+![Sofonisba Stage Column Detail](figures/Sofonisba_StageColumnDetail.svg)<br>
 Referenziert aus [3.2](#sec3-2) · [[#3.2 Bedienelemente pro Stage|Obsidian]]. Eine repräsentative Stage-Spalte (alle 16 sind identisch, `xStep=36mm` Abstand), mit Voltage-/Time-Slidern, den beiden Stage-LEDs, allen 8 Button-Reihen (je 2 Spalten, `buttonRowsY`/`buttonColOffsets` in `Marf248.cpp`) inklusive des neuen Quantized-Glide-Buttons neben Slope sowie dem Shape-/Curve-/Time-Range-/Range-Block.
 
 <a id="fig3"></a>
@@ -1194,7 +1194,7 @@ Referenziert aus [3.2](#sec3-2) · [[#3.2 Bedienelemente pro Stage|Obsidian]]. E
 #### Abbildung 3 – Amilcare Panel (42HP)
 *[[#Abbildung 3 – Amilcare Panel (42HP)|Obsidian]]*
 
-![Amilcare Panel](figures/Marf248TriggerExpander_Panel.svg)<br>
+![Amilcare Panel](figures/SofonisbaTriggerExpander_Panel.svg)<br>
 Referenziert aus [6.](#sec6) · [[#6. Amilcare – Trigger-Expander|Obsidian]]. Alle 7 Spalten × 7 Reihen plus das LINK-Licht, passend zur Koordinatentabelle im Panel-Layout-Unterabschnitt, inklusive Stage-Range-CV (Reihe 2E), Quantized Glide (Reihe 3E), den drei Ratchet-Eingängen in Spalte F (Offset Reihe 5, Enable Reihe 6, Count Reihe 7) sowie den beiden EOS-Ausgängen in Spalte G (Reihe 3 und 4).
 
 <a id="fig4"></a>
@@ -1202,5 +1202,5 @@ Referenziert aus [6.](#sec6) · [[#6. Amilcare – Trigger-Expander|Obsidian]]. 
 #### Abbildung 4 – Bianca Panel (12HP)
 *[[#Abbildung 4 – Bianca Panel (12HP)|Obsidian]]*
 
-![Bianca Panel](figures/Marf248CvExpander_Panel.svg)<br>
+![Bianca Panel](figures/SofonisbaCvExpander_Panel.svg)<br>
 Referenziert aus [7.](#sec7) · [[#7. Bianca – CV-Expander|Obsidian]]. Stage-Time-CV- und Slew-Curve-CV-Eingänge mit ihren Attenuvertern und Offset-/Bias-Reglern, die neue Ratchet-Warp-Blend-Zeile (CV, Attenuverter, globaler Bias) darunter sowie die Gate-A/B-Ausgänge (um zwei Zeilen nach unten verschoben).
