@@ -1,9 +1,9 @@
 # Anna-Maria – Dokumentation (Entwurf, Deutsch)
 
 Anna-Maria ist ein Quad-Lowpass-Gate für VCV Rack, stark inspiriert von der Welt der Buchla-Module. Es gehört zum Plugin „reminiscence of the unattained“, Version 2.4.0.
-Stand: 2026-10-24. Status: Entwurf.
+Stand: 2026-10-29. Status: Entwurf.
 
-Bis zum Hörtest in Rack sind alle Klangaussagen am Modell gemessen, nicht gehört. In Rack noch nicht getestet sind der lineare Gate-Anteil (Abschnitt 5), das Velocity-Ziel „Audio offset“ (Abschnitt 3a) und der gestimmte Resonator mit V/OCT und WET (Abschnitt 6a). Den Resonator hat Kinovice in Rack gebaut und mit Puls und Rauschen ausprobiert, die Testreihe steht aus. Das Panel mit vier Kanälen ist in Rack bestätigt.
+Bis zum Hörtest in Rack sind alle Klangaussagen am Modell gemessen, nicht gehört. In Rack noch nicht getestet sind der lineare Gate-Anteil (Abschnitt 5), das Velocity-Ziel „Audio offset“ (Abschnitt 3a) und der gestimmte Resonator mit V/OCT, WET und DRY (Abschnitt 6a). Den Resonator habe ich in Rack gebaut und mit Puls und Rauschen ausprobiert, die Testreihe steht aus. Das Panel mit vier Kanälen ist in Rack bestätigt.
 
 Anna-Maria ist ein eigenständiges Werk und steht in keiner Verbindung zu den Herstellern der Vorbilder. Alle Marken und Namen gehören ihren Inhabern.
 
@@ -22,7 +22,7 @@ Besonderheiten dieses Moduls:
 * **VCA und BOTH mit linearem Gate-Anteil** (Standard): VCA verhält sich wie ein linearer VCA. BOTH schaltet erst den linearen VCA und dann das Lowpass-Gate in Reihe (Abschnitt 5). Das Paper-Modell bleibt im Menü wählbar.
 * **DRIVE und VACTROL** für das ganze Modul, beide in der Spalte ALL. DRIVE stellt den Pegel in das Modell ein und wirkt nur auf die Nichtlinearität. VACTROL ist der Zeitfaktor des Vactrols (Abschnitt 8).
 * **Feedback** wahlweise normiert (Standard) oder schaltungsgetreu (absolut).
-* **V/OCT-Eingang und WET** (Abschnitt 6a): Jeder Kanal hat einen V/OCT-Eingang. Er stimmt einen Resonator vor dem Gate auf eine Note. So lässt sich ein Ping oder Pluck auf einer Tonhöhe spielen. Ein globaler WET-Regler mit polyphonem CV-Eingang stellt den Pegel des Resonators ein.
+* **V/OCT-Eingang, WET und DRY** (Abschnitt 6a): Jeder Kanal hat einen V/OCT-Eingang. Er stimmt einen Resonator vor dem Gate auf eine Note. So lässt sich ein Ping oder Pluck auf einer Tonhöhe spielen. Ein globaler WET-Regler mit polyphonem CV-Eingang stellt den Pegel des Resonators ein. Ein globaler DRY-Regler stellt den Pegel des Direktsignals ein. Bei gestecktem V/OCT läuft das Direktsignal durch einen festen Hoch- und Tiefpass.
 * **Modellvarianten im Kontextmenü:**
   * Vactrol-Verhalten (Abschnitt 8, Standard = Referenz)
   * NL-Solver (Abschnitt 11, Standard = Corrected)
@@ -32,25 +32,86 @@ Besonderheiten dieses Moduls:
 
 ## 2. Signalfluss
 
-Je Kanal, Paper-Modell, MODE LOWPASS:
+Jeder Kanal hat zwei Wege. Der **Audiopfad** führt das Signal von IN nach OUT. Der **Steuerpfad** macht aus ATT, Velocity, THRESHOLD und DEPTH die Größe, mit der das Gate öffnet und schließt. Beide Diagramme gelten für alle Modi. Welche Stufen in welchem Modus wirken, steht in der Tabelle unter dem Diagramm.
+
+**Audiopfad (ein Kanal):**
 
 ```
-Audio IN ─ ÷Pegelfaktor ─► [ Audiopfad: 2 Integratoren + Differenzierer,
-                              Rückkopplung (optional tanh) ] ─► ×Pegelfaktor ─► Audio OUT
-                                         ▲
-                                         │ Rf (Vactrol-Widerstand)
-ATT (Regler oder CV) ─┐
-                      ├─ + ─ Begrenzung 0…10 V ─ + THRESHOLD (Offset) ─ Shelving ─ Kennlinie ─ LED-Strom ─ Vactrol (Tiefpass auf Rf)
-Velocity (Regler/CV) ─┘
+ IN  (IN 1 ist auf IN 2–4 normalisiert)
+                        │
+                        ▼
+┌──────────────────────────────────────────────┐
+│ 1  ÷ Pegelfaktor (DRIVE)                     │
+└───────────────────────┬──────────────────────┘
+                        ▼
+┌──────────────────────────────────────────────┐
+│ 2  Linearer Gate-Anteil: × g                 │ ◄─ g (Steuerpfad, Zweig b)
+└───────────────────────┬──────────────────────┘
+                        ▼
+┌──────────────────────────────────────────────┐
+│ 3  Resonator-Stufe (nur mit V/OCT)           │ ◄─ V/OCT, WET, DRY
+│    DRY · Direkt(x) + WET · Resonator(x)      │
+└───────────────────────┬──────────────────────┘
+                        ▼
+┌──────────────────────────────────────────────┐
+│ 4  Filter mit Rückkopplung                   │ ◄─ Rf (Steuerpfad, Zweig a)
+│    2 Integratoren + Differenzierer           │
+└───────────────────────┬──────────────────────┘
+                        ▼
+┌──────────────────────────────────────────────┐
+│ 5  Sättigung tanh (Menü, optional)           │
+└───────────────────────┬──────────────────────┘
+                        ▼
+┌──────────────────────────────────────────────┐
+│ 6  × Pegelfaktor                             │
+└───────────────────────┬──────────────────────┘
+                        ▼
+┌──────────────────────────────────────────────┐
+│ 7  + Velocity-Gleichanteil (Audio offset)    │
+└───────────────────────┬──────────────────────┘
+                        │
+                        ▼
+                  OUT (Kanal)
 ```
 
-* Der Vactrol-Widerstand Rf bestimmt zugleich die Verstärkung des VCA-Teils und die Grenzfrequenz des Tiefpasses.
-* Im offenen Zustand beträgt Rf etwa 1,5 kΩ. Geschlossen reicht er bis in den MΩ-Bereich.
-* **Steuerpegel:** `cv = begrenze(ATT + Velocity, 0 … 10 V)`. THRESHOLD wirkt als Offset nach dieser Begrenzung (Abschnitt 4).
-* **Linearer Gate-Anteil (VCA, BOTH):** `g = cv / 10`, geglättet mit den Vactrol-Zeitkonstanten.
-  * VCA: `Ausgang = g · Eingang`, ohne Filter.
-  * BOTH: erst `g · Eingang`, danach die Filterstufe (Abschnitt 5).
-* **Ausnahme Velocity-Ziel „Audio offset“:** Der Steuerpegel ist dann `begrenze(ATT, 0 … 10 V)`. Velocity wird hinter dem Gate als Gleichanteil zum Signal addiert (Abschnitt 3a).
+| Stufe | Wirkt in | Was sie tut |
+|---|---|---|
+| 1 | alle Modi | Teilt das Eingangssignal durch den Pegelfaktor. DRIVE bestimmt ihn (Abschnitt 7). Das Modell rechnet in Modelleinheiten, Stufe 6 macht die Teilung wieder rückgängig. |
+| 2 | VCA, BOTH (Gate response = Linear) | Multipliziert mit der Verstärkung `g` aus dem Steuerpfad. In VCA endet die Verarbeitung nach dieser Stufe, die Stufen 3 bis 5 entfallen. Mit „Gate response = Paper circuit“ gibt es diese Stufe nicht. Dann steckt die Verstärkung im Vactrol-Widerstand Rf. |
+| 3 | LOWPASS, BOTH (Lowpass-Stufe), nur mit V/OCT-Kabel | Mischt das Direktsignal (mit festem Hoch- und Tiefpass) mit dem auf die Note gestimmten Resonator. DRY und WET stellen die Pegel ein. Ohne V/OCT-Kabel ist die Stufe aus, das Signal geht unverändert weiter. In BOTH sitzt sie hinter dem linearen Gate-Anteil (Abschnitt 6a). |
+| 4 | LOWPASS, BOTH | Die Filterstufe: zwei Integratoren, ein Differenzierer und die Rückkopplung (FEEDBACK, mit FB NL durch tanh begrenzt). Der Vactrol-Widerstand Rf bestimmt die Grenzfrequenz. Offen beträgt Rf etwa 1,5 kΩ, geschlossen reicht er bis in den MΩ-Bereich. Mit V/OCT-Kabel ist die Rückkopplung 0, und FEEDBACK stellt die Klingdauer des Resonators ein. |
+| 5 | alle Modi, nur wenn „Saturation = On“ | Weiche Begrenzung des Modellausgangs mit tanh (Abschnitt 7a). |
+| 6 | alle Modi | Multipliziert mit dem Pegelfaktor und stellt die Volt-Werte wieder her. |
+| 7 | nur „Velocity target = Audio offset“ | Addiert Velocity als Gleichanteil, nur bei offenem Gate. Bei ±10 V wird geschnitten (Abschnitt 3a). In allen anderen Fällen entfällt die Stufe. |
+
+Die Ausgänge der vier Kanäle summiert ALL OUT und begrenzt die Summe weich auf ±10 V (Abschnitt 3).
+
+**Steuerpfad (ein Kanal):**
+
+```
+ ATT (Regler oder CV) ──┐
+                        ├─► + ─► Begrenzung 0…10 V ─► cv
+ Velocity (Regler/CV) ──┘                              │
+ ┌────────────────────────────────────────┬────────────┘
+ ▼                                        ▼
+ Zweig a: Filterstufe (Paper-Modell)      Zweig b: linearer Gate-Anteil
+ + THRESHOLD (Offset)                     g = cv / 10
+ ▼                                        ▼
+ Shelving-Filter                          Glättung (Vactrol-Zeiten)
+ ▼                                        ▼
+ Kennlinie, Knick an der Schwelle         g ─► Stufe 2 im Audiopfad
+ ▼
+ LED-Strom ◄─ DEPTH (Vorwiderstand)
+ ▼
+ Vactrol: Tiefpass auf Rf
+ ▼
+ Rf ─► Stufe 4 im Audiopfad
+```
+
+* **Steuerpegel `cv`.** Er ist die Summe aus ATT und Velocity, begrenzt auf 0…10 V: `cv = begrenze(ATT + Velocity, 0 … 10 V)`. Eine gesteckte CV ersetzt jeweils den Regler. Mit „Velocity target = Audio offset“ ist `cv = begrenze(ATT, 0 … 10 V)`, und Velocity geht stattdessen in Stufe 7 des Audiopfads.
+* **Zweig a (Paper-Modell).** Der Steuerpegel führt über THRESHOLD, Shelving-Filter, Kennlinie und LED-Strom zum Vactrol. Das Vactrol glättet mit zwei Zeitkonstanten (Öffnen 2,4 ms, Schließen 50 ms, mal VACTROL). Sein Widerstand Rf wirkt in Stufe 4. THRESHOLD kommt erst nach der Begrenzung als Offset dazu (Abschnitt 4). DEPTH verändert den Vorwiderstand der LED und damit, wie tief das Gate schließt.
+* **Zweig b (linearer Gate-Anteil).** Die Verstärkung ist `g = cv / 10`, geglättet mit denselben Vactrol-Zeitkonstanten. Sie wirkt in Stufe 2 (Abschnitt 5).
+* **Modi.** LOWPASS nutzt nur Zweig a. VCA nutzt mit „Gate response = Linear“ nur Zweig b. BOTH nutzt beide: erst der lineare Gate-Anteil, dann die Filterstufe.
 
 ## 3. Bedienelemente und ihre Wirkung
 
@@ -80,10 +141,11 @@ Alle Regler und Schalter außer denen in der Spalte ALL gelten pro Kanal. Die Sp
 | MODE CV | 0…10 V | Wenn gesteckt, bestimmt sie den Modus aller Kanäle und geht den Schaltern vor: unter 3,3 V = VCA, unter 6,6 V = LOWPASS, darüber BOTH. |
 | DRIVE | 0–10, 5 | Pegel in das Modell (Abschnitt 7). |
 | VACTROL | ×0,1…×10, Mitte = ×1 | Zeitfaktor des Vactrols (Abschnitt 8). |
-| WET | 0…100 %, 35 % | Pegel des gestimmten Resonators (Abschnitt 6a). |
+| DRY | 0…100 %, 30 % | Pegel des Direktsignals, solange V/OCT gesteckt ist (Abschnitt 6a). Der Regler steht links neben WET. |
+| WET | 0…100 %, 90 % | Pegel des gestimmten Resonators (Abschnitt 6a). |
 | WET CV | 0…10 V, polyphon | Wenn gesteckt, ersetzt sie den WET-Regler. Kanal 1–4 des Kabels steuern LPG 1–4. |
 
-Die Spalte ALL hat keinen globalen DEEP-Schalter mehr. Die DEEP-Schalter der Kanäle sind geblieben, sie bleiben Platzhalter.
+Die Spalte ALL hat keinen globalen DEEP-Schalter mehr. In ihrer sechsten Reihe stehen DRY (links) und WET (rechts), in der siebten WET CV. Die DEEP-Schalter der Kanäle sind geblieben, sie bleiben Platzhalter.
 
 **Kontextmenü (Rechtsklick):** Es enthält DEPTH je Kanal und die Modell-Einstellungen (Abschnitt 10). Das Untermenü „Depth“ hat einen Schieber für alle vier Kanäle und je einen für Kanal 1–4, Standard 100 %. Ein Rechtsklick auf einen Kanalregler oder -schalter bietet „Apply to all 4 channels“.
 
@@ -95,6 +157,7 @@ Die Spalte ALL hat keinen globalen DEEP-Schalter mehr. Die DEEP-Schalter der Kan
 * **FEEDBACK.** FEEDBACK stellt die Resonanz ein (Abschnitt 6). Bei FEEDBACK-CV entsprechen 0…10 V den Werten 0…100 %, begrenzt. Beide CV-Eingänge (THRESHOLD, FEEDBACK) wirken pro Sample und sind auch mit Audiorate nutzbar. Das kostet mehr Rechenzeit, weil sich die Filterkoeffizienten dann in jedem Sample ändern. Ist ein V/OCT-Kabel gesteckt, stellt FEEDBACK stattdessen die Klingdauer des Resonators ein (Abschnitt 6a).
 * **V/OCT.** Der Eingang stimmt den Resonator vor dem Gate auf die Note (0 V = C4, ±6 Oktaven). Er erzeugt selbst keinen Ton, sondern lässt das Gate bei einem Impuls oder Rauschen auf dieser Tonhöhe klingeln. Ohne Kabel ist das Verhalten wie ohne Resonator (Abschnitt 6a).
 * **WET.** WET stellt den Pegel des Resonators ein, gilt für alle Kanäle und hat eine polyphone CV (Abschnitt 6a).
+* **DRY.** DRY stellt den Pegel des Direktsignals ein, solange ein V/OCT-Kabel steckt. Bei 100 % bleibt der Pegel unverändert, bei 0 % ist nur der Resonator zu hören. Ohne V/OCT-Kabel hat DRY keine Wirkung (Abschnitt 6a).
 * **DEPTH (Kontextmenü).** DEPTH bestimmt, wie tief das Gate weit unter der Schwelle schließt (Leck). Bei 3 V unter der Schwelle sind es −31 dB (0 %) bis −35 dB (100 %), bei 6 V darunter −36 dB bis −49 dB (Paper-VCA). Die Schwelle selbst bleibt beim Drehen stehen. Intern entspricht DEPTH dem Trim. Standard ist 100 %.
 * **FB NL.** FB NL schaltet die tanh-Nichtlinearität im Feedback ein (Abschnitt 7). Der Schalter wirkt dort, wo auch FEEDBACK wirkt (Abschnitt 6).
 * **MODE.** Siehe Abschnitt 5.
@@ -334,7 +397,7 @@ Klangliche Einordnung:
 
 * **LOWPASS:** Der Pegel bleibt im Durchlassbereich nahe 1, nur die Höhen schließen. Das Gate wirkt wie ein Filter mit CV-gesteuerter Grenzfrequenz (404 Hz bei Steuerpegel 4 V im Beispiel von Abschnitt 4). Das Feedback ist hier immer wirksam.
 * **BOTH (linear):** VCA und Lowpass-Gate liegen in Reihe. Die Lautstärke folgt linear dem Steuerpegel, und das Filter schließt zusätzlich die Höhen. Das Menü **BOTH filter stage** bietet zwei Filterstufen:
-  * *Lowpass* (Standard) verwendet die Filterstufe von LOWPASS. THRESHOLD, DEPTH, FEEDBACK und FB NL wirken dort wie in LOWPASS, und das Filter schwingt nach dem Schließen des Gate leise nach. Sie ist Standard, weil Kinovice sie für sinnvoller hält und flexibel bleiben will.
+  * *Lowpass* (Standard) verwendet die Filterstufe von LOWPASS. THRESHOLD, DEPTH, FEEDBACK und FB NL wirken dort wie in LOWPASS, und das Filter schwingt nach dem Schließen des Gate leise nach. Sie ist Standard, weil ich sie für sinnvoller halte und flexibel bleiben will.
   * *Paper BOTH* verwendet C3 = 0. Das Filter filtert kaum und hat keine Resonanz, FEEDBACK und FB NL bleiben ohne Wirkung. BOTH ist dann das Paper-BOTH mit vorgeschaltetem linearem Gate.
 * **VCA (linear):** Es gibt kein Filter, nur Pegel. THRESHOLD, DEPTH, FEEDBACK und FB NL wirken nicht. Die Lautstärke ist exakt `cv / 10`.
 
@@ -427,44 +490,59 @@ Der V/OCT-Eingang macht aus dem Gate ein Instrument für Ping und Pluck auf eine
 
 **Aufbau.**
 
-* Der Eingang des Gate ist `x + WET · res(x)`. `x` ist das Eingangssignal, `res(x)` der gestimmte Resonator. Der Direktpfad bleibt exakt wie ohne V/OCT.
-* Der Resonator hat dieselbe Tonhöhe bei jeder Note. Seine Impulsantwort ist ein abklingender Sinus mit Amplitude 1.
+* Der Eingang des Gate ist `DRY · d(x) + WET · res(x)`. `x` ist das Eingangssignal, `d(x)` das Direktsignal nach Hoch- und Tiefpass und `res(x)` der gestimmte Resonator. Der Resonator wird vom ungefilterten Eingang `x` gespeist.
+* Das Direktsignal läuft bei gestecktem V/OCT durch einen Hochpass und einen Tiefpass, beide 1. Ordnung. Die Werte sind fest und haben keine Regler:
+  * Hochpass: Eckfrequenz = 0,5 × Tonhöhe des Resonators, mindestens 150 Hz (und höchstens 0,2 × Abtastrate).
+  * Tiefpass: 4 kHz (höchstens 0,45 × Abtastrate).
+  * Der Hochpass nimmt dem Direktsignal eines unipolaren Nadelimpulses (etwa einer Hüllkurve am IN) den Gleichanteil und die Tiefen, die sonst als „Plopp“ durch das offene Gate laufen. Laut Code-Kommentar nimmt 150 Hz den Plopp um etwa 25 dB. Der Tiefpass rundet die senkrechte Flanke ab.
+  * Beide Filter wirken nur im Resonatorbetrieb, also bei gestecktem V/OCT und in den Modi mit Resonanzstufe (siehe unten).
+* Der Resonator hat dieselbe Tonhöhe bei jeder Note. Seine Impulsantwort ist ein abklingender Sinus mit Amplitude 1. Der Ausgang hat Nullstellen bei 0 Hz und bei der Nyquist-Frequenz. Die Spitzenverstärkung ist unverändert. Damit entfallen Gleichanteil und Anteile an der Nyquist-Frequenz im Resonatorausgang.
 * Eine weiche Begrenzung am Resonatorausgang verhindert, dass Dauerrauschen mit langer Klingdauer den Pegel aufsummiert. Bis 4 Modelleinheiten ist sie linear, darüber geht sie stetig gegen 8.
 * Solange V/OCT gesteckt ist, ist die Rückkopplung des Filters selbst 0. Die Resonanz kommt nur vom Resonator.
 * Der Resonator wirkt nur mit Resonanzstufe: in LOWPASS und in BOTH mit „Gate response = Linear“ und „BOTH filter stage = Lowpass“. In VCA und in Paper-BOTH hat V/OCT keine Wirkung.
-* Ohne gestecktes V/OCT-Kabel ist alles bitgleich zum Stand ohne Resonator.
+* Ohne gestecktes V/OCT-Kabel ist alles bitgleich zum Stand ohne Resonator. DRY, Hochpass und Tiefpass sind dann nicht wirksam.
 
 **Bedienung.**
 
 * **V/OCT:** 0 V = C4 (261,6256 Hz), Bereich ±6 Oktaven. Ein Audiorate-Signal ist möglich (FM).
 * **FEEDBACK** (Regler oder CV) ist bei gestecktem V/OCT die Klingdauer T60 des Resonators: `T60 = 0,05 s · 60^FEEDBACK`. Das sind 0,05 s bei 0 %, 0,39 s bei 50 % und 3 s bei 100 %. Der Tooltip zeigt die Zeit.
-* **WET** (Regler 0…100 %, global, Standard 35 %): Die Verstärkung des Resonators ist `0,05 · k²` mit k = WET. Das ergibt:
+* **WET** (Regler 0…100 %, global, Standard 90 %): Die Verstärkung des Resonators ist `0,045 · k²` mit k = WET. Das ergibt:
 
-| WET | 25 % | 35 % (Standard) | 50 % | 75 % | 100 % |
+| WET | 25 % | 50 % | 75 % | 90 % (Standard) | 100 % |
 |---|---|---|---|---|---|
-| Verstärkung | 0,0031 | 0,0061 | 0,0125 | 0,028 | 0,05 |
-| dB | −50 | −44 | −38 | −31 | −26 |
+| Verstärkung | 0,0028 | 0,0113 | 0,0253 | 0,0365 | 0,045 |
+| dB | −51 | −39 | −32 | −29 | −27 |
 
+* **DRY** (Regler 0…100 %, global, Standard 30 %): Die Verstärkung des Direktsignals ist `k²` mit k = DRY. Das ergibt:
+
+| DRY | 0 % | 25 % | 30 % (Standard) | 50 % | 75 % | 100 % |
+|---|---|---|---|---|---|---|
+| Verstärkung | 0 | 0,0625 | 0,09 | 0,25 | 0,56 | 1 |
+| dB | −∞ | −24 | −21 | −12 | −5 | 0 |
+
+  DRY wirkt nur, solange V/OCT gesteckt ist. 100 % lässt den Pegel des Direktsignals unverändert (der feste Hoch- und Tiefpass bleibt aber aktiv). Bei 0 % ist nur der gestimmte Resonator zu hören. DRY hat keinen CV-Eingang.
 * **WET CV** (polyphon): 0…10 V entsprechen 0…100 % des Reglers, mit derselben Kurve. Eine gesteckte WET CV ersetzt den Regler. Kanal 1–4 des Kabels steuern LPG 1–4, ein monophones Kabel gilt für alle Kanäle. Mit Kabel ab wirkt der Regler wieder.
 
-**Kalibrierung des Pegels.** Der Wertebereich ist auf einen Puls als Anregung zugeschnitten. Ein Puls summiert sich im Resonator zur Fläche auf, deshalb ist die nötige Verstärkung klein. Für Kinovice klang es bei einem Ausgangspegel von etwa 10 V und −45 dB gut, das entspricht WET um 33 %. Nach oben bleiben rund 19 dB Reserve. Bei anderem Material, etwa Rauschburst oder Dauerrauschen, kann der passende Wert abweichen.
+**Kalibrierung des Pegels.** Der Wertebereich ist auf einen Puls als Anregung zugeschnitten. Ein Puls summiert sich im Resonator zur Fläche auf (10 V über einige ms ergeben roh über 100 Modelleinheiten, begrenzt auf 8). Deshalb ist die nötige Verstärkung klein. Ich fand mit der Verstärkung 0,0225 bei WET 90 % (Ausgangspegel etwa 2,5 V) einen guten Klang und hob den Pegel auf etwa 5 V an (+6 dB). Das ist die heutige Kurve `0,045 · k²`, Standard ist WET 90 %. Die frühere Kalibrierung (`0,05 · k²`, Standard 35 %) ist damit abgelöst. Bei anderem Material, etwa Rauschburst oder Dauerrauschen, kann der passende Wert abweichen.
 
-**Genauigkeit (Modell, 48 kHz).**
+**Genauigkeit (Modell, 48 kHz).** Die Messungen stammen vom Stand 2026-10-24, also vor den Nullstellen im Resonatorausgang und vor dem Hoch- und Tiefpass im Direktpfad. Sie sind nicht wiederholt.
+
 
 * Die Tonhöhe stimmt von C2 bis C8 bei T60 0,1 / 0,5 / 3 s auf 0,0 Cent (C8: +0,2 bis +0,3 Cent). Das Abklingen zwischen 50 und 300 ms entspricht dem Soll (−150, −30 und −5 dB).
 * Der Ringpegel bei Rauschanregung ist über die Tonlage flach (C2 bis C7 innerhalb −0,8 bis +0,1 dB). Ein Pegelausgleich für tiefe Noten ist deshalb nicht nötig.
 * Beim Schließen des Gate weicht die Tonhöhe bei einer 200-ms-Hüllkurve um −4 bis −12 Cent ab (C3 bis C6, in späteren Fenstern). Bei einer 20-ms-Hüllkurve sind es bis etwa ±40 Cent, aber nur in leisen Ausklängen (−20 bis −50 dB). Das Signal gleitet nicht nach unten.
-* Stabilität: Mit Audiorate-V/OCT (±2 Oktaven bei 0,7 Hz plus ±1,5 Oktaven FM bei 220 Hz), T60 3 s und 20 s Rauschen entsteht kein NaN. Die Spitze liegt bei 16,7, die Modulgrenze bei 50. Dieser Test lief mit einer größeren Verstärkung als der jetzigen.
+* Stabilität: Mit Audiorate-V/OCT (±2 Oktaven bei 0,7 Hz plus ±1,5 Oktaven FM bei 220 Hz), T60 3 s und 20 s Rauschen entsteht kein NaN. Die Spitze liegt bei 16,7, die Modulgrenze bei 50. Dieser Test stammt vom Stand 2026-10-24 (Verstärkung bis 0,05, ohne Hoch- und Tiefpass im Direktpfad) und ist für den Stand 2026-10-29 nicht wiederholt.
 
 **Hinweise zur Anwendung.**
 
 * V/OCT erzeugt keinen Ton. Es stimmt nur die Resonanz. Ein Dauerton oder LFO am IN bleibt in seiner eigenen Tonhöhe hörbar, V/OCT ändert dann nur die Klangfarbe.
 * Zum Hören der Tonhöhe braucht der Resonator einen breitbandigen Anstoß: Rauschen oder einen kurzen Impuls oder Trigger. Das Gate sollte offen sein (ATT 10 V), FEEDBACK hoch (Klingdauer lang).
 * Mit Rauschen am IN steigt die Tonhöhe mit steigender Spannung (bestätigt).
+* Bei gestecktem V/OCT klingt das Direktsignal dünner und leiser als ohne: Der Hochpass nimmt die Tiefen, der Tiefpass die Höhen über 4 kHz, und DRY steht standardmäßig auf 30 %. Für mehr Direktsignal DRY aufdrehen, für nur den Resonator DRY auf 0 % stellen.
 
 **Gegenüber der früheren Fassung.** Eine erste Fassung hat das ganze Filter durch Zeitskalierung auf die Note gestimmt. Sie hat sich dumpf angehört: Bei offenem Gate und V/OCT auf C4 sank die Verstärkung für 1 kHz von −0,0 auf −20,5 dB, für 4 kHz von −0,5 auf −42,3 dB. Außerdem klang der Ton bei hohen Noten viel kürzer. Deshalb gibt es jetzt den Resonator vor dem Gate. Der Direktpfad bleibt unberührt, und das Gate klingt wie ohne V/OCT. Der frühere Menüpunkt „Pitch level compensation“ ist entfallen, weil der Pegel jetzt über die Tonlage von selbst flach ist. Ein alter Patch mit gestecktem V/OCT klingt anders (Resonator statt Zeitskalierung). Ein gespeicherter Schlüssel `pitchComp` wird ignoriert.
 
-**Offen.** Die Rack-Testreihe (Tonhöhe C1 bis C7, WET-Reihe, WET CV, Klingdauer, V/OCT ab, Audiorate-V/OCT, Schließen des Gate, alter Patch) und der Hörvergleich mit einem Vergleichsmodul stehen aus. Mögliche Erweiterungen: ein Hold-Modus (konstante Tonhöhe über den ganzen Ton), eine einstellbare Klingzeit-Spanne (jetzt 0,05 bis 3 s) und eine Pegelkurve für WET per Menü.
+**Offen.** Die Rack-Testreihe (Tonhöhe C1 bis C7, WET-Reihe, DRY-Reihe, WET CV, Klingdauer, V/OCT ab, Audiorate-V/OCT, Schließen des Gate, alter Patch) und der Hörvergleich mit einem Vergleichsmodul stehen aus. Mögliche Erweiterungen: ein Hold-Modus (konstante Tonhöhe über den ganzen Ton), eine einstellbare Klingzeit-Spanne (jetzt 0,05 bis 3 s), eine Pegelkurve für WET per Menü sowie einstellbare Eckfrequenzen für Hoch- und Tiefpass im Direktpfad (jetzt fest).
 
 ## 7. Nichtlinearität (FB NL) und DRIVE
 
@@ -507,7 +585,7 @@ Die Sättigung ist nicht Teil des Paper-Modells. Auf Scope-Aufnahmen des Origina
 * Es entstehen nur ungeradzahlige Obertöne, weil die Kennlinie symmetrisch ist.
 * **Der Ausgangspegel sinkt mit steigendem DRIVE.** Die Ausgangsspitze ist auf den Pegelfaktor begrenzt (20 / 5 / 1,25 V bei Drive 0 / 5 / 10). Bei hohem Drive sollte man den Pegel deshalb dahinter anheben.
 * Im VCA-Modus (offene Gain 0,63) und bei teilweise geschlossenem Gate ist die Amplitude im Modell kleiner, und die Sättigung wirkt entsprechend schwächer. Am stärksten wirkt sie bei offenem Gate und lautem Signal.
-* **Hörtest (Kinovice, Rack):** Der warme Klang eines Sinus stellt sich ein, wenn DRIVE bei etwa 75 % (≈ 7,5) steht. Das entspricht rund 17 % Oberwellen (Tabelle). Bei Drive 5 ist die Wirkung zu schwach.
+* **Hörtest in Rack:** Der warme Klang eines Sinus stellt sich ein, wenn DRIVE bei etwa 75 % (≈ 7,5) steht. Das entspricht rund 17 % Oberwellen (Tabelle). Bei Drive 5 ist die Wirkung zu schwach.
 * Die Stufe ist ein Zusatz und keine Messung am Original. Der gemessene Effekt entspricht dem Rechenmodell, nicht notwendig dem Klang des Geräts.
 
 ## 8. Zeitverhalten: Vactrol
@@ -571,6 +649,7 @@ Der „Decay“ ist also kein freier Parameter. Er hängt davon ab, wohin die CV
 * Patches vor dem Hardware-Signalweg bekommen ATT 0 V, und ihre CV-Kabel werden nicht mehr skaliert (Abschnitt 4).
 * Neue Eingänge (THRESHOLD-CV, FEEDBACK-CV, V/OCT, WET CV) hängen am Ende der Eingangsliste. Alte Patches behalten dadurch ihre Kabel.
 * Ein Patch mit gestecktem V/OCT aus der Zeit der Zeitskalierung klingt jetzt anders (Abschnitt 6a).
+* Patches mit gestecktem V/OCT von vor dem 2026-10-29 klingen ebenfalls anders: Das Direktsignal ist gefiltert und mit DRY 30 % leiser, und WET steht auf einem anderen Pegel. DRY ist ein neuer Regler und lädt im alten Patch mit dem Standard 30 %.
 
 ## 10. Kontextmenü
 
@@ -640,7 +719,7 @@ Die Schwelle ändert sich nicht. Das geschlossene Gate liegt in LOWPASS und BOTH
 * **Rack:** Ein aktiver Kanal braucht 0,2–0,4 %. Bei belegtem ALL (vier Kanäle) sind es 1,5 %, das sind ca. 0,35 % je Kanal bei bewegter CV.
 * Mit 2× Oversampling verdoppelt sich der Aufwand etwa.
 * Die CV-Eingänge für THRESHOLD und FEEDBACK mit Audiorate kosten mehr, weil sich die Koeffizienten in jedem Sample ändern.
-* Der Resonator mit V/OCT kostet zusätzlich Rechenzeit. Bei Audiorate-V/OCT ändern sich die Koeffizienten in jedem Sample, und je Sample und Kanal laufen sin, cos und pow. Das ist im Rack noch nicht gemessen.
+* Der Resonator mit V/OCT kostet zusätzlich Rechenzeit. Bei Audiorate-V/OCT ändern sich die Koeffizienten in jedem Sample, und je Sample und Kanal laufen sin, cos und pow. Das ist im Rack noch nicht gemessen. Hoch- und Tiefpass im Direktpfad (je 1. Ordnung) kommen hinzu und sind ebenfalls nicht gemessen.
 * Der lineare Gate-Anteil in VCA ist billiger als das Paper-Modell.
 
 ## 13. Lizenz und Quellen
@@ -658,7 +737,7 @@ Das Plugin steht unter GPL-3.0-or-later. Die Formeln folgen `buchla_lp_gate.m` (
    * Weil THRESHOLD 7,5 V ist, öffnet nur der obere Teil der Hüllkurve das Gate (ab ca. 7,4 V Steuerpegel). Der Ausklang kommt vom Nachlauf des Vactrol-Modells (Abschnitt 8).
    * Für weicheren Ausklang VACTROL nach rechts drehen, für härteren nach links.
    * Eine Variante mit BOTH steht in Abschnitt 4c (Modellwerte).
-   * Auf einer Note: Einen V/OCT-Eingang stecken, am IN einen kurzen Impuls oder Rauschburst geben und FEEDBACK hoch stellen (Abschnitt 6a). Die Hüllkurve an der ATT-CV bleibt.
+   * Auf einer Note: Einen V/OCT-Eingang stecken, am IN einen kurzen Impuls oder Rauschburst geben und FEEDBACK hoch stellen (Abschnitt 6a). Die Hüllkurve an der ATT-CV bleibt. WET (Standard 90 %) und DRY (Standard 30 %) mischen Resonator und Direktsignal.
 2. **Linearer VCA:** MODE VCA, Hüllkurve oder Regler an ATT. Die Lautstärke folgt exakt `cv / 10`. Velocity verschiebt den Bereich (Abschnitt 3).
 3. **Filter-Drone:** MODE LOWPASS, THRESHOLD knapp über 0 V (z. B. 0,1 V), sodass das Gate ohne Hüllkurve bei der gewünschten Grenzfrequenz steht. Ein LFO mit kleiner Amplitude geht an die ATT-CV, FEEDBACK 75–90 %.
 4. **Resonanz-Verzerrung:** MODE LOWPASS, FB NL an, FEEDBACK 90 %, DRIVE 6–8, Gate halb offen (Steuerpegel an der Schwelle).
@@ -666,10 +745,10 @@ Das Plugin steht unter GPL-3.0-or-later. Die Formeln folgen `buchla_lp_gate.m` (
 
 ## 15. Entscheidungen (Protokoll)
 
-Entscheidungen Kinovice, in chronologischer Reihenfolge:
+Meine Entscheidungen, in chronologischer Reihenfolge:
 
 * **Dokumentation (2026-09-30).** Die Dokumentation liegt öffentlich im Repo. Originalnamen, Modellnummern, Links und wörtliche Zitate aus Hersteller-Handbüchern werden vermieden. Quellen heißen nur „Referenzdokumentation“.
-* **Quad-Layout (2026-10-14).** Vier monophone Kanäle statt 16 polyphoner, 31 HP, Spalte ALL (ALL OUT, MODE global, MODE CV, DRIVE, VACTROL, DEEP; Stand dieses Eintrags, die Spalte hat sich am 2026-10-24 geändert). Reihenfolge je Kanal: IN | OUT, ATT | VEL, CV | CV, THRESH | FEEDBACK, CV | CV, FB NL, MODE | DEEP. ALL summiert zuerst und begrenzt dann weich auf ±10 V. Es wird nicht durch 4 geteilt, weil das Signal sonst zu leise wäre. IN 1 wird auf IN 2–4 durchgereicht.
+* **Quad-Layout (2026-10-14).** Vier monophone Kanäle statt 16 polyphoner, 31 HP, Spalte ALL (ALL OUT, MODE global, MODE CV, DRIVE, VACTROL, DEEP; Stand dieses Eintrags, die Spalte hat sich am 2026-10-24 und am 2026-10-29 geändert). Reihenfolge je Kanal: IN | OUT, ATT | VEL, CV | CV, THRESH | FEEDBACK, CV | CV, FB NL, MODE | DEEP. ALL summiert zuerst und begrenzt dann weich auf ±10 V. Es wird nicht durch 4 geteilt, weil das Signal sonst zu leise wäre. IN 1 wird auf IN 2–4 durchgereicht.
 * **Signalweg nach Hardware-Vorbild (2026-10-14).** ATT ist der Steuerpegel 0…10 V, Velocity ein Gleichanteil darauf. Die Summe wird auf 0…10 V begrenzt, und eine gesteckte CV ersetzt jeweils den Regler (ATT und Velocity). THRESHOLD-CV: 1 V/V über 0…7,5 V. FEEDBACK-CV: 0…10 V = 0…100 %.
 * **Linearer VCA (2026-10-15).** Nach der Referenzdokumentation soll VCA ein linearer VCA sein, die Paper-Schaltung ist dort unwirksam. BOTH bekommt ebenfalls den linearen Anteil.
 * **Reihenfolge in BOTH (2026-10-15).** Erst VCA, dann LPG, beide in Reihe. Das entspricht der Aussage in einem Video zur Hardware.
@@ -681,6 +760,10 @@ Entscheidungen Kinovice, in chronologischer Reihenfolge:
   * Der Offset wirkt nur bei offenem Gate, dann mit vollem Wert.
   * Verworfen wurden: Offset vor dem Gate, feste Untergrenze 0 V oder −5 V, Kappung bei +5 V oder +10 V am Eingang.
 * **V/OCT-Eingang (2026-10-20).** Jeder Kanal bekommt einen eigenen Eingang zum Patchen der Tonhöhe, ohne Menüpunkt. Die erste Fassung stimmte das ganze Filter per Zeitskalierung. Ein Pegelausgleich bei tiefen Noten wurde als Option eingebaut, blieb aber standardmäßig aus.
-* **Resonator statt Zeitskalierung (2026-10-24).** Kinovice hörte mit der Zeitskalierung einen deutlich schlechteren Klang als ohne V/OCT. Die Hörprobe „Resonator vor dem Gate“ war der Favorit („klingt anders, aber rund“). Die Zeitskalierung und der Pegelausgleich sind entfallen.
-* **WET (2026-10-24).** Der Pegel des Resonators ist ein globaler Regler. Ein polyphoner CV-Eingang ersetzt im gesteckten Zustand den Regler. Der Wertebereich ist auf die Rack-Messung von Kinovice zugeschnitten (guter Klang bei 10 V und −45 dB).
+* **Resonator statt Zeitskalierung (2026-10-24).** Ich hörte mit der Zeitskalierung einen deutlich schlechteren Klang als ohne V/OCT. Die Hörprobe „Resonator vor dem Gate“ war der Favorit („klingt anders, aber rund“). Die Zeitskalierung und der Pegelausgleich sind entfallen.
+* **WET (2026-10-24).** Der Pegel des Resonators ist ein globaler Regler. Ein polyphoner CV-Eingang ersetzt im gesteckten Zustand den Regler. Der Wertebereich ist auf meine Rack-Messung zugeschnitten (guter Klang bei 10 V und −45 dB). Am 2026-10-29 wurde die Kurve neu kalibriert (siehe unten).
 * **Panel (2026-10-24).** Der globale DEEP-Schalter ist vom Panel entfallen, um Platz für WET und WET CV zu schaffen. Die DEEP-Schalter der Kanäle bleiben als Platzhalter.
+* **Pegel von WET (2026-10-29).** Ich fand mit der Verstärkung 0,0225 bei WET 90 % einen guten Klang und hob den Pegel um 6 dB an. Die Verstärkung ist jetzt `0,045 · k²`, der Standard WET 90 %.
+* **DRY und Direktpfad (2026-10-29).** Neuer globaler Regler DRY (Verstärkung `k²`, Standard 30 %) für das Direktsignal im Resonatorbetrieb. Das Direktsignal läuft zusätzlich durch einen festen Hochpass (0,5 × Tonhöhe, mindestens 150 Hz) und einen Tiefpass (4 kHz), jeweils 1. Ordnung, ohne Regler. Anlass war der tiefe „Plopp“, den ein unipolarer Nadelimpuls im Direktpfad durch das offene Gate erzeugt. Der Resonator wird weiter vom ungefilterten Eingang gespeist.
+* **Resonatorausgang (2026-10-29).** Der Ausgang hat jetzt Nullstellen bei 0 Hz und bei der Nyquist-Frequenz, die Spitzenverstärkung bleibt gleich.
+* **Panel (2026-10-29).** In der Spalte ALL stehen DRY und WET nebeneinander in einer Reihe, WET CV darunter.
