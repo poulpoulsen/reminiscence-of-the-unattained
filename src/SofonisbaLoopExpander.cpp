@@ -15,17 +15,6 @@ struct PanelBackground : Widget {
 	}
 };
 
-// Duenne Trennlinie zwischen Ergebnis-Block (oben) und Konfigurations-
-// Eingaengen (unten).
-struct LoopPanelRule : TransparentWidget {
-	void draw(const DrawArgs& args) override {
-		nvgBeginPath(args.vg);
-		nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-		nvgFillColor(args.vg, nvgRGBA(90, 90, 100, 160));
-		nvgFill(args.vg);
-	}
-};
-
 // Ziffernanzeige je Section (Muster TempoBpmDisplay aus Marf248.cpp: reines
 // Text-Widget ohne Interaktion, Outline-Trick, gleiche Amber-Farbe). Liest nur
 // restShown/blinkTimer vom Modul (beschrieben von Marf248::process()):
@@ -160,22 +149,22 @@ struct Marf248LoopExpanderWidget : ModuleWidget {
 			addChild(disp);
 		}
 
-		// Ergebnis-Block: Rest-CV (Reihe 1), Austrittsimpuls (Reihe 2), je
-		// Section eine Spalte.
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colA, 47.f)), module, Marf248LoopExpander::LOOP_REST_A_OUTPUT));
-		addLabel(Vec(colA, 47.f), "REST A", COLOR_SECTION_A);
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colB, 47.f)), module, Marf248LoopExpander::LOOP_REST_B_OUTPUT));
-		addLabel(Vec(colB, 47.f), "REST B", COLOR_SECTION_B);
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colA, 62.f)), module, Marf248LoopExpander::LOOP_EXIT_A_OUTPUT));
-		addLabel(Vec(colA, 62.f), "EXIT A", COLOR_SECTION_A);
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colB, 62.f)), module, Marf248LoopExpander::LOOP_EXIT_B_OUTPUT));
-		addLabel(Vec(colB, 62.f), "EXIT B", COLOR_SECTION_B);
-
-		// Trennlinie (y = 76mm, 44mm breit, 0,3mm hoch).
-		LoopPanelRule* rule = new LoopPanelRule;
-		rule->box.size = mm2px(Vec(44.f, 0.3f));
-		rule->box.pos = mm2px(Vec(cx, 76.f)).minus(rule->box.size.div(2));
-		addChild(rule);
+		// Ergebnis-Block: Rest-CV (Reihe 1), Austrittsimpuls (Reihe 2),
+		// Gesamtschleife fertig (Reihe 3), je Section eine Spalte. Drei Reihen
+		// im 12-mm-Raster (y = 44/56/68), damit der Abstand zum Config-Block bleibt
+		// bleibt.
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colA, 44.f)), module, Marf248LoopExpander::LOOP_REST_A_OUTPUT));
+		addLabel(Vec(colA, 44.f), "REST A", COLOR_SECTION_A);
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colB, 44.f)), module, Marf248LoopExpander::LOOP_REST_B_OUTPUT));
+		addLabel(Vec(colB, 44.f), "REST B", COLOR_SECTION_B);
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colA, 56.f)), module, Marf248LoopExpander::LOOP_EXIT_A_OUTPUT));
+		addLabel(Vec(colA, 56.f), "EXIT A", COLOR_SECTION_A);
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colB, 56.f)), module, Marf248LoopExpander::LOOP_EXIT_B_OUTPUT));
+		addLabel(Vec(colB, 56.f), "EXIT B", COLOR_SECTION_B);
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colA, 68.f)), module, Marf248LoopExpander::LOOP_DONE_A_OUTPUT));
+		addLabel(Vec(colA, 68.f), "DONE A", COLOR_SECTION_A);
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(colB, 68.f)), module, Marf248LoopExpander::LOOP_DONE_B_OUTPUT));
+		addLabel(Vec(colB, 68.f), "DONE B", COLOR_SECTION_B);
 
 		// Konfigurations-Block (gilt fuer beide Sections): Begin/End als Paar,
 		// Count mittig darunter. Stage-Struktur -> COLOR_STAGEMOD wie

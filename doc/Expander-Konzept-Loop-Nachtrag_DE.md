@@ -67,7 +67,5 @@ Je Section eine Ziffernanzeige auf dem Expander-Panel (Muster `TempoBpmDisplay`,
 
 ## Noch offen
 
-- Gleichzeitiger Betrieb von Amilcare, Bianca und Ritornello an einer Sofonisba (Nachbar-Problem), eigenes Feature.
 - Ob die Zähler-Konfiguration später zusätzlich per Regler im Expander möglich sein soll (nicht Teil von Version 1).
 - Ob ein zusätzlicher Ausgang „Gesamtschleife fertig“ (nur äußerste Schleife) sinnvoll ist (EXIT bleibt vorerst bei jedem Austritt).
-- Zweistellige Anzeige „10“ (bei 9 V und mehr) im Rack ansehen, falls noch nicht geschehen.

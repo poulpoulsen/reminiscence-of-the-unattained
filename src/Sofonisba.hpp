@@ -986,6 +986,11 @@ struct Afg {
 	// End-Stage der innersten Schleife, die currentStage enthaelt (-1 = keine).
 	int loopInnerEnd = -1;
 	dsp::PulseGenerator loopExitGen;
+	// "Gesamtschleife fertig": 1-ms-Trigger nur beim regulaeren Austritt aus der
+	// AEUSSERSTEN Schleife (keine andere gepaarte Schleife umschliesst sie).
+	// Endlosschleifen verlassen nie regulaer. Unabhaengig von MOD_MUTE.
+	dsp::PulseGenerator loopDoneGen;
+	bool loopDonePending = false;  // in loopCountPass gesetzt, in advanceStage ausgewertet
 
 	void updateInnerLoop() {
 		loopInnerEnd = -1;
@@ -1088,6 +1093,22 @@ struct Afg {
 
 	// Gemeinsame Zaehllogik: true = zurueckspringen (Zaehler laeuft weiter oder
 	// endlos), false = Austritt (exited gesetzt, Zaehler verfaellt).
+	// true, wenn die Schleife mit End-Stage `endStage` von keiner anderen
+	// gepaarten Schleife (b2 <= b, e <= e2) umschlossen wird.
+	bool loopIsOutermost(int endStage) const {
+		int b = loopBeginP1[endStage] - 1;
+		if (b < 0)
+			return false;
+		for (int e2 = 0; e2 < NUM_STAGES; e2++) {
+			if (e2 == endStage)
+				continue;
+			int b2 = loopBeginP1[e2] - 1;
+			if (b2 >= 0 && b2 <= b && endStage <= e2)
+				return false;
+		}
+		return true;
+	}
+
 	bool loopCountPass(int endStage, bool* exited) {
 		ensureLoopLoaded(endStage);
 		int& r = loopRestArr[endStage];
@@ -1099,6 +1120,8 @@ struct Afg {
 		}
 		loopLoadedArr[endStage] = false;
 		*exited = true;
+		if (loopIsOutermost(endStage))
+			loopDonePending = true;
 		return false;
 	}
 
@@ -1389,6 +1412,7 @@ struct Afg {
 		// Schrittlogik (First/Last-Wrap bleibt davon unberuehrt, solange die
 		// Schleife nicht springt). Pendulum: inaktiv.
 		bool loopExited = false;
+		loopDonePending = false;
 		int loopTarget = 0;
 		bool loopJumped = false;
 		if (loopCount > 0 && !pendulumMode) {
@@ -1506,6 +1530,9 @@ struct Afg {
 		// MOD_MUTE (struktureller Marker wie EOS).
 		if (loopExited) {
 			loopExitGen.trigger(1e-3f);
+			if (loopDonePending) {
+				loopDoneGen.trigger(1e-3f);
+			}
 		}
 		// Wendepunkt-Wiederholung, next==currentStage von oben) - bei einem
 		// normalen Schritt auf eine andere Stage braucht es keine Luecke,
@@ -1549,7 +1576,8 @@ struct Afg {
 	             float* outP1, float* outP2,
 	             float* outStartCycle, float* outEndCycle, float* outRegateGap,
 	             float* outEos,
-	             float* outLoopExit, float* outLoopRest) {
+	             float* outLoopExit, float* outLoopRest,
+	             float* outLoopDone) {
 		// Konfiguration fuer die Loop-Schleifen (nur innerhalb dieses Aufrufs
 		// dereferenziert).
 		loopFlags = stageLoopFlags;
@@ -1948,6 +1976,7 @@ struct Afg {
 		// des laufenden, 1 V pro Durchlauf; 0 V = keine Schleife / endlos /
 		// Pendulum. Blinkt bewusst nicht (siehe Konzept-Nachtrag).
 		*outLoopExit = loopExitGen.process(sampleTime) ? 10.f : 0.f;
+		*outLoopDone = loopDoneGen.process(sampleTime) ? 10.f : 0.f;
 		if (pendulumMode || loopInnerEnd < 0) {
 			*outLoopRest = 0.f;
 		}

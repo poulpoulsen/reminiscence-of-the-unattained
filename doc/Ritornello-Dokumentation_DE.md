@@ -1,6 +1,6 @@
 # Ritornello – Dokumentation
 
-*Stand: 2026-11-09 · Loop-Expander für Sofonisba und Lucia · 12 HP · Plugin „Kinovice reminiscence of the unattained“*
+*Stand: 2026-11-09 · Loop-Expander für Sofonisba und Lucia · 12 HP · Plugin „reminiscence of the unattained“*
 
 > **Hinweis:** Das Plugin ist ein eigenständiges Werk, stark inspiriert von der wunderbaren Buchla-Welt der Module. Es steht in keiner Verbindung zu Buchla, Tiptop Audio oder einem anderen Hersteller. Alle Marken gehören ihren jeweiligen Inhabern. Die Umsetzung ist eigenständig; Quelle der Idee ist eine öffentlich zugängliche Referenzdokumentation.
 
@@ -16,7 +16,7 @@ Das Modul enthält keine eigene Klangerzeugung und keine eigene Logik. Wie Amilc
 Ritornello ist der musikalische Begriff für die wiederkehrende Passage. Das Namensschema der Anguissola-Familie ist ausgeschöpft und wird hier bewusst verlassen.
 
 **Was du bekommst**<br>
-Drei Eingänge (Begin, End, Count), je Sektion eine Ziffernanzeige, ein Restwert-Ausgang (REST) und ein Austrittsimpuls (EXIT).
+Drei Eingänge (Begin, End, Count), je Sektion eine Ziffernanzeige, ein Restwert-Ausgang (REST), ein Austrittsimpuls (EXIT) und ein Ausgang „Gesamtschleife fertig“ (DONE).
 
 **Wenn nichts gepatcht ist**<br>
 Ohne angedocktes Ritornello, oder solange nicht sowohl Begin als auch End gepatcht sind, verhält sich Sofonisba bitgleich wie ohne die Loop-Funktion.
@@ -40,7 +40,7 @@ Trennst du Ritornello vom Host, setzt es Ausgänge, Anzeigen und LINK-Leuchte zu
 
 ## 3. Panel
 
-Oben stehen Titel und LINK-Leuchte. Darunter folgt je Sektion eine Spalte (A links, B rechts), nach einer Trennlinie folgen die gemeinsamen Eingänge.
+Oben stehen Titel und LINK-Leuchte. Darunter folgt je Sektion eine Spalte (A links, B rechts), darunter folgen die gemeinsamen Eingänge.
 
 **Ziffernanzeige A/B**<br>
 Zeigt den Restwert der innersten Schleife, die die aktuelle Stage der Sektion enthält, siehe [Abschnitt 7](#ritornello-anzeige) ([[#7. Restwert, Anzeige und Austritt|Obsidian]]).
@@ -50,6 +50,9 @@ CV-Ausgang, 1 V pro verbleibendem Durchlauf, wie die Anzeige.
 
 **EXIT A/B**<br>
 Trigger-Ausgang (1 ms), feuert bei jedem regulären Austritt aus einer Schleife.
+
+**DONE A/B**<br>
+Trigger-Ausgang (1 ms), feuert nur beim regulären Austritt aus der **äußersten** Schleife („Gesamtschleife fertig“). Die Buchsen sitzen in einer eigenen Reihe unter EXIT.
 
 **LOOP BEGIN**<br>
 Poly-Gate-Eingang, Kanal 1–16 = Stage 1–16. Ein High (ab 2 V) markiert die erste Stage einer Schleife.
@@ -156,7 +159,10 @@ Zeigt 1 bis 10. Bei endlos oder ohne Schleife steht dort ein „–“ (als Balk
 Verlässt die Sektion eine Schleife regulär, blinkt die Anzeige eine 0: 0,5 s lang, 0,1 s an und 0,1 s aus (an, aus, an, aus, an). Danach steht der Wert des neuen Zustands da. Nach dem Austritt aus einer inneren Schleife ist das der Wert der äußeren, nach dem Austritt aus der äußersten Schleife ein „–“.
 
 **EXIT**<br>
-Ein 1-ms-Trigger (10 V) bei **jedem** regulären Austritt, auch bei inneren Schleifen. So gibt es immer eine Rückmeldung. MOD_MUTE einer Stage unterdrückt EXIT nicht (struktureller Marker wie End of Stage). Ein eigener Ausgang für „Gesamtschleife fertig“ bleibt als spätere Erweiterung möglich.
+Ein 1-ms-Trigger (10 V) bei **jedem** regulären Austritt, auch bei inneren Schleifen. So gibt es immer eine Rückmeldung. MOD_MUTE einer Stage unterdrückt EXIT nicht (struktureller Marker wie End of Stage).
+
+**DONE (Gesamtschleife fertig)**<br>
+Ein 1-ms-Trigger (10 V), der nur beim regulären Austritt aus der **äußersten** Schleife feuert, also wenn beim Verlassen keine weitere Schleife die Stage umschließt. Innere Schleifen lösen DONE nicht aus. Endlosschleifen verlassen nie regulär, DONE bleibt dann still. Wie EXIT ist DONE unabhängig von MOD_MUTE. Im Beispiel oben feuert DONE genau einmal: beim Verlassen von Stage 5 im vierten äußeren Durchlauf, während EXIT fünfmal feuert.
 
 **Scope-Hinweis**<br>
 Ein 1-ms-Impuls ist am Scope knapp. Für Tests ist eine LED, eine Hüllkurve oder ein Gate-Verlängerer zuverlässiger.
@@ -178,7 +184,7 @@ Bei Continuous-Adressierung bestimmt die Adresse die Stage. Die Sprünge der Sch
 Eine übersprungene End-Stage zählt beim Verlassen, die Begin-Stage wiederholt sich entsprechend oft. Beispiel: Stage 3 ist End und auf Skip, Begin liegt auf Stage 2, Count 3,5 V (4 Durchläufe): Die Folge ist 1, 2, 2, 2, 2, 4, 5, 6. Ist die Begin-Stage auf Skip, landet der Sprung dort und läuft sofort weiter. Eine Endlosschleife nur aus Skip-Stages hängt nicht, das Überspringen ist auf 16 Schritte begrenzt.
 
 **Mute**<br>
-Mute unterdrückt nur die Pulse P1/P2/APOUT der Stage. Schleifen und EXIT bleiben davon unberührt.
+Mute unterdrückt nur die Pulse P1/P2/APOUT der Stage. Schleifen, EXIT und DONE bleiben davon unberührt.
 
 **Stop, Sustain, Enable, Advance**<br>
 Ihre Vorrangregeln bleiben unverändert. Eine Schleife springt, wenn die End-Stage verlassen wird, egal ob durch Zeitablauf oder durch einen Advance-Trigger.
@@ -229,6 +235,7 @@ Der Impuls dauert nur 1 ms.
 | Zähler je Sektion | getrennt, Markierungen gemeinsam |
 | REST-Ausgang | 1 V pro Durchlauf, höchstens 10 V |
 | EXIT-Impuls | 1 ms, 10 V |
+| DONE-Impuls (Gesamtschleife fertig) | 1 ms, 10 V, nur äußerste Schleife |
 | Blinken | 0,5 s gesamt, 0,1 s Phasen |
 | Kette | bis zu 3 Expander je Seite |
 
@@ -239,7 +246,7 @@ Ohne angedocktes Ritornello oder ohne beide Kabel erhält die Engine Null-Daten 
 
 ## 11. Entscheidungen und offene Punkte
 
-Entscheidungen von Kinovice, in der Reihenfolge der Umsetzung:
+Entscheidungen von mir, in der Reihenfolge der Umsetzung:
 
 1. **Eigenes Expander-Modul von Anfang an**, kein Platz in Amilcare. Reiner Jack-Träger ohne eigene DSP; die Logik liegt in der Engine von Sofonisba.
 2. **Begin und End sind eigene Markierungen**, unabhängig von First und Last.
@@ -255,8 +262,8 @@ Entscheidungen von Kinovice, in der Reihenfolge der Umsetzung:
 12. **Name Ritornello:** Das Namensschema der Anguissola-Familie wird bewusst verlassen.
 13. **Kettensuche** (bis zu drei Expander je Seite): Amilcare, Bianca und Ritornello arbeiten gleichzeitig an einer Sofonisba. Im Rack geprüft, ohne Fehler.
 14. **Zweistellige Anzeige „10“** (bei 9 V und mehr): passt auf das Display, im Rack geprüft.
+15. **Ausgang DONE „Gesamtschleife fertig“**: feuert nur beim regulären Austritt aus der äußersten Schleife, Endlosschleifen bleiben still, 1-ms-Trigger wie EXIT, unabhängig von MOD_MUTE, zwei neue Buchsen (A/B) in einer eigenen Reihe unter EXIT (Raster 44/56/68 mm; neben EXIT ist bei 12 HP kein Platz). Neue Ausgänge hinten an die Enum angehängt, damit bestehende Patches nicht verrutschen.
 
 **Offen**
 - Ob die Zähler-Konfiguration später zusätzlich per Regler im Expander möglich sein soll.
-- Ob ein zusätzlicher Ausgang „Gesamtschleife fertig“ (nur äußerste Schleife) sinnvoll ist.
 - Sprünge, zweite Spannung (CV 2), Zeit-Quantisierung, Taktteilung und Fix bleiben eigene, spätere Features.

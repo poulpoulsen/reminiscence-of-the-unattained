@@ -2181,6 +2181,7 @@ struct Marf248 : Module, Marf248Host {
 			}
 		}
 		float loopExitA, loopRestA, loopExitB, loopRestB;
+		float loopDoneA, loopDoneB;
 		float vA, tA, apA, p1A, p2A, scA, ecA, rgA, eosA;
 		afgA.process(args.sampleTime, resolvedVoltage, resolvedTimeA, stageModifier, stageCurvePower,
 			stageRatchetCount, stageWarpBlend, stageRatchetOffset, stageLoopFlags, stageLoopCount,
@@ -2197,7 +2198,7 @@ struct Marf248 : Module, Marf248Host {
 			trigExp && trigExp->getInput(Marf248TriggerExpander::ADVANCE_A_INPUT).isConnected(),
 			trigExp ? trigExp->getInput(Marf248TriggerExpander::ADVANCE_A_INPUT).getVoltage() : 0.f,
 			&vA, &tA, &apA, &p1A, &p2A, &scA, &ecA, &rgA, &eosA,
-			&loopExitA, &loopRestA);
+			&loopExitA, &loopRestA, &loopDoneA);
 		outputs[VOUT_A_OUTPUT].setVoltage(vA);
 		outputs[TOUT_A_OUTPUT].setVoltage(tA);
 		outputs[APOUT_A_OUTPUT].setVoltage(apA);
@@ -2230,7 +2231,7 @@ struct Marf248 : Module, Marf248Host {
 			trigExp && trigExp->getInput(Marf248TriggerExpander::ADVANCE_B_INPUT).isConnected(),
 			trigExp ? trigExp->getInput(Marf248TriggerExpander::ADVANCE_B_INPUT).getVoltage() : 0.f,
 			&vB, &tB, &apB, &p1B, &p2B, &scB, &ecB, &rgB, &eosB,
-			&loopExitB, &loopRestB);
+			&loopExitB, &loopRestB, &loopDoneB);
 		outputs[VOUT_B_OUTPUT].setVoltage(vB);
 		outputs[TOUT_B_OUTPUT].setVoltage(tB);
 		outputs[APOUT_B_OUTPUT].setVoltage(apB);
@@ -2259,6 +2260,8 @@ struct Marf248 : Module, Marf248Host {
 				loopExp->getOutput(Marf248LoopExpander::LOOP_EXIT_B_OUTPUT).setVoltage(loopExitB);
 				loopExp->getOutput(Marf248LoopExpander::LOOP_REST_A_OUTPUT).setVoltage(loopRestA);
 				loopExp->getOutput(Marf248LoopExpander::LOOP_REST_B_OUTPUT).setVoltage(loopRestB);
+				loopExp->getOutput(Marf248LoopExpander::LOOP_DONE_A_OUTPUT).setVoltage(loopDoneA);
+				loopExp->getOutput(Marf248LoopExpander::LOOP_DONE_B_OUTPUT).setVoltage(loopDoneB);
 
 				if (exitHighA && !loopExitPrevA) {
 					loopExp->blinkTimer[0] = LOOP_BLINK_SECONDS;

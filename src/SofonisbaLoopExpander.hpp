@@ -48,6 +48,12 @@ struct Marf248LoopExpander : Module, Marf248ExpanderMarker {
 		// Pendulum. Blinkt bewusst nicht (das tut nur die Panel-Anzeige).
 		LOOP_REST_A_OUTPUT,
 		LOOP_REST_B_OUTPUT,
+		// "Gesamtschleife fertig" (1 ms) nur beim regulaeren Austritt aus der
+		// AEUSSERSTEN Schleife, unabhaengig von MOD_MUTE (Afg::loopDoneGen).
+		// Bewusst am Ende der Enum angehaengt, damit bestehende Patches nicht
+		// verrutschen.
+		LOOP_DONE_A_OUTPUT,
+		LOOP_DONE_B_OUTPUT,
 		OUTPUTS_LEN
 	};
 	enum LightId {
@@ -83,6 +89,8 @@ struct Marf248LoopExpander : Module, Marf248ExpanderMarker {
 		configOutput(LOOP_EXIT_B_OUTPUT, "Section B Loop Exit trigger");
 		configOutput(LOOP_REST_A_OUTPUT, "Section A remaining passes of innermost loop (1 V per pass, 0 V = no loop/endless)");
 		configOutput(LOOP_REST_B_OUTPUT, "Section B remaining passes of innermost loop (1 V per pass, 0 V = no loop/endless)");
+		configOutput(LOOP_DONE_A_OUTPUT, "Section A Overall Loop Done trigger (outermost loop only)");
+		configOutput(LOOP_DONE_B_OUTPUT, "Section B Overall Loop Done trigger (outermost loop only)");
 	}
 
 	// Prueft jeden Frame selbststaendig, ob (noch) ein Marf248 links oder
@@ -99,6 +107,8 @@ struct Marf248LoopExpander : Module, Marf248ExpanderMarker {
 			outputs[LOOP_EXIT_B_OUTPUT].setVoltage(0.f);
 			outputs[LOOP_REST_A_OUTPUT].setVoltage(0.f);
 			outputs[LOOP_REST_B_OUTPUT].setVoltage(0.f);
+			outputs[LOOP_DONE_A_OUTPUT].setVoltage(0.f);
+			outputs[LOOP_DONE_B_OUTPUT].setVoltage(0.f);
 			for (int s = 0; s < 2; s++) {
 				restShown[s] = 0;
 				blinkTimer[s] = 0.f;
