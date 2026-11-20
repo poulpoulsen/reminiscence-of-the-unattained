@@ -1,12 +1,12 @@
 # Elena – Technische Dokumentation
 
-Siebtes Modul des Plugins **Kinovice reminiscence of the unattained**:
+Siebtes Modul des Plugins **reminiscence of the unattained**:
 VCV-Rack-Modul, stark inspiriert von der wunderbaren Buchla-Modulwelt. Zwei Transformationssektionen (A/B, nach Art eines digitalen Kennlinien-Prozessors)
 und sechs Slew-Limiter (C–H) mit Pulse-Ausgang. Die A/B-Sektionen sind
 polyphon mit individuellen Werten je Kanal, die Slew-Sektionen verarbeiten
 polyphone Signale mit gemeinsamen Reglern je Paar.
 
-**Hinweis:** Das Plugin *Kinovice reminiscence of the unattained* ist ein eigenständiges Werk, stark inspiriert von der wunderbaren Buchla-Modulwelt.
+**Hinweis:** Das Plugin *reminiscence of the unattained* ist ein eigenständiges Werk, stark inspiriert von der wunderbaren Buchla-Modulwelt.
 Es steht in keiner Verbindung zu Buchla, Tiptop Audio oder einem anderen Hersteller und wird von diesen weder autorisiert noch unterstützt. Erwähnte Produkt- und Firmennamen 
 sind Marken ihrer jeweiligen Inhaber und dienen nur dazu zu beschreiben, welche funktionalen Konzepte ein Modul inspiriert haben.
 
@@ -14,7 +14,7 @@ sind Marken ihrer jeweiligen Inhaber und dienen nur dazu zu beschreiben, welche 
 
 Referenzen: Referenzdokumentation. Sie beschreibt die Sektionen A/B nur knapp als ähnlich zu einer älteren Sektion; die Formeln stammen deshalb aus der Beschreibung dieser älteren Sektion.
 
-Teststand (Kinovice, live im laufenden Rack): Die Sektionen A/B
+Teststand (live im laufenden Rack): Die Sektionen A/B
 funktionieren (Kanalwahl mit ACTIVATE, Kanalwerte bleiben nach Speichern und
 Laden erhalten, polyphone A1/A2 mit monophonem SEL CV, Kennlinien-Anzeige
 und Breakpoint stimmen mit den nachgerechneten Werten überein). Die
@@ -114,6 +114,8 @@ SELECT 0…100 % (Standard 0 = A1), 0 V und 10 V je 0…10 V (Standard 0 V und 1
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
 **Aufbau**<br>
+Die drei Slew-Paare sind auf dem Panel oben links in ihrem Block als „SECTIONS C/D“, „SECTIONS E/F“ und „SECTIONS G/H“ beschriftet, genauso wie sie im Kontextmenü heißen (zum Beispiel „DC blocker Sections C/D“).
+
 Sechs Slewer C bis H, je `C IN` … `H IN`, `C OUT` … `H OUT`, `C PLS` … `H PLS`. Die Slew-Regler sind je Paar geteilt: **C/D**, **E/F**, **G/H**. Zwei LEDs je Slewer: rot (Puls) und blau (Ausgangspegel).
 
 **POS und NEG**<br>
@@ -225,7 +227,7 @@ A1 unbelegt, Signal in A2, zweites Signal (0–10 V) in SEL CV: Ausgang = `A2 ·
 **Glocke `u²(1−u)²` (rechnerisch mit den Formeln aus `Elena.cpp` nachgerechnet, nicht im Rack getestet)**<br>
 Braucht Minerva und beide Elena-Sektionen. 1) Minerva Sektion A: Rampe 0–10 V in Va, K = −1, Oset = 10 V → invertierte Rampe. 2) Elena Sektion A: Rampe in A2, invertierte Rampe in SEL CV, A1 unbelegt; 0 V = 0, 10 V = 10, BP an mit BP IN = 2,5 V, BP OUT = 10 V → Parabel `4u(1−u)` mit 10 V Spitze. 3) Elena Sektion B: Parabel in A2 **und** in SEL CV, A1 unbelegt, Standard-Kennlinie → Ausgang = Parabel². Der Ausgang ist symmetrisch mit flachen Ausläufern und 10 V Spitze; die Breite ergibt sich nur aus der Dauer der Rampe. Eingang muss unipolar 0–10 V sein.
 
-**Was keine Glocke ergibt (Kinovice-Test)**<br>
+**Was keine Glocke ergibt**<br>
 Ein Dreieck (Sektion A mit Breakpoint) durch zwei kaskadierte Slews im Rate-Modus ergibt ein abgerundetes Dreieck, keine Glocke, bei periodischer Rampe sieht das Ergebnis wie ein Sinus aus. Grund: Tiefpassfilterung rundet nur die Ecken ab, erzeugt aber keine flachen Ausläufer.
 
 ---
@@ -239,10 +241,10 @@ Ein Dreieck (Sektion A mit Breakpoint) durch zwei kaskadierte Slews im Rate-Modu
 Die Referenzdokumentation beschreibt A und B nur knapp als Sektionen mit ähnlicher Funktion. Die Formeln stammen aus der Beschreibung der Transformationssektion und wurden für beide Endpunkte und den Breakpoint nachgerechnet.
 
 **Rate/Time (abgeleitete Interpretation)**<br>
-Die Referenzdokumentation beschreibt die beiden Modi nur vage: Rate gibt bei schnellerem Eingang tendenziell einen größeren Ausgangsbereich, Time basiert auf der Zeit, die eine Spannung für den Weg von 0 auf 10 V braucht. Die Umsetzung (Time = lineare Steigung, Rate = exponentielles Nachlaufen) ist eine Interpretation. Bei Time deckt sich die Umsetzung mit der Beschreibung einer linearen Laufzeit für den vollen Bereich (Kinovice). Beim Rate-Modus sind Alternativen denkbar. Das implementierte Verhalten wurde nachgemessen (siehe Teststand); ob die Zuordnung dem Original entspricht, bleibt offen.
+Die Referenzdokumentation beschreibt die beiden Modi nur vage: Rate gibt bei schnellerem Eingang tendenziell einen größeren Ausgangsbereich, Time basiert auf der Zeit, die eine Spannung für den Weg von 0 auf 10 V braucht. Die Umsetzung (Time = lineare Steigung, Rate = exponentielles Nachlaufen) ist eine Interpretation. Bei Time deckt sich die Umsetzung mit der Beschreibung einer linearen Laufzeit für den vollen Bereich. Beim Rate-Modus sind Alternativen denkbar. Das implementierte Verhalten wurde nachgemessen (siehe Teststand); ob die Zuordnung dem Original entspricht, bleibt offen.
 
 **Widersprüchliche Suchmaschinen-Texte (abgelehnt)**<br>
-Zwei im Internet gefundene Definitionen beschreiben Time als konstante Übergangszeit unabhängig vom Sprung und Rate als vorgegebene Änderungsgeschwindigkeit. Das würde die Bedeutung von Time und Rate gegenüber der Implementierung **vertauschen**. Kinovice hat entschieden, die Modi **nicht** zu vertauschen („Suchmaschinen können irren"). Zusätzlich passt die Time-Beschreibung der Referenzdokumentation (Zeit für 0–10 V) zur bestehenden Umsetzung, die Herkunft der Texte ist nicht belegt. Ein Tausch wäre eine einzeilige Änderung in `slewStep`.
+Zwei im Internet gefundene Definitionen beschreiben Time als konstante Übergangszeit unabhängig vom Sprung und Rate als vorgegebene Änderungsgeschwindigkeit. Das würde die Bedeutung von Time und Rate gegenüber der Implementierung **vertauschen**. Ich habe entschieden, die Modi **nicht** zu vertauschen („Suchmaschinen können irren"). Zusätzlich passt die Time-Beschreibung der Referenzdokumentation (Zeit für 0–10 V) zur bestehenden Umsetzung, die Herkunft der Texte ist nicht belegt. Ein Tausch wäre eine einzeilige Änderung in `slewStep`.
 
 **Select-CV ersetzt den Regler**<br>
 Die Referenzdokumentation sagt, dass eine gepatchte CV den Regler ersetzt, und nennt zugleich den Regler auf 0; Umsetzung: gepatchte CV ersetzt den Regler vollständig.
@@ -263,14 +265,14 @@ Skalierung 10 V = voller Regelweg (angenommen; die Referenzdokumentation nennt n
 ## 9. Design-Entscheidungen
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
-- **Name Elena (Kinovice):** nach einer der Anguissola-Schwestern (zur Wahl standen Elena und Anna Maria).
-- **Kompletter CV-Prozessor als eigenes Modul (Kinovice):** A/B-Sektionen mit Kennlinie plus Slew-Sektionen C–H, neben und unabhängig von Minerva. Minerva bleibt unangetastet.
-- **A/B pro Kanal einstellbar wie Minerva, C–H global (Kinovice-Entscheidung):** bei Slew brächten 16 Einzelregler wenig und würden die Zahl der Params vervielfachen; die Signale bleiben polyphon.
-- **Auto-Pulse per eigenem Taster statt „2 s halten" (Kinovice-Entscheidung):** der Halte-Bedienweg ist in Rack unpraktisch und der Zustand nicht sichtbar. Weicht bewusst vom Original ab.
+- **Name Elena:** nach einer der Anguissola-Schwestern (zur Wahl standen Elena und Anna Maria).
+- **Kompletter CV-Prozessor als eigenes Modul:** A/B-Sektionen mit Kennlinie plus Slew-Sektionen C–H, neben und unabhängig von Minerva. Minerva bleibt unangetastet.
+- **A/B pro Kanal einstellbar wie Minerva, C–H global:** bei Slew brächten 16 Einzelregler wenig und würden die Zahl der Params vervielfachen; die Signale bleiben polyphon.
+- **Auto-Pulse per eigenem Taster statt „2 s halten":** der Halte-Bedienweg ist in Rack unpraktisch und der Zustand nicht sichtbar. Weicht bewusst vom Original ab.
 - **Kennlinien-Grafik statt LED-Kette:** zeigt Kennlinie und Arbeitspunkt des angezeigten Kanals.
-- **Rate/Time nicht vertauschen (Kinovice):** Suchmaschinen können irren; die Interpretation nach der Referenzdokumentation bleibt, siehe Abschnitt 8.
+- **Rate/Time nicht vertauschen:** Suchmaschinen können irren; die Interpretation nach der Referenzdokumentation bleibt, siehe Abschnitt 8.
 - **Kanalwähler ohne Param:** wie bei Minerva, Lucia und Europa.
 - **Rechtsklick „Apply to all 16 channels"** und Kanalzahl „Auto/1–16" je A/B-Sektion (Kontextmenü) wie bei Minerva.
-- **Wählbarer Eingangsbereich je Sektion (Kinovice-Entscheidung):** 0–10 V (Standard), ±5 V, ±10 V und Unlimited. Der Bereich gilt für die Eingänge **und** den Ausgang der Sektion (±5 V rein, ±5 V raus); die Wahl gilt je Sektion, nicht gemeinsam für A und B. Erweiterung für den Einsatz mit bipolaren Audio- und Modulationssignalen, nicht Teil des Originals.
-- **Zuschaltbarer DC-Blocker (Kinovice-Entscheidung):** wirkt auf die A/B-Ausgänge und die Slew-Ausgänge, getrennt schaltbar je A/B-Sektion und je Slew-Paar (fünf Schalter), im Kontextmenü, mit fester Grenzfrequenz von ca. 10 Hz. Standardmäßig aus, da er langsame CV-Anteile mit entfernt. Anlass: Gleichanteil bei bipolarem Audio, der im Analyzer sichtbar wurde.
+- **Wählbarer Eingangsbereich je Sektion:** 0–10 V (Standard), ±5 V, ±10 V und Unlimited. Der Bereich gilt für die Eingänge **und** den Ausgang der Sektion (±5 V rein, ±5 V raus); die Wahl gilt je Sektion, nicht gemeinsam für A und B. Erweiterung für den Einsatz mit bipolaren Audio- und Modulationssignalen, nicht Teil des Originals.
+- **Zuschaltbarer DC-Blocker:** wirkt auf die A/B-Ausgänge und die Slew-Ausgänge, getrennt schaltbar je A/B-Sektion und je Slew-Paar (fünf Schalter), im Kontextmenü, mit fester Grenzfrequenz von ca. 10 Hz. Standardmäßig aus, da er langsame CV-Anteile mit entfernt. Anlass: Gleichanteil bei bipolarem Audio, der im Analyzer sichtbar wurde.
 - **Layout 42HP** mit A/B links und den drei Slew-Blöcken rechts.

@@ -887,7 +887,13 @@ struct ElenaWidget : ModuleWidget {
 		addChild(new PanelLabel(Vec(titleX, 3.5f), "ELENA", COLOR_SYSTEM, 14.f));
 
 		const float frameTop = 24.f;
-		const float frameH = 96.f;
+		// Hoehe eines Slew-Paar-Blocks (Session "Elena-Beschriftung",
+		// 2026-11-20): 33 statt 32 mm, weil der Inhalt fuer die Paar-Beschriftung
+		// um PAIR_SHIFT nach unten gerueckt ist und sonst zu nah an Trennlinie
+		// bzw. unterem Rahmen saesse. Alle Rahmen (A, B und Slew) sind damit
+		// 3 x 33 = 99 mm hoch und enden auf derselben Hoehe.
+		const float PAIR_H = 33.f;
+		const float frameH = NUM_PAIRS * PAIR_H;
 
 		// ---- Sektionen A und B ----
 		const float frameX[2] = {3.f, 59.f};
@@ -975,14 +981,25 @@ struct ElenaWidget : ModuleWidget {
 		NVGcolor slewFrameCol = slewColor;
 		slewFrameCol.a = 0.65f;
 		slewFrame->color = slewFrameCol;
-		slewFrame->dividersMM = {32.f, 64.f};
+		slewFrame->dividersMM = {PAIR_H, 2.f * PAIR_H};
 		slewFrame->box.pos = mm2px(Vec(slewFrameX, frameTop));
 		slewFrame->box.size = mm2px(Vec(slewFrameW, frameH));
 		addChild(slewFrame);
 
 		const float bx = slewFrameX + 2.f;
+		// Paar-Beschriftung (Session "Elena-Beschriftung", 2026-11-20): gleiche
+		// Lage und Schrift wie "SECTION A/B" (3,5 mm vom Rahmen, 2 mm unter der
+		// Oberkante des Paar-Blocks), Text wie im Kontextmenue ("Sections C/D").
+		// Damit die Schrift nicht in die POS/NEG-Regler ragt, ist der gesamte
+		// Inhalt jedes Paares um PAIR_SHIFT nach unten verschoben (Blockhoehe
+		// siehe PAIR_H).
+		const float PAIR_SHIFT = 2.5f;
+		const char* pairTitle[NUM_PAIRS] = {"SECTIONS C/D", "SECTIONS E/F", "SECTIONS G/H"};
 		for (int p = 0; p < NUM_PAIRS; p++) {
-			float by = frameTop + p * 32.f;
+			float blockTop = frameTop + p * PAIR_H;
+			addChild(new PanelLabel(Vec(slewFrameX + 3.5f, blockTop + 2.f), pairTitle[p], slewColor, 8.f,
+			                        NVG_ALIGN_LEFT | NVG_ALIGN_TOP));
+			float by = blockTop + PAIR_SHIFT;
 
 			// Geteilte Regler und CVs links im Block
 			ElenaKnob* posKnob = createParamCentered<ElenaKnob>(mm2px(Vec(bx + 8.f, by + 6.5f)), module, pairParam(p, PAIR_POS));

@@ -1,19 +1,19 @@
 # Elena – Technical Documentation
 
-Seventh module of the **Kinovice reminiscence of the unattained** plugin: a
+Seventh module of the **reminiscence of the unattained** plugin: a
 VCV Rack module heavily inspired by the wonderful Buchla world of modules.
 Two transformation sections (A/B, in the style of a digital transfer-curve
 processor) and six slew limiters (C–H) with pulse outputs. Sections A/B
 are polyphonic with individual values per channel; the slew sections process
 polyphonic signals with shared controls per pair.
 
-**Notice:** The *Kinovice reminiscence of the unattained* plugin is an independent work, heavily inspired by the wonderful Buchla world of modules. It is not affiliated with, authorized by, or endorsed by Buchla, Tiptop Audio, or any other manufacturer. Product and company names mentioned are trademarks of their respective owners and are used only to describe which functional concepts inspired a module.
+**Notice:** The *reminiscence of the unattained* plugin is an independent work, heavily inspired by the wonderful Buchla world of modules. It is not affiliated with, authorized by, or endorsed by Buchla, Tiptop Audio, or any other manufacturer. Product and company names mentioned are trademarks of their respective owners and are used only to describe which functional concepts inspired a module.
 
 **Distinction:** **Minerva** (analog voltage computation with attenuverter, crossfader and offset) and Elena (digital transfer-curve transformation with slew limiting) are two independent modules with different functions. That one was meant as a further development of the other is stated in none of the sources used; the assignment follows only from the descriptions themselves. See `Minerva-Documentation_EN.md`.
 
 References: reference documentation. It describes sections A/B only briefly as similar to an older section; the formulas therefore come from the description of that older section.
 
-Test status (Kinovice, live in a running Rack instance): sections A/B work
+Test status (live in a running Rack instance): sections A/B work
 (channel selection with ACTIVATE, channel values persist across save and
 load, polyphonic A1/A2 with a monophonic SEL CV, curve display and
 breakpoint match the calculated values). The slew sections C–H work (each
@@ -112,6 +112,8 @@ SELECT 0…100 % (default 0 = A1), 0 V and 10 V each 0…10 V (default 0 V and 1
 *[↑ Back to table of contents](#toc) · [[#Table of Contents|Obsidian]]*
 
 **Structure**<br>
+The three slew pairs are labeled “SECTIONS C/D”, “SECTIONS E/F” and “SECTIONS G/H” at the top left of their block on the panel, matching their names in the context menu (e.g. “DC blocker Sections C/D”).
+
 Six slewers C to H, each with `C IN` … `H IN`, `C OUT` … `H OUT`, `C PLS` … `H PLS`. The slew controls are shared per pair: **C/D**, **E/F**, **G/H**. Two LEDs per slewer: red (pulse) and blue (output level).
 
 **POS and NEG**<br>
@@ -223,7 +225,7 @@ A1 unpatched, signal into A2, second signal (0–10 V) into SEL CV: output = `A2
 **Bell `u²(1−u)²` (calculated with the formulas from `Elena.cpp`, not tested in Rack)**<br>
 Needs Minerva and both Elena sections. 1) Minerva section A: ramp 0–10 V into Va, K = −1, Oset = 10 V → inverted ramp. 2) Elena section A: ramp into A2, inverted ramp into SEL CV, A1 unpatched; 0 V = 0, 10 V = 10, BP on with BP IN = 2.5 V, BP OUT = 10 V → parabola `4u(1−u)` with a 10 V peak. 3) Elena section B: parabola into A2 **and** into SEL CV, A1 unpatched, default curve → output = parabola². The output is symmetric with flat tails and a 10 V peak; the width results solely from the duration of the ramp. The input must be unipolar 0–10 V.
 
-**What does not produce a bell (Kinovice test)**<br>
+**What does not produce a bell (test)**<br>
 A triangle (section A with breakpoint) through two cascaded slews in Rate mode yields a rounded triangle, not a bell; with a periodic ramp the result looks like a sine. Reason: low-pass filtering only rounds the corners but does not produce flat tails.
 
 ---
@@ -237,10 +239,10 @@ A triangle (section A with breakpoint) through two cascaded slews in Rate mode y
 The reference documentation describes A and B only briefly as sections with a similar function. The formulas come from the description of the transformation section and were recalculated for both endpoints and the breakpoint.
 
 **Rate/Time (derived interpretation)**<br>
-The reference documentation describes the two modes only vaguely: Rate tends to give a larger output range with a faster input, Time is based on the time a voltage needs to travel from 0 to 10 V. The implementation (Time = linear slope, Rate = exponential catch-up) is an interpretation. For Time it matches the description of a linear travel time for the full range (Kinovice). For Rate mode alternatives are conceivable. The implemented behavior was measured (see test status); whether the assignment matches the original remains open.
+The reference documentation describes the two modes only vaguely: Rate tends to give a larger output range with a faster input, Time is based on the time a voltage needs to travel from 0 to 10 V. The implementation (Time = linear slope, Rate = exponential catch-up) is an interpretation. For Time it matches the description of a linear travel time for the full range. For Rate mode alternatives are conceivable. The implemented behavior was measured (see test status); whether the assignment matches the original remains open.
 
 **Contradictory search-engine texts (rejected)**<br>
-Two definitions found on the internet describe "Time" as a constant transition time independent of the jump and "Rate" as a given rate of change. That would **swap** the meaning of Time and Rate compared to the implementation. Kinovice decided **not** to swap the modes ("search engines can be wrong"). In addition the reference documentation's Time description (time for 0–10 V) matches the current implementation, and the origin of those texts is not documented. A swap would be a one-line change in `slewStep`.
+Two definitions found on the internet describe "Time" as a constant transition time independent of the jump and "Rate" as a given rate of change. That would **swap** the meaning of Time and Rate compared to the implementation. I decided **not** to swap the modes ("search engines can be wrong"). In addition the reference documentation's Time description (time for 0–10 V) matches the current implementation, and the origin of those texts is not documented. A swap would be a one-line change in `slewStep`.
 
 **Select CV replaces the knob**<br>
 The reference documentation says that a patched CV replaces the knob and at the same time mentions turning the knob to 0; implementation: a patched CV replaces the knob completely.
@@ -261,14 +263,14 @@ Scaling 10 V = full knob travel (assumed; the reference documentation only says 
 ## 9. Design decisions
 *[↑ Back to table of contents](#toc) · [[#Table of Contents|Obsidian]]*
 
-- **Name Elena (Kinovice):** after one of the Anguissola sisters (the choice was Elena or Anna Maria).
-- **Complete CV processor as its own module (Kinovice):** A/B sections with transfer curve plus slew sections C–H, next to and independent of Minerva. Minerva stays untouched.
-- **A/B adjustable per channel like Minerva, C–H global (Kinovice decision):** for slew, 16 individual knobs would add little and multiply the number of params; the signals remain polyphonic.
-- **Auto-pulse via its own button instead of "hold for 2 s" (Kinovice decision):** the hold operation is impractical in Rack and the state is not visible. Deliberately deviates from the original.
+- **Name Elena:** after one of the Anguissola sisters (the choice was Elena or Anna Maria).
+- **Complete CV processor as its own module:** A/B sections with transfer curve plus slew sections C–H, next to and independent of Minerva. Minerva stays untouched.
+- **A/B adjustable per channel like Minerva, C–H global:** for slew, 16 individual knobs would add little and multiply the number of params; the signals remain polyphonic.
+- **Auto-pulse via its own button instead of "hold for 2 s":** the hold operation is impractical in Rack and the state is not visible. Deliberately deviates from the original.
 - **Curve graphic instead of an LED chain:** shows the curve and operating point of the shown channel.
-- **Do not swap Rate/Time (Kinovice):** search engines can be wrong; the interpretation according to the reference documentation stays, see section 8.
+- **Do not swap Rate/Time:** search engines can be wrong; the interpretation according to the reference documentation stays, see section 8.
 - **Channel selector without a param:** as with Minerva, Lucia, and Europa.
 - **Right-click "Apply to all 16 channels"** and channel count "Auto/1–16" per A/B section (context menu) as with Minerva.
-- **Selectable input range per section (Kinovice decision):** 0–10 V (default), ±5 V, ±10 V, and Unlimited. The range applies to the inputs **and** the output of the section (±5 V in, ±5 V out); the choice is made per section, not shared between A and B. An extension for use with bipolar audio and modulation signals, not part of the original.
-- **Switchable DC blocker (Kinovice decision):** acts on the A/B outputs and the slew outputs, separately switchable per A/B section and per slew pair (five switches), in the context menu, with a fixed cutoff of about 10 Hz. Off by default, since it also removes slow CV components. Motivation: a DC component with bipolar audio that showed up in the analyzer.
+- **Selectable input range per section:** 0–10 V (default), ±5 V, ±10 V, and Unlimited. The range applies to the inputs **and** the output of the section (±5 V in, ±5 V out); the choice is made per section, not shared between A and B. An extension for use with bipolar audio and modulation signals, not part of the original.
+- **Switchable DC blocker:** acts on the A/B outputs and the slew outputs, separately switchable per A/B section and per slew pair (five switches), in the context menu, with a fixed cutoff of about 10 Hz. Off by default, since it also removes slow CV components. Motivation: a DC component with bipolar audio that showed up in the analyzer.
 - **Layout 42HP** with A/B on the left and the three slew blocks on the right.
