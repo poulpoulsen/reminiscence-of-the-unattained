@@ -3,9 +3,9 @@
 Anna-Maria is a quad low-pass gate for VCV Rack, strongly inspired by the wonderful world of Buchla modules. It is part of the plugin "reminiscence of the unattained", version 2.4.0.
 Status as of: 2026-10-29. Status: draft.
 
-Until the listening test in Rack, all statements about sound are measured on the model, not heard. Not yet tested in Rack are the linear gate path (section 5), the velocity target "Audio offset" (section 3a), and the tuned resonator with V/OCT, WET and DRY (section 6a). I built the resonator in Rack and tried it with a pulse and with noise; the test series is still pending. The four-channel panel is confirmed in Rack.
+**Note:** The plugin *reminiscence of the unattained* is an independent work, strongly inspired by the wonderful world of Buchla modules. It has no connection to Buchla, Tiptop Audio or any other manufacturer, and is neither authorized nor endorsed by them. Product and company names mentioned are trademarks of their respective owners and only describe which functional concepts inspired a module.
 
-Anna-Maria is an independent work and has no connection with the manufacturers of the original modules. All trademarks and names belong to their owners.
+Until the listening test in Rack, all statements about sound are measured on the model, not heard. Not yet tested in Rack are the linear gate path (section 5), the velocity target "Audio offset" (section 3a), and the tuned resonator with V/OCT, WET and DRY (section 6a). I built the resonator in Rack and tried it with a pulse and with noise; the test series is still pending. The four-channel panel is confirmed in Rack.
 
 Unless stated otherwise, all numerical values come from test programs run against the engine. They assume 48 kHz, no oversampling, and the vactrol mode "Reference". Sections 4 to 8 describe the Paper model, that is LOWPASS as well as BOTH and VCA with "Gate response = Paper circuit". What changes with the linear gate path is described in section 5. The measurements on the nonlinearity (section 7) name the solver, "Corrected" or "Reference", in each case.
 
