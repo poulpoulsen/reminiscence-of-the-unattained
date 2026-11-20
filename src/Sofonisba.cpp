@@ -133,6 +133,17 @@ struct StageRangeQuantity : ParamQuantity {
 	}
 };
 
+// Stage-Number-Broadcast (Session "Broadcast Set/Clear", 2026-11-18): die
+// neun per Rechtsklick broadcastbaren Modifier-Bits. Die Position in diesem
+// Array ist der "Slot" fuer Marf248::pendingBitBroadcast[] und
+// StageModifierBroadcastAction - BROADCAST_BIT_TABLE weiter unten muss
+// dieselbe Reihenfolge haben (dort per Index auf dieses Array verwiesen).
+static constexpr int NUM_BROADCAST_BITS = 9;
+static constexpr uint32_t BROADCAST_BITS[NUM_BROADCAST_BITS] = {
+	MOD_PULSE1, MOD_PULSE2, MOD_SKIP, MOD_STOP, MOD_SUSTAIN,
+	MOD_ENABLE, MOD_FIRST, MOD_LAST, MOD_SLOPED,
+};
+
 struct Marf248 : Module, Marf248Host {
 	enum ParamId {
 		ENUMS(STAGE_VOLTAGE_PARAM, NUM_STAGES),
@@ -425,6 +436,26 @@ struct Marf248 : Module, Marf248Host {
 	// Geteilter Stage-Zustand, jetzt per Klick-Buttons im Panel gesetzt
 	// (statt Rechtsklick-Menue) und per dataToJson/dataFromJson persistiert.
 	int stageModifier[NUM_STAGES] = {};
+
+	// Stage-Number-Broadcast-Auftraege aus dem GUI-Thread (Session
+	// "Broadcast Set/Clear", 2026-11-18): stageModifier[] wird ausschliesslich
+	// im Engine-Thread geschrieben. Das Kontextmenue (und Undo/Redo) legt nur
+	// eine 16-Bit-Maske ab (Bit i = Stage i soll das Modifier-Bit haben),
+	// process() uebernimmt sie im naechsten dekimierten Tick. -1 = kein
+	// Auftrag. Mehrere Auftraege fuer dasselbe Bit vor dem naechsten Tick
+	// fallen zusammen (der letzte gewinnt) - genau die gewuenschte Semantik.
+	// Vorher schrieb der Broadcast direkt aus dem GUI-Thread, was mit der
+	// Read-Modify-Write-Logik in process() (Range-Bits alle 32 Samples)
+	// kollidieren und einzelne Bits verlieren konnte.
+	std::atomic<int32_t> pendingBitBroadcast[NUM_BROADCAST_BITS];
+
+	// Time-Range-Auswahl aus dem Rechtsklick-Menue des TR-Tasters (Session
+	// "Broadcast Set/Clear", 2026-11-18): gleiches Auftragsprinzip wie
+	// pendingBitBroadcast - das Menue legt die gewuenschten TR-Bits der Stage
+	// ab (MOD_TRANGE_1/2/4 oder 0 fuer TR3), process() uebernimmt sie im
+	// naechsten dekimierten Tick. -1 = kein Auftrag. Vorher schrieb das Menue
+	// stageModifier[] direkt aus dem GUI-Thread.
+	std::atomic<int32_t> pendingTrange[NUM_STAGES];
 
 	// Ergebnisse der Trigger-Expander Stage-Modifier-Poly-CV-Overrides
 	// (Session "CPU-Optimierung Stage-Modifier-Scans"): vorher lokale
@@ -733,6 +764,13 @@ struct Marf248 : Module, Marf248Host {
 
 		stageButtonDivider.setDivision(32);
 		stageCvOverrideDivider.setDivision(8);
+
+		for (int b = 0; b < NUM_BROADCAST_BITS; b++) {
+			pendingBitBroadcast[b].store(-1);
+		}
+		for (int i = 0; i < NUM_STAGES; i++) {
+			pendingTrange[i].store(-1);
+		}
 
 		for (int i = 0; i < NUM_STAGES; i++) {
 			StageVoltageQuantity* vq = configParam<StageVoltageQuantity>(STAGE_VOLTAGE_PARAM + i, 0.f, 10.f, 0.f,
@@ -1208,6 +1246,36 @@ struct Marf248 : Module, Marf248Host {
 		// Anzeige-Aktualisierung im Time-Multiplier-Block wiederverwendet.
 		bool stageButtonsDecimated = stageButtonDivider.process();
 		if (stageButtonsDecimated) {
+		// Ausstehende Broadcast-Auftraege aus dem GUI-Thread uebernehmen
+		// (siehe pendingBitBroadcast) - vor der Taster-Schleife, damit die
+		// LEDs unten noch im selben Tick den neuen Zustand zeigen. Ein
+		// gepatchter Poly-Override am Trigger-Expander ueberschreibt das
+		// Ergebnis weiterhin im naechsten stageCvOverrideDivider-Tick.
+		for (int b = 0; b < NUM_BROADCAST_BITS; b++) {
+			int32_t mask = pendingBitBroadcast[b].exchange(-1);
+			if (mask < 0) {
+				continue;
+			}
+			for (int i = 0; i < NUM_STAGES; i++) {
+				if (mask & (1 << i)) {
+					stageModifier[i] |= BROADCAST_BITS[b];
+				}
+				else {
+					stageModifier[i] &= ~BROADCAST_BITS[b];
+				}
+			}
+		}
+		// Ausstehende Time-Range-Auswahl aus dem TR-Kontextmenue uebernehmen
+		// (siehe pendingTrange) - ebenfalls vor der Taster-Schleife, damit ein
+		// gleichzeitiger Klick-Zyklus auf dem neuen Zustand aufsetzt.
+		for (int i = 0; i < NUM_STAGES; i++) {
+			int32_t trBits = pendingTrange[i].exchange(-1);
+			if (trBits < 0) {
+				continue;
+			}
+			stageModifier[i] &= ~(MOD_TRANGE_1 | MOD_TRANGE_2 | MOD_TRANGE_4);
+			stageModifier[i] |= trBits;
+		}
 		for (int i = 0; i < NUM_STAGES; i++) {
 			if (stageFirstTrigger[i].process(params[STAGE_FIRST_PARAM + i].getValue())) {
 				stageModifier[i] ^= MOD_FIRST;
@@ -2749,104 +2817,89 @@ std::string StageTimeQuantity::getDisplayValueString() {
 
 // -- Bit-Modifier-Pfad -------------------------------------------------------
 //
-// Eigene history::Action-Unterklasse, die einen kompletten Snapshot des
-// stageModifier[]-Arrays vor/nach dem Broadcast sichert (16 x int, billig)
-// statt nur das einzelne Bit zu tracken - robuster, falls sich das Bit-Layout
-// spaeter aendert, und deckt ohne Zusatzaufwand auch den (aktuell nicht
-// vorkommenden) Fall ab, dass ein Broadcast mehrere Bits gleichzeitig
-// betrifft. moduleId statt direktem Modul-Zeiger, da das Modul zwischen
-// Undo/Redo-Aufrufen theoretisch entfernt/neu erzeugt werden koennte (Rack-
-// Standardmuster, siehe history::ParamChange::moduleId in Rack SDK).
+// Session "Broadcast Set/Clear" (2026-11-18): Statt den Zustand der
+// angeklickten Quell-Stage zu kopieren (fuehrte zu Verwirrung - ein
+// Rechtsklick auf einen dunklen Taster loeschte das Bit ueberall und
+// aenderte damit oft sichtbar nichts), gibt es jetzt zwei eindeutige
+// Eintraege "Set ... on all stages" / "Clear ... on all stages".
+//
+// Der GUI-Thread schreibt stageModifier[] nicht mehr selbst, sondern legt
+// eine 16-Bit-Zielmaske in Marf248::pendingBitBroadcast[slot] ab; process()
+// setzt sie um. Die Undo-Aktion merkt sich pro Bit nur die alte und die neue
+// Maske dieses einen Bits (nicht mehr den ganzen stageModifier[]-Snapshot) -
+// Undo/Redo stellt so nur das betroffene Bit wieder her und laesst inzwischen
+// geaenderte andere Bits (Klicks, Range, CV) unangetastet. moduleId statt
+// direktem Modul-Zeiger (Rack-Standardmuster, siehe history::ParamChange).
 struct StageModifierBroadcastAction : history::Action {
 	int64_t moduleId = -1;
-	int oldValues[NUM_STAGES] = {};
-	int newValues[NUM_STAGES] = {};
+	int slot = 0;
+	int32_t oldMask = 0;
+	int32_t newMask = 0;
 
 	void undo() override {
 		Marf248* m = dynamic_cast<Marf248*>(APP->engine->getModule(moduleId));
-		if (!m) {
-			return;
-		}
-		for (int i = 0; i < NUM_STAGES; i++) {
-			m->stageModifier[i] = oldValues[i];
+		if (m) {
+			m->pendingBitBroadcast[slot].store(oldMask);
 		}
 	}
 
 	void redo() override {
 		Marf248* m = dynamic_cast<Marf248*>(APP->engine->getModule(moduleId));
-		if (!m) {
-			return;
-		}
-		for (int i = 0; i < NUM_STAGES; i++) {
-			m->stageModifier[i] = newValues[i];
+		if (m) {
+			m->pendingBitBroadcast[slot].store(newMask);
 		}
 	}
 };
 
-// Fuehrt den Broadcast eines einzelnen Modifier-Bits von sourceStage auf alle
-// 16 Stages aus (uebernimmt den Bit-ZUSTAND der Quell-Stage: gesetzt -> bei
-// allen setzen, geloescht -> bei allen loeschen) und erzeugt dabei den
-// zugehoerigen Undo-Schritt. Kein Undo-Eintrag, falls sich nichts aendert
-// (z.B. wenn ohnehin schon alle Stages denselben Zustand hatten) - vermeidet
-// leere/wirkungslose History-Eintraege.
-static void broadcastModifierBitToAllStages(Marf248* m, uint32_t bit, int sourceStage, const std::string& actionName) {
-	if (!m || sourceStage < 0 || sourceStage >= NUM_STAGES) {
+// Setzt (on = true) bzw. loescht (on = false) das Modifier-Bit des Slots auf
+// allen 16 Stages und erzeugt den Undo-Schritt. Kein Auftrag und kein
+// Undo-Eintrag, wenn bereits alle Stages den Zielzustand haben.
+static void broadcastModifierBitToAllStages(Marf248* m, int slot, bool on, const std::string& actionName) {
+	if (!m || slot < 0 || slot >= NUM_BROADCAST_BITS) {
 		return;
 	}
-	bool state = (m->stageModifier[sourceStage] & bit) != 0;
+	uint32_t bit = BROADCAST_BITS[slot];
+	int32_t oldMask = 0;
+	for (int i = 0; i < NUM_STAGES; i++) {
+		if (m->stageModifier[i] & bit) {
+			oldMask |= (1 << i);
+		}
+	}
+	int32_t newMask = on ? ((1 << NUM_STAGES) - 1) : 0;
+	if (oldMask == newMask) {
+		return;
+	}
+	m->pendingBitBroadcast[slot].store(newMask);
 
 	StageModifierBroadcastAction* action = new StageModifierBroadcastAction;
 	action->moduleId = m->id;
+	action->slot = slot;
+	action->oldMask = oldMask;
+	action->newMask = newMask;
 	action->name = actionName;
-	for (int i = 0; i < NUM_STAGES; i++) {
-		action->oldValues[i] = m->stageModifier[i];
-	}
-
-	for (int i = 0; i < NUM_STAGES; i++) {
-		if (state) {
-			m->stageModifier[i] |= bit;
-		}
-		else {
-			m->stageModifier[i] &= ~bit;
-		}
-	}
-
-	bool changed = false;
-	for (int i = 0; i < NUM_STAGES; i++) {
-		action->newValues[i] = m->stageModifier[i];
-		if (action->newValues[i] != action->oldValues[i]) {
-			changed = true;
-		}
-	}
-	if (changed) {
-		APP->history->push(action);
-	}
-	else {
-		delete action;
-	}
+	APP->history->push(action);
 }
 
 // Lookup-Tabelle: ordnet den Basis-ParamId einer Button-Familie (STAGE_
-// PULSE1_PARAM usw.) dem zugehoerigen Modifier-Bit und einem Anzeigenamen
-// fuers Menue zu. Bewusst NUR die per Session-Entscheidung freigegebenen
-// neun einfachen Bit-Modifier (Pulse1/2, Skip, First/Last, Stop/Sustain/
-// Enable, Slope) - Quant/QuantGlide/Normalize/Mute/Volt-Ext/Time-Ext/Shape
-// bleiben aussen vor (nicht Teil dieser Session).
+// PULSE1_PARAM usw.) ihrem Slot in BROADCAST_BITS[] und einem Anzeigenamen
+// fuers Menue zu. Reihenfolge identisch zu BROADCAST_BITS[] (slot = Index).
+// Bewusst NUR die neun einfachen Bit-Modifier - Quant/QuantGlide/Normalize/
+// Mute/Volt-Ext/Time-Ext/Shape bleiben aussen vor.
 struct BroadcastBitInfo {
 	int baseParamId;
-	uint32_t bit;
+	int slot;
 	const char* label;
 };
 static const BroadcastBitInfo BROADCAST_BIT_TABLE[] = {
-	{Marf248::STAGE_PULSE1_PARAM,  MOD_PULSE1,  "Pulse 1"},
-	{Marf248::STAGE_PULSE2_PARAM,  MOD_PULSE2,  "Pulse 2"},
-	{Marf248::STAGE_SKIP_PARAM,    MOD_SKIP,    "Skip"},
-	{Marf248::STAGE_STOP_PARAM,    MOD_STOP,    "Stop"},
-	{Marf248::STAGE_SUSTAIN_PARAM, MOD_SUSTAIN, "Sustain"},
-	{Marf248::STAGE_ENABLE_PARAM,  MOD_ENABLE,  "Enable"},
-	{Marf248::STAGE_FIRST_PARAM,   MOD_FIRST,   "First"},
-	{Marf248::STAGE_LAST_PARAM,    MOD_LAST,    "Last"},
-	{Marf248::STAGE_SLOPE_PARAM,   MOD_SLOPED,  "Slope"},
+	{Marf248::STAGE_PULSE1_PARAM,  0, "Pulse 1"},
+	{Marf248::STAGE_PULSE2_PARAM,  1, "Pulse 2"},
+	{Marf248::STAGE_SKIP_PARAM,    2, "Skip"},
+	{Marf248::STAGE_STOP_PARAM,    3, "Stop"},
+	{Marf248::STAGE_SUSTAIN_PARAM, 4, "Sustain"},
+	{Marf248::STAGE_ENABLE_PARAM,  5, "Enable"},
+	{Marf248::STAGE_FIRST_PARAM,   6, "First"},
+	{Marf248::STAGE_LAST_PARAM,    7, "Last"},
+	{Marf248::STAGE_SLOPE_PARAM,   8, "Slope"},
 };
 static const int BROADCAST_BIT_TABLE_SIZE = sizeof(BROADCAST_BIT_TABLE) / sizeof(BROADCAST_BIT_TABLE[0]);
 
@@ -3024,13 +3077,21 @@ struct StageModBroadcastButton : LEDButton {
 			if (pq->paramId < info.baseParamId || pq->paramId >= info.baseParamId + NUM_STAGES) {
 				continue;
 			}
-			int stageIndex = pq->paramId - info.baseParamId;
+			int slot = info.slot;
+			std::string label = info.label;
 			menu->addChild(new ui::MenuSeparator);
 			menu->addChild(createMenuItem(
-				string::f("Apply %s to all stages", info.label), "",
+				string::f("Set %s on all stages", info.label), "",
 				[=]() {
-					broadcastModifierBitToAllStages(m, info.bit, stageIndex,
-						string::f("apply Stage %d %s to all stages", stageIndex + 1, info.label));
+					broadcastModifierBitToAllStages(m, slot, true,
+						string::f("set %s on all stages", label.c_str()));
+				}
+			));
+			menu->addChild(createMenuItem(
+				string::f("Clear %s on all stages", info.label), "",
+				[=]() {
+					broadcastModifierBitToAllStages(m, slot, false,
+						string::f("clear %s on all stages", label.c_str()));
 				}
 			));
 			return;
@@ -3093,9 +3154,13 @@ struct TrangeButton : LEDButton {
 	// RangeKnob::appendContextMenu (siehe dortiger Kommentar) - bei einem
 	// Momentary-Taster wie diesem macht eine numerische Texteingabe ohnehin
 	// wenig Sinn (kein "Wert" im ueblichen Sinn, nur ein Zyklus-Trigger).
-	// Manipuliert daher bewusst direkt die stageModifier-Bits statt ueber
-	// den Param-Rohwert/SchmittTrigger zu gehen - klar, sofort wirksam,
-	// unabhaengig vom Momentary-Verhalten des zugrundeliegenden Buttons.
+	// Setzt die stageModifier-Bits bewusst nicht ueber den Param-Rohwert/
+	// SchmittTrigger (unabhaengig vom Momentary-Verhalten des Buttons),
+	// schreibt sie aber seit Session "Broadcast Set/Clear" (2026-11-18) auch
+	// nicht mehr direkt aus dem GUI-Thread, sondern legt die Auswahl in
+	// Marf248::pendingTrange[] ab; process() uebernimmt sie im naechsten
+	// dekimierten Tick (max. 32 Samples). Das Haekchen liest weiterhin direkt
+	// aus stageModifier[] (reiner Lesezugriff).
 	void appendContextMenu(ui::Menu* menu) override {
 		ParamQuantity* pq = getParamQuantity();
 		if (!pq) {
@@ -3118,8 +3183,7 @@ struct TrangeButton : LEDButton {
 			menu->addChild(createCheckMenuItem(trLabels[t], "",
 				[=]() { return getTimeRangeIndex(m->stageModifier[stageIndex]) == t; },
 				[=]() {
-					m->stageModifier[stageIndex] &= ~(MOD_TRANGE_1 | MOD_TRANGE_2 | MOD_TRANGE_4);
-					m->stageModifier[stageIndex] |= trBits[t];
+					m->pendingTrange[stageIndex].store(trBits[t]);
 				}
 			));
 		}

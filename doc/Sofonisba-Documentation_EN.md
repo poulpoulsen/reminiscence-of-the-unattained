@@ -208,7 +208,7 @@ Selects TR1 (0.002–0.03s) through TR4 (2–30s); the current digit 1–4 is sh
 Full (0–10V unchanged) → Half (0–5V compressed) → Limited +0/+2/+4/+6/+8V (2V span, equivalent to two octaves at 1V/oct, shifted by the selected offset). The control shows the abbreviation ("F"/"H"/"L0"…"L8") directly, plus a colored pointer. A right-click opens a checklist context menu (more reliable than text entry for this snap control).
 
 **Stage Number Broadcast** *(right-click context menu, "Stage Number Broadcast" session)*<br>
-On nine of the toggle buttons (Pulse1/2, Skip, First/Last, Stop/Sustain/Enable, Slope) as well as on all four continuous controls (Voltage, Time, Range, Curve), a right-click opens the entry "Apply … to all stages" in addition to the respective standard menu. It transfers the current state or value of the clicked stage to all 16 stages at once and can be completely undone in a single step with Ctrl+Z. For details on scope, triggers, and the undo mechanism see [4.14](#sec4-14).
+On nine of the toggle buttons (Pulse1/2, Skip, First/Last, Stop/Sustain/Enable, Slope) as well as on all four continuous controls (Voltage, Time, Range, Curve), a right-click opens dedicated broadcast entries in addition to the respective standard menu. On the toggle buttons there are two: "Set … on all stages" switches the bit on for all 16 stages, "Clear … on all stages" switches it off everywhere – regardless of which stage and which LED state is clicked. On the controls, "Apply … to all stages" transfers the value of the clicked stage to all 16 stages. Both can be completely undone in a single step with Ctrl+Z. For details on scope, triggers, and the undo mechanism see [4.14](#sec4-14).
 
 <a id="sec3-3"></a>
 
@@ -573,18 +573,20 @@ Since `rawPhase < 1` for all i<N, the last sub-trigger is guaranteed to fall bef
 ### 4.14 Stage Number Broadcast
 *[↑ Back to table of contents](#toc) · [[#Table of Contents|Obsidian]]*
 
-The right-click context menu entry "Apply … to all stages" on a modifier button or a continuous control transfers the current state or value of the clicked source stage to all 16 stages at once. Technically there are two separate paths, because the two control categories are stored differently.
+The right-click context menu of a modifier button offers "Set … on all stages" and "Clear … on all stages" (switch the bit on or off on all 16 stages). On a continuous control, "Apply … to all stages" transfers the current value of the clicked source stage to all 16 stages at once. Technically there are two separate paths, because the two control categories are stored differently.
 
 **Scope:**
 - Bit modifiers (`StageModBroadcastButton`, replaces the previously bare `LEDButton` for exactly these nine param families): Pulse1, Pulse2, Skip, First, Last, Stop, Sustain, Enable, Slope.
 - Continuous controls: Voltage and Time (both via `StageSlider`), Range (`RangeKnob`), Curve (new `StageCurveTrimpot` wrapper around `Trimpot`).
 - Deliberately excluded: Quantize, Quantized Glide, Normalize, Mute, Volt-Ext/Time-Ext channel select, Shape – not part of this session.
 
-**Bit modifier path:** The nine bits live in `Marf248::stageModifier[]`, a module-internal array that is not an engine-managed param – VCV's built-in `history::ParamChange` therefore does not apply here. `broadcastModifierBitToAllStages()` adopts the bit state of the source stage (set → set on all, cleared → clear on all) and creates its own `StageModifierBroadcastAction : history::Action`, which saves a complete snapshot of the `stageModifier[]` array before and after the broadcast (16× int, cheap) instead of tracking only the single bit.
+**Bit modifier path:** The nine bits live in `Marf248::stageModifier[]`, a module-internal array that is not an engine-managed param – VCV's built-in `history::ParamChange` therefore does not apply here. `broadcastModifierBitToAllStages(m, slot, on, …)` sets (`on = true`) or clears (`on = false`) the bit on all stages. The GUI thread does not write `stageModifier[]` itself: it stores a 16-bit target mask in `Marf248::pendingBitBroadcast[slot]` (`std::atomic<int32_t>`, −1 = no request), and `process()` applies it on the next decimated tick (`stageButtonDivider`, 32 samples), before the button and LED loop. This way `stageModifier[]` is written exclusively in the engine thread; previously the direct write from the GUI thread could collide with the read-modify-write logic in `process()` (range bits) and lose individual bits. The mapping button family → slot is in `BROADCAST_BIT_TABLE`, the bits themselves in `BROADCAST_BITS[]` (same order). The custom `StageModifierBroadcastAction : history::Action` only remembers the old and new mask of the affected bit; undo/redo stores that mask as a request again and leaves all other bits untouched.
 
 **Path for continuous controls:** These are normal, engine-managed `ParamQuantity`s. A collection of standard `history::ParamChange` objects (Rack built-ins) in a `history::ComplexAction` is enough for this; a custom action class is not needed (`broadcastParamToAllStages()`). The values are set via `APP->engine->setParamValue()` (the engine-thread-safe way).
 
 **Undo/redo: the full VCV history system instead of a safety prompt):** Both paths create exactly one undo step per broadcast – Ctrl+Z undoes the complete operation in one step. This is necessary because a single broadcast potentially overwrites 16 stage values at once. If nothing changes (all stages already had the same state or value), no undo entry is created; this avoids empty, ineffective history entries.
+
+**CV precedence:** If the corresponding poly override on the trigger expander is patched (e.g. `STAGE_STOP_POLY_INPUT`), `process()` still resets bit and LED from the CV every 8 samples – a broadcast is then overwritten immediately (see [10.16](#sec10)).
 
 **Trigger:** exclusively the right-click context menu, no Shift-click and no dedicated panel button. For the nine bit modifier buttons and the Curve trimpot, only a pure widget class change was needed (no rendering difference compared to the previous `LEDButton`/`Trimpot` instances). Therefore there was no enum reordering and no changed ParamId – existing patch cables and presets remain untouched.
 
@@ -714,7 +716,7 @@ Persists modifier bits, Mode/Pendulum/Stage Address states, Scale/Key, all 12 pr
 Self-drawing Time Range button (no SVG asset): dark rounded background plus digit 1–4 in amber with dark outline.
 
 **`TrangeButton::appendContextMenu()`**<br>
-Right-click checklist for direct TR1–4 selection (manipulates `stageModifier` directly instead of going through the momentary button raw value).
+Right-click checklist for direct TR1–4 selection (does not go through the momentary button raw value). Since the "Broadcast Set/Clear" session (2026-11-18) the menu no longer writes `stageModifier` directly from the GUI thread, but stores the selected TR bits in `Marf248::pendingTrange[stage]` (`std::atomic<int32_t>`, −1 = no request); `process()` applies them on the next decimated tick (max. 32 samples). The check mark still reads directly from `stageModifier`.
 
 **`RangeKnob::draw()`**<br>
 In addition to the standard `RoundBlackKnob`, draws a colored pointer (which covers the original SVG pointer) as well as a text abbreviation of the current state in the middle of the knob.
@@ -726,16 +728,16 @@ Right-click checklist for direct Range selection (the standard text entry proved
 Custom light widget: draws a thin ring around the P1/P2 output jack instead of a separate dot.
 
 **`StageModifierBroadcastAction`** *(struct, `history::Action`)*<br>
-New, "Stage Number Broadcast" session: custom undo/redo action for bit modifier broadcasts. Saves a complete snapshot of `stageModifier[NUM_STAGES]` before and after the broadcast, since the bits are not an engine-managed param.
+Custom undo/redo action for bit modifier broadcasts (the bits are not an engine-managed param). Since the "Broadcast Set/Clear" session (2026-11-18) it stores `slot`, `oldMask`, and `newMask` of the one affected bit instead of a complete `stageModifier[]` snapshot; `undo()`/`redo()` store the respective mask in `pendingBitBroadcast[slot]`.
 
-**`broadcastModifierBitToAllStages(m, bit, sourceStage, actionName)`**<br>
-New: adopts the state of a single modifier bit from `sourceStage` onto all 16 stages and creates the associated `StageModifierBroadcastAction` undo step. No history entry if nothing changes.
+**`broadcastModifierBitToAllStages(m, slot, on, actionName)`**<br>
+Sets (`on = true`) or clears (`on = false`) the modifier bit of the slot on all 16 stages: stores the target mask in `pendingBitBroadcast[slot]` (executed in `process()`) and creates the associated `StageModifierBroadcastAction` undo step. No request and no history entry if all stages already have the target state. (Until 2026-11-18: signature `(m, bit, sourceStage, actionName)`, copied the state of the source stage.)
 
 **`broadcastParamToAllStages(m, baseParamId, sourceStage, actionName)`**<br>
 New: transfers the current value of a continuous control (Voltage/Time/Range/Curve) from `sourceStage` to all 16 stages, set via `APP->engine->setParamValue()`, bundled in a `history::ComplexAction` of standard `history::ParamChange` objects.
 
 **`StageModBroadcastButton::appendContextMenu()`**<br>
-New: replaces the previously bare `LEDButton` for the nine broadcastable bit modifier families (Pulse1/2, Skip, First/Last, Stop/Sustain/Enable, Slope). Looks up its own `paramId` in `BROADCAST_BIT_TABLE` and adds the menu entry "Apply … to all stages".
+New: replaces the previously bare `LEDButton` for the nine broadcastable bit modifier families (Pulse1/2, Skip, First/Last, Stop/Sustain/Enable, Slope). Looks up its own `paramId` in `BROADCAST_BIT_TABLE` and adds the menu entries "Set … on all stages" and "Clear … on all stages".
 
 **`StageSlider::appendContextMenu()`**<br>
 New: distinguishes between the Voltage and Time families based on the `paramId` range (both share the `StageSlider` class) and offers the respective broadcast menu entry.
@@ -967,7 +969,7 @@ For testing: patch a cable (e.g. from a manual trigger/gate button module) to ST
 
 ### 10.2 The Stage Address Knob Never Moves currentStage on Its Own
 
-The internal stage address knob (`STAGE_ADDR_KNOB_A/B_PARAM`) only delivers a value, not an action. Only Strobe (single jump), Continuous (continuous tracking), or Reset actually apply the address. Merely turning the knob – or changing the external address CV – does not move `currentStage`. This applies unchanged to the channel select CV as well: Ext mode only delivers the address value via the selected channel and, just like the internal knob, does not apply it automatically. For a live test of the 4-channel channel select, Continuous is therefore additionally needed so that the section actually follows the selected source continuously.
+The internal stage address knob (`STAGE_ADDR_KNOB_A/B_PARAM`) only delivers a value, not an action. Only Strobe (single jump), Continuous (continuous tracking), or Reset actually apply the address. Merely turning the knob – or changing the external address CV – does not move `currentStage`. This applies unchanged to the channel select CV as well: Ext mode only delivers the address value via the selected channel and, just like the internal knob, does not apply it automatically. For a live test of the 4-channel channel select, Continuous is therefore additionally needed so that the section actually follows the selected source continuously. For targeted jumps via external address CV without the section running on freely afterwards, see [10.17](#sec10).
 
 ### 10.3 Address Memory Store/Recall Have No Panel Buttons
 
@@ -1055,6 +1057,33 @@ Practical consequence: Relying on the asterisk alone when deciding "do I still n
 
 A direct contrast to [10.14](#sec10): A single click on a stage modifier button leaves no history entry (see above), but a broadcast via the right-click context menu of the same button does. Reason: The broadcast is not triggered from the real-time audio thread, but directly from a GUI event handler (`appendContextMenu()` lambda) – exactly the context in which, according to [10.14](#sec10), an `APP->history->push()` would be permissible in principle. Both broadcast paths (`StageModifierBroadcastAction` for bit modifiers, `history::ComplexAction`/`history::ParamChange` for continuous controls, see [4.14](#sec4-14)) therefore push reliably, and Ctrl+Z undoes the complete broadcast in one step. Not an inconsistency, but two different trigger contexts with different Rack default behavior.
 
+### 10.16 Modifier Bit Broadcast: Formerly Copy, Now Set/Clear (Changed 2026-11-18)
+
+Until the "Broadcast Set/Clear" session, the modifier buttons only offered "Apply … to all stages", and this entry copied the state of the clicked stage: a right-click on a button with a dark LED cleared the bit everywhere. If the other stages were off anyway, nothing visible changed, and no undo entry was created either – this looked like a broken menu entry (noticed while setting Stop on all stages for [10.17](#sec10)).
+
+Since then there are two unambiguous entries, independent of the stage and LED state of the clicked button:
+
+- "Set … on all stages" switches the bit on for all 16 stages.
+- "Clear … on all stages" switches it off for all 16 stages.
+
+Ctrl+Z undoes the operation in one step. The continuous controls (Voltage, Time, Range, Curve) keep "Apply … to all stages", which transfers the value of the clicked stage.
+
+If the LEDs still stay dark after "Set", the corresponding poly override on the trigger expander is most likely patched (e.g. `STAGE_STOP_POLY_INPUT`): `process()` resets bit and LED from the CV every 8 samples (`stageCvOverrideDivider`), a broadcast is then overwritten immediately; with 0V on the cable the bit stays off (see [6](#sec6)). (Code: `broadcastModifierBitToAllStages()`, `StageModBroadcastButton::appendContextMenu()`, and the application of `pendingBitBroadcast[]` in `Marf248::process()`, `Sofonisba.cpp`.)
+
+### 10.17 External Stage Address With Strobe: Start Lets the Section Run On Freely
+
+Strobe jumps to the addressed stage only once (see [4.3](#sec4-3)). Afterwards the section, if running, continues quite normally. Anyone who sets Ext mode and address CV and then presses Start therefore sees a normal run 1 → 16. The CV seems to be ignored, but it is only evaluated on Strobe, Continuous, or Reset ([10.2](#sec10)).
+
+If a section should change stage only on command of the CV:
+
+1. Set Stage Address to Ext and patch the address CV into `STAGE_ADDR_EXT_A/B_INPUT` (mind the channel select, see [4.3](#sec4-3)).
+2. Set Stop on all stages that are to be addressed – most easily via right-click on a Stop button → "Set Stop on all stages" (see [10.16](#sec10)) or via `STAGE_STOP_POLY_INPUT` with 16 channels ≥ 2V. Stop on a single stage is not enough, because the section is supposed to halt at every addressed stage.
+3. Fire Strobe (panel button or SEXT on the trigger expander), ideally from the same clock or gate that steps the address CV.
+
+Each Strobe jumps to the addressed stage. The stage outputs its voltage (with a ramp if Slope is set), then the section stays there and waits for the next Strobe.
+
+**Important: Stop on all stages disables Start/Stop and Advance.** `Afg::process()` evaluates the Stop bit of the current stage (`stageIsStop`); if it is set, neither the timer nor clock-quantized Advance continues – regardless of `running`. In this setup, pressing Start or sending a start trigger therefore seemingly does not get the section going. Stage changes then only happen via Strobe, Reset, or Continuous. For normal operation, remove Stop again, e.g. via right-click → "Clear Stop on all stages" (see [10.16](#sec10)). If the CV should instead determine the stage permanently and without triggers, Continuous is the right approach; there, however, Start/Stop/Sustain/Enable have no effect (see [10.8](#sec10)).
+
 ---
 
 <a id="sec11"></a>
@@ -1100,6 +1129,7 @@ A direct contrast to [10.14](#sec10): A single click on a stage modifier button 
 - **Stage Number Broadcast runs exclusively via the right-click context menu** ("Stage Number Broadcast" session, see [4.14](#sec4-14)). Deliberately decided against Shift-click or a dedicated panel button: A right-click menu entry costs the least panel area and fits seamlessly into the already existing context menus of `RangeKnob`/`TrangeButton`.
 - **The broadcast scope is deliberately limited to nine bit modifiers plus four continuous controls.** Quantize, Quantized Glide, Normalize, Mute, as well as the Volt-Ext/Time-Ext channel select and Shape are left out, since they either already act module-wide elsewhere (Mute) or their semantics would be unclear in a bulk overwrite (e.g. Shape as a 3-state cycle instead of an on/off bit).
 - **The broadcast uses VCV's full history system instead of a mere safety prompt**. A single broadcast can potentially overwrite 16 stage values at once; a simple confirmation dialog could not have undone the risk of a misclick. Two separate undo mechanisms were necessary, since bit modifiers (`stageModifier[]`) and continuous controls (engine params) are stored differently, see [4.14](#sec4-14).
+- **Bit modifier broadcast as Set/Clear instead of copy, executed in the engine thread** ("Broadcast Set/Clear" session, 2026-11-18, see [4.14](#sec4-14) and [10.16](#sec10)): Copying the source stage state was not recognizable in operation and looked like a defect on a dark button. Two explicit entries make the result independent of the clicked button. The broadcast is only stored as a request (`pendingBitBroadcast[]`) and executed in `process()`, so that `stageModifier[]` is written exclusively in the engine thread; the TR1–4 selection in the Time Range button context menu has followed the same pattern since then (`pendingTrange[]`). The continuous controls keep copying, because "take over the value" is the obvious meaning there.
 - **Lucia: one shared stage slot for both sections**. The original assumption "one slot per section" was corrected: The stage params are each one array across 16 stages, not separated per section – a second slot would write the same params. See [3.6](#sec3-6).
 - **`pendingStage`/`displayedStage` are deliberately not a param.** Pickup/Catch, history, and preset recall are not supposed to affect GUI navigation; persistence is via JSON with clamping. The same decision later applies to the generator selection of Europa.
 - **`dynamic_cast` instead of model comparison in expander detection**: A code inspection disproved the assumption that a type check was already being used. Both directions were switched over, with the marker interface `Marf248Host`, so that Lucia uses the same expanders without changes to the expander headers. See [Section 8](#sec8).
