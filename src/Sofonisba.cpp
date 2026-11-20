@@ -1,6 +1,7 @@
 #include "Sofonisba.hpp"
 #include "SofonisbaTriggerExpander.hpp"
 #include "SofonisbaCvExpander.hpp"
+#include "SofonisbaLoopExpander.hpp"
 #include "PanelLabel.hpp"
 // Fuer den Stage-Number-Broadcast (Rechtsklick "Apply to all stages" auf
 // Modifier-Buttons/Slidern/Reglern, siehe weiter unten): history::Action/
@@ -130,6 +131,17 @@ struct StageRangeQuantity : ParamQuantity {
 		}
 		return ParamQuantity::getDisplayValueString();
 	}
+};
+
+// Stage-Number-Broadcast (Session "Broadcast Set/Clear", 2026-11-18): die
+// neun per Rechtsklick broadcastbaren Modifier-Bits. Die Position in diesem
+// Array ist der "Slot" fuer Marf248::pendingBitBroadcast[] und
+// StageModifierBroadcastAction - BROADCAST_BIT_TABLE weiter unten muss
+// dieselbe Reihenfolge haben (dort per Index auf dieses Array verwiesen).
+static constexpr int NUM_BROADCAST_BITS = 9;
+static constexpr uint32_t BROADCAST_BITS[NUM_BROADCAST_BITS] = {
+	MOD_PULSE1, MOD_PULSE2, MOD_SKIP, MOD_STOP, MOD_SUSTAIN,
+	MOD_ENABLE, MOD_FIRST, MOD_LAST, MOD_SLOPED,
 };
 
 struct Marf248 : Module, Marf248Host {
@@ -425,6 +437,26 @@ struct Marf248 : Module, Marf248Host {
 	// (statt Rechtsklick-Menue) und per dataToJson/dataFromJson persistiert.
 	int stageModifier[NUM_STAGES] = {};
 
+	// Stage-Number-Broadcast-Auftraege aus dem GUI-Thread (Session
+	// "Broadcast Set/Clear", 2026-11-18): stageModifier[] wird ausschliesslich
+	// im Engine-Thread geschrieben. Das Kontextmenue (und Undo/Redo) legt nur
+	// eine 16-Bit-Maske ab (Bit i = Stage i soll das Modifier-Bit haben),
+	// process() uebernimmt sie im naechsten dekimierten Tick. -1 = kein
+	// Auftrag. Mehrere Auftraege fuer dasselbe Bit vor dem naechsten Tick
+	// fallen zusammen (der letzte gewinnt) - genau die gewuenschte Semantik.
+	// Vorher schrieb der Broadcast direkt aus dem GUI-Thread, was mit der
+	// Read-Modify-Write-Logik in process() (Range-Bits alle 32 Samples)
+	// kollidieren und einzelne Bits verlieren konnte.
+	std::atomic<int32_t> pendingBitBroadcast[NUM_BROADCAST_BITS];
+
+	// Time-Range-Auswahl aus dem Rechtsklick-Menue des TR-Tasters (Session
+	// "Broadcast Set/Clear", 2026-11-18): gleiches Auftragsprinzip wie
+	// pendingBitBroadcast - das Menue legt die gewuenschten TR-Bits der Stage
+	// ab (MOD_TRANGE_1/2/4 oder 0 fuer TR3), process() uebernimmt sie im
+	// naechsten dekimierten Tick. -1 = kein Auftrag. Vorher schrieb das Menue
+	// stageModifier[] direkt aus dem GUI-Thread.
+	std::atomic<int32_t> pendingTrange[NUM_STAGES];
+
 	// Ergebnisse der Trigger-Expander Stage-Modifier-Poly-CV-Overrides
 	// (Session "CPU-Optimierung Stage-Modifier-Scans"): vorher lokale
 	// process()-Variablen, die JEDEN Sample frisch auf ihren Default
@@ -586,6 +618,22 @@ struct Marf248 : Module, Marf248Host {
 	// Triggern oben, da sie eine andere Spannungsquelle (Expander-Eingang
 	// statt Taster-Parameter) abfragen. Key laeuft ueber kontinuierliche CV
 	// und braucht daher keinen eigenen Trigger. Siehe process().
+	// Loop-Expander (Ritornello): Pegelzustand des Austrittsimpulses im
+	// letzten Sample je Section, fuer die Flankenerkennung (Blink-Timer der
+	// Panel-Anzeige). Wird in process() unabhaengig davon gefuehrt, ob ein
+	// Expander andockt.
+	bool loopExitPrevA = false;
+	bool loopExitPrevB = false;
+
+	// Zwischenspeicher fuer die Expander-Kettensuche (siehe Marf248ChainCache in
+	// Marf248.hpp): je Richtung die zuletzt gefundene Kette, dazu die daraus
+	// ermittelten Expander-Zeiger. process() prueft pro Sample nur per
+	// Zeigervergleich, ob sich die Nachbarschaft geaendert hat.
+	Marf248ChainCache chainCache[2];
+	Marf248TriggerExpander* cachedTrigExp = nullptr;
+	Marf248CvExpander* cachedCvExp = nullptr;
+	Marf248LoopExpander* cachedLoopExp = nullptr;
+
 	dsp::SchmittTrigger expClearTrigger;
 	dsp::SchmittTrigger expResetValuesTrigger;
 	dsp::SchmittTrigger expPresetLoadTrigger[12];
@@ -716,6 +764,13 @@ struct Marf248 : Module, Marf248Host {
 
 		stageButtonDivider.setDivision(32);
 		stageCvOverrideDivider.setDivision(8);
+
+		for (int b = 0; b < NUM_BROADCAST_BITS; b++) {
+			pendingBitBroadcast[b].store(-1);
+		}
+		for (int i = 0; i < NUM_STAGES; i++) {
+			pendingTrange[i].store(-1);
+		}
 
 		for (int i = 0; i < NUM_STAGES; i++) {
 			StageVoltageQuantity* vq = configParam<StageVoltageQuantity>(STAGE_VOLTAGE_PARAM + i, 0.f, 10.f, 0.f,
@@ -975,6 +1030,10 @@ struct Marf248 : Module, Marf248Host {
 		// basieren.
 		stageModifier[0] |= MOD_FIRST;
 		stageModifier[NUM_STAGES - 1] |= MOD_LAST;
+		// Loop-Zaehler beider Sections verwerfen (onReset() setzt per Afg()
+		// ohnehin alles zurueck).
+		afgA.resetLoopCounter();
+		afgB.resetLoopCounter();
 		clearFlash.trigger(0.15f);
 	}
 
@@ -1013,10 +1072,37 @@ struct Marf248 : Module, Marf248Host {
 		// SEXT-Trigger (externe Strobe-Pulse) bereits kennen muss, bevor
 		// applyStageAddress() aufgerufen wird. Sucht links UND rechts, damit
 		// der Expander auf beiden Seiten andocken kann.
-		Marf248TriggerExpander* trigExp = dynamic_cast<Marf248TriggerExpander*>(getLeftExpander().module);
-		if (!trigExp) {
-			trigExp = dynamic_cast<Marf248TriggerExpander*>(getRightExpander().module);
+		//
+		// Kettensuche (Session Nachbar-Problem): ein gemeinsamer Scan fuer alle
+		// drei Expander-Typen (Amilcare, Bianca, Ritornello). Je Seite werden bis
+		// zu MARF248_MAX_CHAIN Expander ab dem direkten Nachbarn durchlaufen
+		// (siehe marf248CollectChain, Abbruch an Fremdmodulen). Reihenfolge:
+		// links vor rechts, nahester zuerst; ist ein Typ mehrfach vorhanden,
+		// gewinnt der erste Treffer (die weiteren bleiben ungenutzt, ihre
+		// LINK-LED ist aus). Mit hoechstens einem Expander je Seite ist das
+		// Ergebnis identisch zur frueheren Einzelsuche an den direkten Nachbarn.
+		// cvExp und loopExp werden weiter unten unveraendert verwendet.
+		// Nachbarschaft nur bei Aenderung neu scannen (Zeigervergleich pro Sample,
+		// siehe Marf248ChainCache): das Andocken eines Expanders kostete zuvor
+		// durch die dynamic_cast der Kettensuche ca. 0,7-1 % CPU-Anzeige.
+		if (!marf248ChainUnchanged(this, true, chainCache[0])
+		    || !marf248ChainUnchanged(this, false, chainCache[1])) {
+			cachedTrigExp = nullptr;
+			cachedCvExp = nullptr;
+			cachedLoopExp = nullptr;
+			for (int dir = 0; dir < 2; dir++) {
+				marf248ChainStore(this, dir == 0, chainCache[dir]);
+				for (int k = 0; k < chainCache[dir].count; k++) {
+					Module* mod = chainCache[dir].path[k];
+					if (!cachedTrigExp) cachedTrigExp = dynamic_cast<Marf248TriggerExpander*>(mod);
+					if (!cachedCvExp) cachedCvExp = dynamic_cast<Marf248CvExpander*>(mod);
+					if (!cachedLoopExp) cachedLoopExp = dynamic_cast<Marf248LoopExpander*>(mod);
+				}
+			}
 		}
+		Marf248TriggerExpander* trigExp = cachedTrigExp;
+		Marf248CvExpander* cvExp = cachedCvExp;
+		Marf248LoopExpander* loopExp = cachedLoopExp;
 
 		// Global Clear: momentary Taster, loescht die Programmierung aller 16
 		// Stages (Manual: Output Voltage -> Continuous/Full Range/Internal
@@ -1160,6 +1246,36 @@ struct Marf248 : Module, Marf248Host {
 		// Anzeige-Aktualisierung im Time-Multiplier-Block wiederverwendet.
 		bool stageButtonsDecimated = stageButtonDivider.process();
 		if (stageButtonsDecimated) {
+		// Ausstehende Broadcast-Auftraege aus dem GUI-Thread uebernehmen
+		// (siehe pendingBitBroadcast) - vor der Taster-Schleife, damit die
+		// LEDs unten noch im selben Tick den neuen Zustand zeigen. Ein
+		// gepatchter Poly-Override am Trigger-Expander ueberschreibt das
+		// Ergebnis weiterhin im naechsten stageCvOverrideDivider-Tick.
+		for (int b = 0; b < NUM_BROADCAST_BITS; b++) {
+			int32_t mask = pendingBitBroadcast[b].exchange(-1);
+			if (mask < 0) {
+				continue;
+			}
+			for (int i = 0; i < NUM_STAGES; i++) {
+				if (mask & (1 << i)) {
+					stageModifier[i] |= BROADCAST_BITS[b];
+				}
+				else {
+					stageModifier[i] &= ~BROADCAST_BITS[b];
+				}
+			}
+		}
+		// Ausstehende Time-Range-Auswahl aus dem TR-Kontextmenue uebernehmen
+		// (siehe pendingTrange) - ebenfalls vor der Taster-Schleife, damit ein
+		// gleichzeitiger Klick-Zyklus auf dem neuen Zustand aufsetzt.
+		for (int i = 0; i < NUM_STAGES; i++) {
+			int32_t trBits = pendingTrange[i].exchange(-1);
+			if (trBits < 0) {
+				continue;
+			}
+			stageModifier[i] &= ~(MOD_TRANGE_1 | MOD_TRANGE_2 | MOD_TRANGE_4);
+			stageModifier[i] |= trBits;
+		}
 		for (int i = 0; i < NUM_STAGES; i++) {
 			if (stageFirstTrigger[i].process(params[STAGE_FIRST_PARAM + i].getValue())) {
 				stageModifier[i] ^= MOD_FIRST;
@@ -1547,10 +1663,8 @@ struct Marf248 : Module, Marf248Host {
 		// in resolvedTime[i] einfliessen muss, lange bevor der Trigger-
 		// Expander-Block erreicht wird. Derselbe cvExp-Zeiger wird weiter
 		// unten erneut verwendet, um die Gate-A/B-Outputs zu schreiben.
-		Marf248CvExpander* cvExp = dynamic_cast<Marf248CvExpander*>(getLeftExpander().module);
-		if (!cvExp) {
-			cvExp = dynamic_cast<Marf248CvExpander*>(getRightExpander().module);
-		}
+		// (cvExp wird jetzt zusammen mit trigExp/loopExp am Anfang von process()
+		// per Kettensuche ermittelt.)
 
 		// Attenuverter/Offset/Input-Referenz fuer die additive Stage-Time-CV
 		// einmalig ausgelesen (skalar, gilt fuer alle Stages gleich) - die
@@ -2087,9 +2201,58 @@ struct Marf248 : Module, Marf248Host {
 		bool freezeB = trigExp && trigExp->getInput(Marf248TriggerExpander::STAGE_ADDR_FREEZE_POLY_INPUT).getPolyVoltage(1) >= ADDR_GATE_THRESHOLD;
 		afgB.applyStageAddress(addrContOnB, addrValueB, strobeB, resetB, stageModifier, freezeB);
 
+		// Loop-Schleifen (Ritornello, Marf248LoopExpander): Expander links UND
+		// rechts suchen (links zuerst), gleiches Muster wie trigExp/cvExp. Ohne
+		// angedockten Expander oder ohne gepatchtes Begin- UND End-Kabel gehen
+		// die Nullen-Arrays an die Engine -> keine Flags, keine Schleifen,
+		// Verhalten bitgleich zum Stand ohne Loop-Feature (unpaarige Begin/End
+		// wuerden ohnehin ignoriert, daher genuegt das UND).
+		// Begin/End: Poly-Gate, Kanal i = Stage i+1, Pegel >= 2 V (identische
+		// Schwelle wie die Stage-Modifier-Gates, ohne Hysterese). Count: 1 V
+		// pro WIEDERHOLUNG, floor(V) auf 0..9 begrenzt: 0 V = endlos, 1 V = 1
+		// Wiederholung (= 2 Durchlaeufe) ... 9 V = 9 Wiederholungen (= 10
+		// Durchlaeufe). Die Engine rechnet in Durchlaeufen (stageLoopCount: 0 =
+		// endlos, 2..10), die Umrechnung geschieht hier. Nur Kanaele bis
+		// getChannels() werden gelesen (getPolyVoltage() wuerde ein Mono-Kabel
+		// auf alle 16 Stages kopieren). Gemeinsam fuer Section A und B.
+		// (loopExp wird am Anfang von process() per Kettensuche ermittelt.)
+		static const int zeroLoopFlags[NUM_STAGES] = {};
+		static const int zeroLoopCount[NUM_STAGES] = {};
+		int loopFlagsBuf[NUM_STAGES];
+		int loopCountBuf[NUM_STAGES];
+		const int* stageLoopFlags = zeroLoopFlags;
+		const int* stageLoopCount = zeroLoopCount;
+		if (loopExp) {
+			Input& loopBeginIn = loopExp->getInput(Marf248LoopExpander::LOOP_BEGIN_POLY_INPUT);
+			Input& loopEndIn = loopExp->getInput(Marf248LoopExpander::LOOP_END_POLY_INPUT);
+			Input& loopCountIn = loopExp->getInput(Marf248LoopExpander::LOOP_COUNT_POLY_INPUT);
+			if (loopBeginIn.isConnected() && loopEndIn.isConnected()) {
+				int beginCh = loopBeginIn.getChannels();
+				int endCh = loopEndIn.getChannels();
+				int countCh = loopCountIn.isConnected() ? loopCountIn.getChannels() : 0;
+				for (int i = 0; i < NUM_STAGES; i++) {
+					int f = 0;
+					if (i < beginCh && loopBeginIn.getVoltage(i) >= ADDR_GATE_THRESHOLD) {
+						f |= LOOPFLAG_BEGIN;
+					}
+					if (i < endCh && loopEndIn.getVoltage(i) >= ADDR_GATE_THRESHOLD) {
+						f |= LOOPFLAG_END;
+					}
+					loopFlagsBuf[i] = f;
+					int loopRepeats = (i < countCh)
+						? (int) rack::clamp(std::floor(loopCountIn.getVoltage(i)), 0.f, 9.f)
+						: 0;
+					loopCountBuf[i] = (loopRepeats > 0) ? loopRepeats + 1 : 0;
+				}
+				stageLoopFlags = loopFlagsBuf;
+				stageLoopCount = loopCountBuf;
+			}
+		}
+		float loopExitA, loopRestA, loopExitB, loopRestB;
+		float loopDoneA, loopDoneB;
 		float vA, tA, apA, p1A, p2A, scA, ecA, rgA, eosA;
 		afgA.process(args.sampleTime, resolvedVoltage, resolvedTimeA, stageModifier, stageCurvePower,
-			stageRatchetCount, stageWarpBlend, stageRatchetOffset,
+			stageRatchetCount, stageWarpBlend, stageRatchetOffset, stageLoopFlags, stageLoopCount,
 			currentKey, currentScale,
 			params[RUN_A_PARAM].getValue(),
 			inputs[START_A_INPUT].isConnected(), inputs[START_A_INPUT].getVoltage(),
@@ -2102,7 +2265,8 @@ struct Marf248 : Module, Marf248Host {
 			// Trigger-Expander andockt - identisches Muster wie RUN_GATE_A oben.
 			trigExp && trigExp->getInput(Marf248TriggerExpander::ADVANCE_A_INPUT).isConnected(),
 			trigExp ? trigExp->getInput(Marf248TriggerExpander::ADVANCE_A_INPUT).getVoltage() : 0.f,
-			&vA, &tA, &apA, &p1A, &p2A, &scA, &ecA, &rgA, &eosA);
+			&vA, &tA, &apA, &p1A, &p2A, &scA, &ecA, &rgA, &eosA,
+			&loopExitA, &loopRestA, &loopDoneA);
 		outputs[VOUT_A_OUTPUT].setVoltage(vA);
 		outputs[TOUT_A_OUTPUT].setVoltage(tA);
 		outputs[APOUT_A_OUTPUT].setVoltage(apA);
@@ -2121,7 +2285,7 @@ struct Marf248 : Module, Marf248Host {
 
 		float vB, tB, apB, p1B, p2B, scB, ecB, rgB, eosB;
 		afgB.process(args.sampleTime, resolvedVoltage, resolvedTimeB, stageModifier, stageCurvePower,
-			stageRatchetCount, stageWarpBlend, stageRatchetOffset,
+			stageRatchetCount, stageWarpBlend, stageRatchetOffset, stageLoopFlags, stageLoopCount,
 			currentKey, currentScale,
 			params[RUN_B_PARAM].getValue(),
 			inputs[START_B_INPUT].isConnected(), inputs[START_B_INPUT].getVoltage(),
@@ -2134,7 +2298,8 @@ struct Marf248 : Module, Marf248Host {
 			// Trigger-Expander andockt - identisches Muster wie RUN_GATE_B oben.
 			trigExp && trigExp->getInput(Marf248TriggerExpander::ADVANCE_B_INPUT).isConnected(),
 			trigExp ? trigExp->getInput(Marf248TriggerExpander::ADVANCE_B_INPUT).getVoltage() : 0.f,
-			&vB, &tB, &apB, &p1B, &p2B, &scB, &ecB, &rgB, &eosB);
+			&vB, &tB, &apB, &p1B, &p2B, &scB, &ecB, &rgB, &eosB,
+			&loopExitB, &loopRestB, &loopDoneB);
 		outputs[VOUT_B_OUTPUT].setVoltage(vB);
 		outputs[TOUT_B_OUTPUT].setVoltage(tB);
 		outputs[APOUT_B_OUTPUT].setVoltage(apB);
@@ -2145,6 +2310,50 @@ struct Marf248 : Module, Marf248Host {
 		outputs[TIMESTATIC_B_OUTPUT].setVoltage(stageTime[afgB.currentStage] * 10.f);
 		lights[P1_ACTIVE_B_LIGHT].setBrightness(p1B > 0.f ? 1.f : 0.f);
 		lights[P2_ACTIVE_B_LIGHT].setBrightness(p2B > 0.f ? 1.f : 0.f);
+
+		// Loop-Expander (Ritornello): Austrittsimpuls und Restwert je Section in
+		// die Expander-Ausgaenge schreiben, dazu Anzeigezustand fuer die Panel-
+		// Ziffernanzeige. Der Blink-Timer (0,3 s) wird bei der steigenden Flanke
+		// des Austrittsimpulses gesetzt und hier heruntergezaehlt - nur dieser
+		// Block schreibt ihn, das Widget liest nur. Die Flanken-Merker laufen
+		// auch ohne Expander mit, damit ein spaeter angedockter Expander keinen
+		// alten Impuls als Austritt sieht. Anzeigewert nur bei Aenderung
+		// schreiben (spart staendige Schreibzugriffe auf gemeinsam gelesene
+		// Speicherzeilen).
+		{
+			bool exitHighA = loopExitA > 0.5f;
+			bool exitHighB = loopExitB > 0.5f;
+			if (loopExp) {
+				loopExp->getOutput(Marf248LoopExpander::LOOP_EXIT_A_OUTPUT).setVoltage(loopExitA);
+				loopExp->getOutput(Marf248LoopExpander::LOOP_EXIT_B_OUTPUT).setVoltage(loopExitB);
+				loopExp->getOutput(Marf248LoopExpander::LOOP_REST_A_OUTPUT).setVoltage(loopRestA);
+				loopExp->getOutput(Marf248LoopExpander::LOOP_REST_B_OUTPUT).setVoltage(loopRestB);
+				loopExp->getOutput(Marf248LoopExpander::LOOP_DONE_A_OUTPUT).setVoltage(loopDoneA);
+				loopExp->getOutput(Marf248LoopExpander::LOOP_DONE_B_OUTPUT).setVoltage(loopDoneB);
+
+				if (exitHighA && !loopExitPrevA) {
+					loopExp->blinkTimer[0] = LOOP_BLINK_SECONDS;
+				}
+				if (exitHighB && !loopExitPrevB) {
+					loopExp->blinkTimer[1] = LOOP_BLINK_SECONDS;
+				}
+				for (int s = 0; s < 2; s++) {
+					if (loopExp->blinkTimer[s] > 0.f) {
+						loopExp->blinkTimer[s] = std::max(0.f, loopExp->blinkTimer[s] - args.sampleTime);
+					}
+				}
+				int restShownA = (int) std::lround(loopRestA);
+				int restShownB = (int) std::lround(loopRestB);
+				if (loopExp->restShown[0] != restShownA) {
+					loopExp->restShown[0] = restShownA;
+				}
+				if (loopExp->restShown[1] != restShownB) {
+					loopExp->restShown[1] = restShownB;
+				}
+			}
+			loopExitPrevA = exitHighA;
+			loopExitPrevB = exitHighB;
+		}
 
 		// Marf248TriggerExpander: einfacher "Host liest/schreibt direkt"-
 		// Ansatz (kein Message-Passing noetig, da der Expander selbst keine
@@ -2608,104 +2817,89 @@ std::string StageTimeQuantity::getDisplayValueString() {
 
 // -- Bit-Modifier-Pfad -------------------------------------------------------
 //
-// Eigene history::Action-Unterklasse, die einen kompletten Snapshot des
-// stageModifier[]-Arrays vor/nach dem Broadcast sichert (16 x int, billig)
-// statt nur das einzelne Bit zu tracken - robuster, falls sich das Bit-Layout
-// spaeter aendert, und deckt ohne Zusatzaufwand auch den (aktuell nicht
-// vorkommenden) Fall ab, dass ein Broadcast mehrere Bits gleichzeitig
-// betrifft. moduleId statt direktem Modul-Zeiger, da das Modul zwischen
-// Undo/Redo-Aufrufen theoretisch entfernt/neu erzeugt werden koennte (Rack-
-// Standardmuster, siehe history::ParamChange::moduleId in Rack SDK).
+// Session "Broadcast Set/Clear" (2026-11-18): Statt den Zustand der
+// angeklickten Quell-Stage zu kopieren (fuehrte zu Verwirrung - ein
+// Rechtsklick auf einen dunklen Taster loeschte das Bit ueberall und
+// aenderte damit oft sichtbar nichts), gibt es jetzt zwei eindeutige
+// Eintraege "Set ... on all stages" / "Clear ... on all stages".
+//
+// Der GUI-Thread schreibt stageModifier[] nicht mehr selbst, sondern legt
+// eine 16-Bit-Zielmaske in Marf248::pendingBitBroadcast[slot] ab; process()
+// setzt sie um. Die Undo-Aktion merkt sich pro Bit nur die alte und die neue
+// Maske dieses einen Bits (nicht mehr den ganzen stageModifier[]-Snapshot) -
+// Undo/Redo stellt so nur das betroffene Bit wieder her und laesst inzwischen
+// geaenderte andere Bits (Klicks, Range, CV) unangetastet. moduleId statt
+// direktem Modul-Zeiger (Rack-Standardmuster, siehe history::ParamChange).
 struct StageModifierBroadcastAction : history::Action {
 	int64_t moduleId = -1;
-	int oldValues[NUM_STAGES] = {};
-	int newValues[NUM_STAGES] = {};
+	int slot = 0;
+	int32_t oldMask = 0;
+	int32_t newMask = 0;
 
 	void undo() override {
 		Marf248* m = dynamic_cast<Marf248*>(APP->engine->getModule(moduleId));
-		if (!m) {
-			return;
-		}
-		for (int i = 0; i < NUM_STAGES; i++) {
-			m->stageModifier[i] = oldValues[i];
+		if (m) {
+			m->pendingBitBroadcast[slot].store(oldMask);
 		}
 	}
 
 	void redo() override {
 		Marf248* m = dynamic_cast<Marf248*>(APP->engine->getModule(moduleId));
-		if (!m) {
-			return;
-		}
-		for (int i = 0; i < NUM_STAGES; i++) {
-			m->stageModifier[i] = newValues[i];
+		if (m) {
+			m->pendingBitBroadcast[slot].store(newMask);
 		}
 	}
 };
 
-// Fuehrt den Broadcast eines einzelnen Modifier-Bits von sourceStage auf alle
-// 16 Stages aus (uebernimmt den Bit-ZUSTAND der Quell-Stage: gesetzt -> bei
-// allen setzen, geloescht -> bei allen loeschen) und erzeugt dabei den
-// zugehoerigen Undo-Schritt. Kein Undo-Eintrag, falls sich nichts aendert
-// (z.B. wenn ohnehin schon alle Stages denselben Zustand hatten) - vermeidet
-// leere/wirkungslose History-Eintraege.
-static void broadcastModifierBitToAllStages(Marf248* m, uint32_t bit, int sourceStage, const std::string& actionName) {
-	if (!m || sourceStage < 0 || sourceStage >= NUM_STAGES) {
+// Setzt (on = true) bzw. loescht (on = false) das Modifier-Bit des Slots auf
+// allen 16 Stages und erzeugt den Undo-Schritt. Kein Auftrag und kein
+// Undo-Eintrag, wenn bereits alle Stages den Zielzustand haben.
+static void broadcastModifierBitToAllStages(Marf248* m, int slot, bool on, const std::string& actionName) {
+	if (!m || slot < 0 || slot >= NUM_BROADCAST_BITS) {
 		return;
 	}
-	bool state = (m->stageModifier[sourceStage] & bit) != 0;
+	uint32_t bit = BROADCAST_BITS[slot];
+	int32_t oldMask = 0;
+	for (int i = 0; i < NUM_STAGES; i++) {
+		if (m->stageModifier[i] & bit) {
+			oldMask |= (1 << i);
+		}
+	}
+	int32_t newMask = on ? ((1 << NUM_STAGES) - 1) : 0;
+	if (oldMask == newMask) {
+		return;
+	}
+	m->pendingBitBroadcast[slot].store(newMask);
 
 	StageModifierBroadcastAction* action = new StageModifierBroadcastAction;
 	action->moduleId = m->id;
+	action->slot = slot;
+	action->oldMask = oldMask;
+	action->newMask = newMask;
 	action->name = actionName;
-	for (int i = 0; i < NUM_STAGES; i++) {
-		action->oldValues[i] = m->stageModifier[i];
-	}
-
-	for (int i = 0; i < NUM_STAGES; i++) {
-		if (state) {
-			m->stageModifier[i] |= bit;
-		}
-		else {
-			m->stageModifier[i] &= ~bit;
-		}
-	}
-
-	bool changed = false;
-	for (int i = 0; i < NUM_STAGES; i++) {
-		action->newValues[i] = m->stageModifier[i];
-		if (action->newValues[i] != action->oldValues[i]) {
-			changed = true;
-		}
-	}
-	if (changed) {
-		APP->history->push(action);
-	}
-	else {
-		delete action;
-	}
+	APP->history->push(action);
 }
 
 // Lookup-Tabelle: ordnet den Basis-ParamId einer Button-Familie (STAGE_
-// PULSE1_PARAM usw.) dem zugehoerigen Modifier-Bit und einem Anzeigenamen
-// fuers Menue zu. Bewusst NUR die per Session-Entscheidung freigegebenen
-// neun einfachen Bit-Modifier (Pulse1/2, Skip, First/Last, Stop/Sustain/
-// Enable, Slope) - Quant/QuantGlide/Normalize/Mute/Volt-Ext/Time-Ext/Shape
-// bleiben aussen vor (nicht Teil dieser Session).
+// PULSE1_PARAM usw.) ihrem Slot in BROADCAST_BITS[] und einem Anzeigenamen
+// fuers Menue zu. Reihenfolge identisch zu BROADCAST_BITS[] (slot = Index).
+// Bewusst NUR die neun einfachen Bit-Modifier - Quant/QuantGlide/Normalize/
+// Mute/Volt-Ext/Time-Ext/Shape bleiben aussen vor.
 struct BroadcastBitInfo {
 	int baseParamId;
-	uint32_t bit;
+	int slot;
 	const char* label;
 };
 static const BroadcastBitInfo BROADCAST_BIT_TABLE[] = {
-	{Marf248::STAGE_PULSE1_PARAM,  MOD_PULSE1,  "Pulse 1"},
-	{Marf248::STAGE_PULSE2_PARAM,  MOD_PULSE2,  "Pulse 2"},
-	{Marf248::STAGE_SKIP_PARAM,    MOD_SKIP,    "Skip"},
-	{Marf248::STAGE_STOP_PARAM,    MOD_STOP,    "Stop"},
-	{Marf248::STAGE_SUSTAIN_PARAM, MOD_SUSTAIN, "Sustain"},
-	{Marf248::STAGE_ENABLE_PARAM,  MOD_ENABLE,  "Enable"},
-	{Marf248::STAGE_FIRST_PARAM,   MOD_FIRST,   "First"},
-	{Marf248::STAGE_LAST_PARAM,    MOD_LAST,    "Last"},
-	{Marf248::STAGE_SLOPE_PARAM,   MOD_SLOPED,  "Slope"},
+	{Marf248::STAGE_PULSE1_PARAM,  0, "Pulse 1"},
+	{Marf248::STAGE_PULSE2_PARAM,  1, "Pulse 2"},
+	{Marf248::STAGE_SKIP_PARAM,    2, "Skip"},
+	{Marf248::STAGE_STOP_PARAM,    3, "Stop"},
+	{Marf248::STAGE_SUSTAIN_PARAM, 4, "Sustain"},
+	{Marf248::STAGE_ENABLE_PARAM,  5, "Enable"},
+	{Marf248::STAGE_FIRST_PARAM,   6, "First"},
+	{Marf248::STAGE_LAST_PARAM,    7, "Last"},
+	{Marf248::STAGE_SLOPE_PARAM,   8, "Slope"},
 };
 static const int BROADCAST_BIT_TABLE_SIZE = sizeof(BROADCAST_BIT_TABLE) / sizeof(BROADCAST_BIT_TABLE[0]);
 
@@ -2883,13 +3077,21 @@ struct StageModBroadcastButton : LEDButton {
 			if (pq->paramId < info.baseParamId || pq->paramId >= info.baseParamId + NUM_STAGES) {
 				continue;
 			}
-			int stageIndex = pq->paramId - info.baseParamId;
+			int slot = info.slot;
+			std::string label = info.label;
 			menu->addChild(new ui::MenuSeparator);
 			menu->addChild(createMenuItem(
-				string::f("Apply %s to all stages", info.label), "",
+				string::f("Set %s on all stages", info.label), "",
 				[=]() {
-					broadcastModifierBitToAllStages(m, info.bit, stageIndex,
-						string::f("apply Stage %d %s to all stages", stageIndex + 1, info.label));
+					broadcastModifierBitToAllStages(m, slot, true,
+						string::f("set %s on all stages", label.c_str()));
+				}
+			));
+			menu->addChild(createMenuItem(
+				string::f("Clear %s on all stages", info.label), "",
+				[=]() {
+					broadcastModifierBitToAllStages(m, slot, false,
+						string::f("clear %s on all stages", label.c_str()));
 				}
 			));
 			return;
@@ -2952,9 +3154,13 @@ struct TrangeButton : LEDButton {
 	// RangeKnob::appendContextMenu (siehe dortiger Kommentar) - bei einem
 	// Momentary-Taster wie diesem macht eine numerische Texteingabe ohnehin
 	// wenig Sinn (kein "Wert" im ueblichen Sinn, nur ein Zyklus-Trigger).
-	// Manipuliert daher bewusst direkt die stageModifier-Bits statt ueber
-	// den Param-Rohwert/SchmittTrigger zu gehen - klar, sofort wirksam,
-	// unabhaengig vom Momentary-Verhalten des zugrundeliegenden Buttons.
+	// Setzt die stageModifier-Bits bewusst nicht ueber den Param-Rohwert/
+	// SchmittTrigger (unabhaengig vom Momentary-Verhalten des Buttons),
+	// schreibt sie aber seit Session "Broadcast Set/Clear" (2026-11-18) auch
+	// nicht mehr direkt aus dem GUI-Thread, sondern legt die Auswahl in
+	// Marf248::pendingTrange[] ab; process() uebernimmt sie im naechsten
+	// dekimierten Tick (max. 32 Samples). Das Haekchen liest weiterhin direkt
+	// aus stageModifier[] (reiner Lesezugriff).
 	void appendContextMenu(ui::Menu* menu) override {
 		ParamQuantity* pq = getParamQuantity();
 		if (!pq) {
@@ -2977,8 +3183,7 @@ struct TrangeButton : LEDButton {
 			menu->addChild(createCheckMenuItem(trLabels[t], "",
 				[=]() { return getTimeRangeIndex(m->stageModifier[stageIndex]) == t; },
 				[=]() {
-					m->stageModifier[stageIndex] &= ~(MOD_TRANGE_1 | MOD_TRANGE_2 | MOD_TRANGE_4);
-					m->stageModifier[stageIndex] |= trBits[t];
+					m->pendingTrange[stageIndex].store(trBits[t]);
 				}
 			));
 		}

@@ -17,7 +17,7 @@
 // unabhaengige Verarbeitung hat, kann Marf248 seine Ports direkt lesen/
 // schreiben, ohne Race-Conditions befuerchten zu muessen (siehe Rack-Doku:
 // "you can implement its entire DSP algorithm in the [primary] module").
-struct Marf248TriggerExpander : Module {
+struct Marf248TriggerExpander : Module, Marf248ExpanderMarker {
 	enum ParamId {
 		PARAMS_LEN
 	};
@@ -301,6 +301,10 @@ struct Marf248TriggerExpander : Module {
 		LIGHTS_LEN
 	};
 
+	// Zwischenspeicher fuer die Host-Erkennung (siehe marf248ExpanderLinkedCached
+	// in Marf248.hpp): Zeigervergleich pro Sample statt dynamic_cast.
+	Marf248LinkCache linkCache;
+
 	Marf248TriggerExpander() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 
@@ -358,9 +362,7 @@ struct Marf248TriggerExpander : Module {
 	// Modul sein eigenes "Aufraeumen" beim Verschieben/Entfernen des
 	// Hauptmoduls uebernehmen (siehe Plugin API Guide #Expanders).
 	void process(const ProcessArgs& args) override {
-		Module* left = getLeftExpander().module;
-		Module* right = getRightExpander().module;
-		bool linked = dynamic_cast<Marf248Host*>(left) || dynamic_cast<Marf248Host*>(right);
+		bool linked = marf248ExpanderLinkedCached(this, linkCache);
 
 		if (!linked) {
 			outputs[START_CYCLE_A_OUTPUT].setVoltage(0.f);

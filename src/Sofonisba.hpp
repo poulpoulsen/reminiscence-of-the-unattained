@@ -26,12 +26,193 @@ struct Marf248Host {
 	virtual ~Marf248Host() = default;
 };
 
+// Marker-Interface fuer die Expander selbst (Amilcare, Bianca, Ritornello).
+// Wird nur zum Durchlaufen der Expander-Kette gebraucht ("Kettensuche",
+// Session Nachbar-Problem): Host und Expander duerfen nicht nur direkt
+// nebeneinander stehen, sondern in einer Reihe - bis zu MARF248_MAX_CHAIN
+// Expander auf einer Seite. Jeder Expander implementiert dieses Interface
+// zusaetzlich zu Module (struct X : Module, Marf248ExpanderMarker).
+struct Marf248ExpanderMarker {
+	virtual ~Marf248ExpanderMarker() = default;
+};
+
+// Maximale Kettenlaenge je Seite (= Anzahl der Expander-Typen).
+static const int MARF248_MAX_CHAIN = 3;
+
+// Host-Seite: sammelt die Expander-Kette ab dem direkten Nachbarn in eine
+// Richtung (links oder rechts), nahester zuerst. Die Kette endet am ersten
+// Modul, das kein Expander ist (Fremdmodul oder Luecke), oder nach
+// MARF248_MAX_CHAIN Modulen. Rueckgabe: Anzahl gefundener Module. Das
+// Casten auf die konkreten Expander-Typen passiert in Marf248.cpp, da
+// dieser Header die Expander-Header nicht einbinden kann (sie binden ihn ein).
+inline int marf248CollectChain(Module* host, bool left, Module* out[MARF248_MAX_CHAIN]) {
+	Module* m = left ? host->getLeftExpander().module : host->getRightExpander().module;
+	int n = 0;
+	while (m && n < MARF248_MAX_CHAIN && dynamic_cast<Marf248ExpanderMarker*>(m)) {
+		out[n++] = m;
+		m = left ? m->getLeftExpander().module : m->getRightExpander().module;
+	}
+	return n;
+}
+
+// Expander-Seite: Ist dieser Expander an einen Host angedockt? Laeuft je
+// Richtung ueber die Nachbarn, solange es Expander sind, und sucht den Host.
+// Abbruch (nicht verbunden in dieser Richtung), wenn
+//  - ein Fremdmodul dazwischen steht (Kette bricht ab),
+//  - ein Expander desselben Typs (gleiches Model) dazwischen steht: der
+//    Host nimmt je Typ nur den nahesten, dieser hier waere ungenutzt,
+//  - der Host nicht innerhalb von MARF248_MAX_CHAIN Schritten erreicht wird.
+// Mit hoechstens einem Expander je Seite identisch zur frueheren Pruefung
+// "linker oder rechter direkter Nachbar ist ein Marf248Host".
+inline bool marf248ExpanderLinked(Module* self) {
+	for (int dir = 0; dir < 2; dir++) {
+		bool left = (dir == 0);
+		Module* m = left ? self->getLeftExpander().module : self->getRightExpander().module;
+		for (int step = 0; step < MARF248_MAX_CHAIN && m; step++) {
+			if (dynamic_cast<Marf248Host*>(m))
+				return true;
+			if (!dynamic_cast<Marf248ExpanderMarker*>(m))
+				break;
+			if (m->model == self->model)
+				break;
+			m = left ? m->getLeftExpander().module : m->getRightExpander().module;
+		}
+	}
+	return false;
+}
+
+// ---------------------------------------------------------------------------
+// Zwischenspeicher fuer die Expander-Erkennung (Performance, Session "CPU-Last
+// Ritornello"). Messung: schon das blosse Andocken eines Expanders kostete
+// ca. 0,7-1 % CPU-Anzeige, unabhaengig von Kabeln und Schleifen - die Kettensuche
+// und marf248ExpanderLinked() liefen mit mehreren dynamic_cast in JEDEM Sample.
+// Die Nachbarschaft aendert sich aber nur, wenn der Nutzer Module verschiebt.
+// Deshalb merken sich Host und Expander die zuletzt gefundene Kette (Zeiger der
+// durchlaufenen Module plus das Modul dahinter) und pruefen pro Sample nur per
+// Zeigervergleich, ob sie unveraendert ist; nur bei einer Abweichung wird neu
+// gescannt (dynamic_cast). Die Zeiger werden erst dereferenziert, nachdem sie
+// mit dem live von Rack gepflegten Nachbarzeiger uebereinstimmen - ein
+// entferntes Modul kann also nie ueber den Cache erreicht werden. Das Ergebnis
+// ist bitgleich zur uncachten Suche.
+// ---------------------------------------------------------------------------
+
+// Host-Seite: eine Kette je Richtung (siehe marf248CollectChain).
+struct Marf248ChainCache {
+	Module* path[MARF248_MAX_CHAIN] = {};
+	int count = 0;
+	Module* end = nullptr;   // Modul direkt hinter der Kette (oder nullptr)
+	bool valid = false;
+};
+
+// true, wenn die Kette ab dem direkten Nachbarn exakt wie beim letzten Scan ist.
+inline bool marf248ChainUnchanged(Module* host, bool left, const Marf248ChainCache& c) {
+	if (!c.valid)
+		return false;
+	Module* m = left ? host->getLeftExpander().module : host->getRightExpander().module;
+	for (int i = 0; i < c.count; i++) {
+		if (m != c.path[i])
+			return false;
+		m = left ? m->getLeftExpander().module : m->getRightExpander().module;
+	}
+	return m == c.end;
+}
+
+// Scannt die Kette neu (wie marf248CollectChain) und merkt sie sich.
+inline void marf248ChainStore(Module* host, bool left, Marf248ChainCache& c) {
+	Module* m = left ? host->getLeftExpander().module : host->getRightExpander().module;
+	int n = 0;
+	while (m && n < MARF248_MAX_CHAIN && dynamic_cast<Marf248ExpanderMarker*>(m)) {
+		c.path[n++] = m;
+		m = left ? m->getLeftExpander().module : m->getRightExpander().module;
+	}
+	c.count = n;
+	c.end = m;
+	c.valid = true;
+}
+
+// Expander-Seite: gleicher Zweck fuer marf248ExpanderLinked().
+struct Marf248LinkCache {
+	Module* path[2][MARF248_MAX_CHAIN] = {};
+	int count[2] = {0, 0};
+	Module* end[2] = {nullptr, nullptr};
+	bool checkEnd[2] = {false, false};
+	bool valid = false;
+	bool linked = false;
+};
+
+// Entspricht marf248ExpanderLinked(self), aber mit Zeigervergleich pro Sample.
+inline bool marf248ExpanderLinkedCached(Module* self, Marf248LinkCache& c) {
+	if (c.valid) {
+		bool same = true;
+		for (int dir = 0; dir < 2 && same; dir++) {
+			bool left = (dir == 0);
+			Module* m = left ? self->getLeftExpander().module : self->getRightExpander().module;
+			for (int i = 0; i < c.count[dir]; i++) {
+				if (m != c.path[dir][i]) {
+					same = false;
+					break;
+				}
+				m = left ? m->getLeftExpander().module : m->getRightExpander().module;
+			}
+			if (same && c.checkEnd[dir] && m != c.end[dir])
+				same = false;
+		}
+		if (same)
+			return c.linked;
+	}
+
+	// Neu bestimmen: gleiche Logik wie marf248ExpanderLinked(), dabei den
+	// durchlaufenen Pfad merken.
+	bool linked = false;
+	for (int dir = 0; dir < 2; dir++) {
+		c.count[dir] = 0;
+		c.checkEnd[dir] = false;
+		c.end[dir] = nullptr;
+	}
+	for (int dir = 0; dir < 2 && !linked; dir++) {
+		bool left = (dir == 0);
+		Module* m = left ? self->getLeftExpander().module : self->getRightExpander().module;
+		bool stopped = false;
+		for (int step = 0; step < MARF248_MAX_CHAIN && m; step++) {
+			c.path[dir][c.count[dir]++] = m;
+			if (dynamic_cast<Marf248Host*>(m)) {
+				linked = true;
+				stopped = true;
+				break;
+			}
+			if (!dynamic_cast<Marf248ExpanderMarker*>(m)) {
+				stopped = true;
+				break;
+			}
+			if (m->model == self->model) {
+				stopped = true;
+				break;
+			}
+			m = left ? m->getLeftExpander().module : m->getRightExpander().module;
+		}
+		if (!stopped) {
+			c.end[dir] = m;
+			c.checkEnd[dir] = true;
+		}
+	}
+	c.linked = linked;
+	c.valid = true;
+	return linked;
+}
+
 // Dauer der Retrigger-Luecke fuer den CV-Expander (Marf248CvExpander,
 // Gate A/B): wenn eine Section eine Stage OHNE Indexwechsel neu betritt
 // (Pendulum-Wendepunkt-Wiederholung, Strobe auf dieselbe Adresse, Sustain/
 // Enable-Freigabe), zieht das Gate kurz auf 0V, damit nachgeschaltete
 // Huellkurven zuverlaessig neu retriggern - siehe Afg::regateGen.
 static const float REGATE_GAP_SECONDS = 0.005f;
+
+// Loop-Markierungen je Stage (Loop-Expander, Session 1b), getrennt von
+// StageModifierBits: Begin/End einer Schleife, siehe Afg::loopFlags.
+enum LoopFlagBits {
+	LOOPFLAG_BEGIN = 1 << 0,
+	LOOPFLAG_END   = 1 << 1,
+};
 
 enum StageModifierBits {
 	MOD_QUANT_OCT   = 1 << 0,
@@ -761,6 +942,211 @@ struct Afg {
 	// nichts tut, siehe process()).
 	bool ratchetWasActive = false;
 
+	// ---------------------------------------------------------------------
+	// Loop-Schleifen (Session 1b): Begin-/End-Markierungen, UNABHAENGIG von
+	// MOD_FIRST/MOD_LAST (Start-/End-of-Cycle-Trigger und BEATS_FACTOR-
+	// Segmente bleiben unberuehrt). Eine Schleife besteht aus einer Begin-
+	// und einer End-Stage; an der End-Stage haengt der Zaehler N
+	// (stageLoopCount[End]: 0 = endlos, 1..10 = Durchlaeufe, den ersten mit
+	// eingerechnet; der Loop-Expander rechnet 1 V = 1 Wiederholung = 2
+	// Durchlaeufe um, siehe Marf248::process()). Verlaesst die
+	// Sektion die End-Stage (Forward), springt sie zur Begin-Stage und zaehlt
+	// herunter; beim letzten Durchlauf laeuft sie normal weiter (Austritt).
+	// Im Reverse-Lauf tauschen Begin und End die Rollen: verlassen wird die
+	// Begin-Stage, der Sprung geht zur End-Stage, der Zaehler bleibt der der
+	// End-Stage.
+	//   - Paarung per Klammerung (Stack): jedes End schliesst das zuletzt
+	//     geoeffnete, noch offene Begin. Damit sind Schleifen verschachtelbar,
+	//     jede End-Stage hat ihren eigenen Zaehler. Eine Stage mit Begin UND
+	//     End ist eine Ein-Stage-Schleife. Unpaarige Begin/End werden ignoriert.
+	//   - Zustandsregel: der Zaehler einer Schleife ist nur aktiv, solange
+	//     die aktuelle Stage in [Begin..End] liegt. Bei JEDEM Stage-Eintritt
+	//     (auch Strobe/Recall/Reset) verfallen die Zaehler aller Schleifen,
+	//     deren Bereich die neue Stage nicht enthaelt - sie laden beim
+	//     naechsten Bedarf neu (lazy, voller Wert). Strobe hinein = voller
+	//     Zaehler, Recall heraus = Zaehler verfaellt, Reset = alles neu.
+	//     Die innere Schleife laeuft so in jedem Durchgang der aeusseren
+	//     wieder voll ab.
+	//   - Pendulum: Schleifen inaktiv (Version 1).
+	//   - Ohne Flags (alles 0) bleibt das Verhalten bitgleich zum Stand davor.
+	// Die Flag-Bits stehen in stageLoopFlags[] (vom Loop-Expander), nicht in
+	// stageModifier[].
+	const int* loopFlags = nullptr;   // nur innerhalb von process() gueltig
+	const int* loopCfg = nullptr;     // nur innerhalb von process() gueltig
+	// Paarungs-Cache; Eintraege sind Stage+1, 0 = keine Schleife.
+	int loopFlagsCache[NUM_STAGES] = {};
+	bool loopPairValid = false;
+	int loopBeginP1[NUM_STAGES] = {};  // je End-Stage: Begin+1
+	int loopEndP1[NUM_STAGES] = {};    // je Begin-Stage: End+1
+	int loopCount = 0;                 // Anzahl gepaarter Schleifen
+	// Zaehlerzustand je End-Stage: verbleibende Durchlaeufe einschliesslich
+	// des laufenden (0 = endlos), geladen-Flag (lazy, siehe oben).
+	int loopRestArr[NUM_STAGES] = {};
+	bool loopLoadedArr[NUM_STAGES] = {};
+	// End-Stage der innersten Schleife, die currentStage enthaelt (-1 = keine).
+	int loopInnerEnd = -1;
+	dsp::PulseGenerator loopExitGen;
+	// "Gesamtschleife fertig": 1-ms-Trigger nur beim regulaeren Austritt aus der
+	// AEUSSERSTEN Schleife (keine andere gepaarte Schleife umschliesst sie).
+	// Endlosschleifen verlassen nie regulaer. Unabhaengig von MOD_MUTE.
+	dsp::PulseGenerator loopDoneGen;
+	bool loopDonePending = false;  // in loopCountPass gesetzt, in advanceStage ausgewertet
+
+	void updateInnerLoop() {
+		loopInnerEnd = -1;
+		if (loopCount == 0)
+			return;
+		int bestSpan = NUM_STAGES + 1;
+		for (int e = 0; e < NUM_STAGES; e++) {
+			int b = loopBeginP1[e] - 1;
+			if (b >= 0 && b <= currentStage && currentStage <= e && (e - b) < bestSpan) {
+				bestSpan = e - b;
+				loopInnerEnd = e;
+			}
+		}
+	}
+
+	void rebuildLoopPairing() {
+		int stack[NUM_STAGES];
+		int sp = 0;
+		loopCount = 0;
+		for (int i = 0; i < NUM_STAGES; i++) {
+			loopBeginP1[i] = 0;
+			loopEndP1[i] = 0;
+			loopLoadedArr[i] = false;
+		}
+		for (int s = 0; s < NUM_STAGES; s++) {
+			int f = loopFlags[s];
+			if (f & LOOPFLAG_BEGIN) {
+				stack[sp++] = s;
+			}
+			if ((f & LOOPFLAG_END) && sp > 0) {
+				int b = stack[--sp];
+				loopBeginP1[s] = b + 1;
+				loopEndP1[b] = s + 1;
+				loopCount++;
+			}
+			loopFlagsCache[s] = f;
+		}
+		loopPairValid = true;
+		updateInnerLoop();
+	}
+
+	// Am Anfang von process(): Paarung neu aufbauen, falls sich Flags geaendert
+	// haben (16 Integer-Vergleiche pro Sample).
+	void ensureLoopPairing() {
+		bool same = loopPairValid;
+		for (int i = 0; same && i < NUM_STAGES; i++) {
+			if (loopFlagsCache[i] != loopFlags[i])
+				same = false;
+		}
+		if (!same) {
+			rebuildLoopPairing();
+		}
+	}
+
+	// Setzt alle Schleifenzaehler zurueck (Global Clear; onReset() erzeugt die
+	// Engine ohnehin neu).
+	void resetLoopCounter() {
+		for (int i = 0; i < NUM_STAGES; i++)
+			loopLoadedArr[i] = false;
+		loopPairValid = false;
+		loopInnerEnd = -1;
+	}
+
+	// Nach jedem Stage-Eintritt (advanceStage()/jumpToStage(), vor
+	// resetPulseEdgeState()): Zaehler aller Schleifen verfallen lassen, deren
+	// Bereich die neue Stage nicht enthaelt (forceReload = Reset: alle).
+	// Liest bewusst keine Konfiguration.
+	void onStageEntered(bool forceReload) {
+		if (loopCount == 0)
+			return;
+		for (int e = 0; e < NUM_STAGES; e++) {
+			int b = loopBeginP1[e] - 1;
+			if (b >= 0 && (forceReload || currentStage < b || currentStage > e)) {
+				loopLoadedArr[e] = false;
+			}
+		}
+		updateInnerLoop();
+	}
+
+	void ensureLoopLoaded(int endStage) {
+		if (loopLoadedArr[endStage]) {
+			// Endlosschleife (Rest 0; ein geladener Zaehler ist sonst immer >= 1,
+			// siehe loopCountPass): die Konfiguration bleibt im Blick. Wird fuer
+			// diese End-Stage nachtraeglich ein Zaehler > 0 angelegt (Count-Kabel
+			// gesteckt, Spannung erhoeht), wird er sofort uebernommen, der
+			// laufende Durchlauf zaehlt als erster. Ohne das liesse sich eine
+			// endlose Schleife nur per Stage-Address-Reset/Strobe verlassen,
+			// bevor der Zaehler neu gelesen wird (Live-Betrieb, Rack-Test).
+			// Gezaehlte Schleifen sind nicht betroffen: ihr Zaehler wird weiter
+			// erst beim naechsten Laden gelesen.
+			if (loopRestArr[endStage] == 0 && loopCfg && loopCfg[endStage] > 0) {
+				loopRestArr[endStage] = rack::clamp(loopCfg[endStage], 0, 10);
+			}
+			return;
+		}
+		loopLoadedArr[endStage] = true;
+		int n = loopCfg ? loopCfg[endStage] : 0;
+		loopRestArr[endStage] = rack::clamp(n, 0, 10);
+	}
+
+	// Gemeinsame Zaehllogik: true = zurueckspringen (Zaehler laeuft weiter oder
+	// endlos), false = Austritt (exited gesetzt, Zaehler verfaellt).
+	// true, wenn die Schleife mit End-Stage `endStage` von keiner anderen
+	// gepaarten Schleife (b2 <= b, e <= e2) umschlossen wird.
+	bool loopIsOutermost(int endStage) const {
+		int b = loopBeginP1[endStage] - 1;
+		if (b < 0)
+			return false;
+		for (int e2 = 0; e2 < NUM_STAGES; e2++) {
+			if (e2 == endStage)
+				continue;
+			int b2 = loopBeginP1[e2] - 1;
+			if (b2 >= 0 && b2 <= b && endStage <= e2)
+				return false;
+		}
+		return true;
+	}
+
+	bool loopCountPass(int endStage, bool* exited) {
+		ensureLoopLoaded(endStage);
+		int& r = loopRestArr[endStage];
+		if (r == 0)
+			return true;
+		if (r > 1) {
+			r--;
+			return true;
+		}
+		loopLoadedArr[endStage] = false;
+		*exited = true;
+		if (loopIsOutermost(endStage))
+			loopDonePending = true;
+		return false;
+	}
+
+	// Verlaesst die Sektion `stage` vorwaerts: Sprungziel (Begin) oder false.
+	bool loopLeaveForward(int stage, int* target, bool* exited) {
+		int b = loopBeginP1[stage] - 1;
+		if (b < 0)
+			return false;
+		if (!loopCountPass(stage, exited))
+			return false;
+		*target = b;
+		return true;
+	}
+
+	// Rueckwaerts (Rollen getauscht): `stage` ist Begin, Sprungziel ist End.
+	bool loopLeaveReverse(int stage, int* target, bool* exited) {
+		int e = loopEndP1[stage] - 1;
+		if (e < 0)
+			return false;
+		if (!loopCountPass(e, exited))
+			return false;
+		*target = e;
+		return true;
+	}
+
 	// Setzt die Flanken-Vorwerte fuer P1/P2/First/Last zurueck auf false -
 	// wird von advanceStage() und jumpToStage() nach dem Setzen von
 	// currentStage aufgerufen (gleiche Stelle wie allPulseGen), IMMER bei
@@ -799,7 +1185,7 @@ struct Afg {
 	// (Reset/Strobe/Continuous-Adressierung). Startpunkt der Rampe ist wie
 	// bei advanceStage() der zuletzt ausgegebene Wert, damit ein Slew nicht
 	// abrupt abreisst.
-	void jumpToStage(int stage, const int stageModifier[NUM_STAGES]) {
+	void jumpToStage(int stage, const int stageModifier[NUM_STAGES], bool forceReload = false) {
 		int prevStage = currentStage;
 		voltageFrom = voltageOut;
 		currentStage = rack::clamp(stage, 0, NUM_STAGES - 1);
@@ -821,6 +1207,9 @@ struct Afg {
 		if (currentStage == prevStage) {
 			regateGen.trigger(REGATE_GAP_SECONDS);
 		}
+		// Loop-Zaehler: Schleifen, die die neue Stage nicht enthalten, verfallen
+		// (Reset: alle).
+		onStageEntered(forceReload);
 		resetPulseEdgeState();
 	}
 
@@ -860,7 +1249,7 @@ struct Afg {
 
 		if (resetPressed) {
 			int first = findLowestFirst(stageModifier);
-			jumpToStage(first, stageModifier);
+			jumpToStage(first, stageModifier, true);
 			return;
 		}
 		if (continuous) {
@@ -1018,7 +1407,23 @@ struct Afg {
 		}
 		pendulumWasOn = pendulumMode;
 
-		if (pendulumMode) {
+		// Loop-Schleifen: Verlassen einer End-Stage (Forward) bzw. Begin-Stage
+		// (Reverse) mit Sprung auf die Gegenstelle hat Vorrang vor der normalen
+		// Schrittlogik (First/Last-Wrap bleibt davon unberuehrt, solange die
+		// Schleife nicht springt). Pendulum: inaktiv.
+		bool loopExited = false;
+		loopDonePending = false;
+		int loopTarget = 0;
+		bool loopJumped = false;
+		if (loopCount > 0 && !pendulumMode) {
+			loopJumped = reverseMode ? loopLeaveReverse(currentStage, &loopTarget, &loopExited)
+			                         : loopLeaveForward(currentStage, &loopTarget, &loopExited);
+		}
+
+		if (loopJumped) {
+			next = loopTarget;
+		}
+		else if (pendulumMode) {
 			// Nimmt an, dass First..Last ein zusammenhaengender, nicht
 			// wrapender Bereich ist (einfache +-1-Schrittweite, kein
 			// Ring-Wraparound wie bei Forward/Reverse ohne Pendulum). Fuer
@@ -1083,12 +1488,24 @@ struct Afg {
 				next = rack::clamp(next + pendulumDir, 0, NUM_STAGES - 1);
 			}
 			else if (reverseMode) {
-				int cand = next - 1;
-				next = (cand < 0 || nextIsFirst) ? findLastAfter(stageModifier, next) : cand;
+				int tgt = 0;
+				if (loopCount > 0 && loopLeaveReverse(next, &tgt, &loopExited)) {
+					next = tgt;
+				}
+				else {
+					int cand = next - 1;
+					next = (cand < 0 || nextIsFirst) ? findLastAfter(stageModifier, next) : cand;
+				}
 			}
 			else {
-				int cand = next + 1;
-				next = (cand >= NUM_STAGES || nextIsLast) ? findFirstBefore(stageModifier, next) : cand;
+				int tgt = 0;
+				if (loopCount > 0 && loopLeaveForward(next, &tgt, &loopExited)) {
+					next = tgt;
+				}
+				else {
+					int cand = next + 1;
+					next = (cand >= NUM_STAGES || nextIsLast) ? findFirstBefore(stageModifier, next) : cand;
+				}
 			}
 		}
 
@@ -1109,6 +1526,14 @@ struct Afg {
 		// einmal pro voller Stage, da der Ratchet-Block advanceStage() nie
 		// selbst aufruft.
 		eosGen.trigger(1e-3f);
+		// Loop-Austritt (Schleife regulaer beendet): Impuls, unabhaengig von
+		// MOD_MUTE (struktureller Marker wie EOS).
+		if (loopExited) {
+			loopExitGen.trigger(1e-3f);
+			if (loopDonePending) {
+				loopDoneGen.trigger(1e-3f);
+			}
+		}
 		// Wendepunkt-Wiederholung, next==currentStage von oben) - bei einem
 		// normalen Schritt auf eine andere Stage braucht es keine Luecke,
 		// die Gate-Adressierung wechselt dort ohnehin den Kanal (siehe
@@ -1116,6 +1541,7 @@ struct Afg {
 		if (sameStageReentry) {
 			regateGen.trigger(REGATE_GAP_SECONDS);
 		}
+		onStageEntered(false);
 		resetPulseEdgeState();
 	}
 
@@ -1137,6 +1563,10 @@ struct Afg {
 	             // immer gueltig (Default 0 = keine Verschiebung), analog zu
 	             // stageWarpBlend.
 	             const float stageRatchetOffset[NUM_STAGES],
+	             // Loop-Schleifen (siehe oben): Flags je Stage (LOOPFLAG_BEGIN/
+	             // LOOPFLAG_END) und Zaehler je End-Stage (0 = endlos, 1..10 Durchlaeufe).
+	             const int stageLoopFlags[NUM_STAGES],
+	             const int stageLoopCount[NUM_STAGES],
 	             int quantKey, int quantScaleMode,
 	             float runButtonValue, bool startConnected, float startVoltage,
 	             bool stopConnected, float stopVoltage,
@@ -1145,7 +1575,14 @@ struct Afg {
 	             float* outVoltage, float* outTime, float* outAllPulse,
 	             float* outP1, float* outP2,
 	             float* outStartCycle, float* outEndCycle, float* outRegateGap,
-	             float* outEos) {
+	             float* outEos,
+	             float* outLoopExit, float* outLoopRest,
+	             float* outLoopDone) {
+		// Konfiguration fuer die Loop-Schleifen (nur innerhalb dieses Aufrufs
+		// dereferenziert).
+		loopFlags = stageLoopFlags;
+		loopCfg = stageLoopCount;
+		ensureLoopPairing();
 		// Button togglet Start/Stop (daher der Name "Start/Stop"-Button).
 		// CV-Inputs bleiben reine Start- bzw. Stop-Pulse, wie im Original.
 		if (runButtonTrigger.process(runButtonValue)) {
@@ -1534,5 +1971,20 @@ struct Afg {
 		*outEndCycle = endCycleGen.process(sampleTime) ? 10.f : 0.f;
 		*outRegateGap = regateGen.process(sampleTime) ? 1.f : 0.f;
 		*outEos = eosGen.process(sampleTime) ? 10.f : 0.f;
+		// Loop-Austritt (1 ms Trigger) und Restwert der INNERSTEN Schleife, die
+		// die aktuelle Stage enthaelt: verbleibende Durchlaeufe einschliesslich
+		// des laufenden, 1 V pro Durchlauf; 0 V = keine Schleife / endlos /
+		// Pendulum. Blinkt bewusst nicht (siehe Konzept-Nachtrag).
+		*outLoopExit = loopExitGen.process(sampleTime) ? 10.f : 0.f;
+		*outLoopDone = loopDoneGen.process(sampleTime) ? 10.f : 0.f;
+		if (pendulumMode || loopInnerEnd < 0) {
+			*outLoopRest = 0.f;
+		}
+		else {
+			ensureLoopLoaded(loopInnerEnd);
+			*outLoopRest = (float) loopRestArr[loopInnerEnd];
+		}
+		loopFlags = nullptr;
+		loopCfg = nullptr;
 	}
 };
