@@ -58,7 +58,7 @@ sofern sie nicht ausdrücklich als offen markiert sind (siehe [Abschnitt 6](#sec
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
 **Aufbau**<br>
-Vier Generatoren mit je vier Stages: **Delay, Attack, Hold, Release**. Jeder Generator hat einen VCA (Signal rein, Signal raus) und gibt die Hüllkurve zusätzlich separat aus (0–10 V). Das Modul ist 23 HP breit (116,84 × 128,5 mm), rechts neben dem Hauptblock sitzt die OR-Spalte.
+Vier Generatoren mit je vier Stages: **Delay, Attack, Hold, Release**. Jeder Generator hat einen VCA (Signal rein, Signal raus) und gibt die Hüllkurve zusätzlich separat aus (0–10 V). Das Modul ist 23 HP breit.
 
 **Ein Generator sichtbar, alle aktiv**<br>
 Die Regler zeigen immer nur den gewählten Generator. Ein Auswahl-Knob (GEN) mit Aktivieren-Button (ACTIVATE) schaltet um. Alle vier Generatoren laufen unabhängig weiter, ihre Buchsen sind immer sichtbar.
@@ -96,7 +96,7 @@ Eine eigene rack-freie Klasse `EnvGen4` (`EnvGen4.hpp`, nur `<cmath>`/`<algorith
 ### 2.1 Panel-Layout
 *[↑ Zurück zum Inhaltsverzeichnis](#toc) · [[#Inhaltsverzeichnis|Obsidian]]*
 
-Das Panel besteht von oben nach unten aus vier Bereichen (Maße in mm, Panel 116,84 × 128,5, also 23 HP; der Hauptblock misst 101,6 mm, rechts schließt die OR-Spalte an):
+Das Panel besteht von oben nach unten aus vier Bereichen:
 
 ```
 EUROPA
@@ -119,19 +119,19 @@ EUROPA
 ```
 
 **Kopfbereich (y 10,5–29,5)**<br>
-Links liegt ein Rahmen mit GEN-Knob (14 mm Durchmesser, Mitte x 14) und ACTIVATE-Button (Mitte x 31). Rechts folgt ein Rahmen mit den drei Generator-Schaltern (Mitte x 51,5 / 72,5 / 89,5).
+Links liegt ein Rahmen mit GEN-Knob und ACTIVATE-Button. Rechts folgt ein Rahmen mit den drei Generator-Schaltern.
 
 **Stage-Spalten (y 31–83,3)**<br>
-Vier Rahmen à 22 mm Breite bei x 13,3 / 38,3 / 63,3 / 88,3, je mit dunklem Namensband. Reihen von oben: LEVEL (Trimpot), TIME (Knob), RANGE (Schalter), CURVE (Trimpot).
+Reihen von oben: LEVEL (Trimpot), TIME (Knob), RANGE (Schalter), CURVE (Trimpot).
 
 **Buchsenblock (y 84,6–126,3)**<br>
-Vier Zeilen (eine je Generator) bei y 93 / 102,3 / 111,6 / 120,9, neun Spalten im Abstand von 10 mm ab x 13. Die Eingänge (T1/GATE, TRIG, TIME CV, LEVEL CV, HOLD CV, VCA IN) liegen links auf hellem Grund, die Ausgänge (VCA OUT, ENV, EOC) rechts auf einer dunklen Platte. Links in jeder Zeile stehen Status-LED, Auswahl-LED und die Generator-Nummer 1–4.
+Vier Zeilen (eine je Generator). Die Eingänge (T1/GATE, TRIG, TIME CV, LEVEL CV, HOLD CV, VCA IN) liegen links auf hellem Grund, die Ausgänge (VCA OUT, ENV, EOC) rechts auf einer dunklen Platte. Links in jeder Zeile stehen Status-LED, Auswahl-LED und die Generator-Nummer 1–4.
 
-**OR-Spalte (x 101,5–114,5, y 84,6–126,3)**<br>
-Eine zusätzliche Spalte rechts neben dem Hauptblock, gestaltet wie die Buchsenspalten: eine 10 mm breite dunkle Platte in einem hellen Rahmen mit schmalem Rand (1,5 mm seitlich, 0,8 mm oben und unten) und 2,3 mm Abstand zum Panelrand. Zwei Blöcke übereinander, je Paar mit Beschriftung (OR 1+2, OR 3+4), Buchse und einem Klickschalter mit drei Stellungen und LED für die Quadratur-Kopplung. Siehe [2.6](#sec2-6).
+**OR-Spalte**<br>
+Eine zusätzliche Spalte rechts neben dem Hauptblock, gestaltet wie die Buchsenspalten. Zwei Blöcke übereinander, je Paar mit Beschriftung (OR 1+2, OR 3+4), Buchse und einem Klickschalter mit drei Stellungen und LED für die Quadratur-Kopplung. Siehe [2.6](#sec2-6).
 
-**PHASOR-Streifen (x 101,5–114,5, y 10,5–82,6)**<br>
-Über der OR-Spalte, in deren Breite, liegt ein heller Rahmen mit den Bedienelementen des Phasor-Modus für den angezeigten Generator. Von oben: PHASOR-Schalter, OUT-Taster, NUM (Zähler), DEN (Nenner), OFFSET, daneben die gelbe Pending-LED. Der Streifen nutzt den bisher leeren Bereich, die Panelbreite bleibt 23 HP. Siehe [2.8](#sec2-8).
+**PHASOR-Streifen**<br>
+Über der OR-Spalte, in deren Breite, liegt ein heller Rahmen mit den Bedienelementen des Phasor-Modus für den angezeigten Generator. Von oben: PHASOR-Schalter, OUT-Taster, NUM (Zähler), DEN (Nenner), OFFSET, daneben die gelbe Pending-LED. Siehe [2.8](#sec2-8).
 
 **Zeilenhervorhebung**<br>
 Die Zeile des angezeigten Generators hat ein blaues Band.
