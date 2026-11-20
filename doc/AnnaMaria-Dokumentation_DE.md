@@ -3,9 +3,9 @@
 Anna-Maria ist ein Quad-Lowpass-Gate für VCV Rack, stark inspiriert von der Welt der Buchla-Module. Es gehört zum Plugin „reminiscence of the unattained“, Version 2.4.0.
 Stand: 2026-10-29. Status: Entwurf.
 
-Bis zum Hörtest in Rack sind alle Klangaussagen am Modell gemessen, nicht gehört. In Rack noch nicht getestet sind der lineare Gate-Anteil (Abschnitt 5), das Velocity-Ziel „Audio offset“ (Abschnitt 3a) und der gestimmte Resonator mit V/OCT, WET und DRY (Abschnitt 6a). Den Resonator habe ich in Rack gebaut und mit Puls und Rauschen ausprobiert, die Testreihe steht aus. Das Panel mit vier Kanälen ist in Rack bestätigt.
+**Hinweis:** Das Plugin *reminiscence of the unattained* ist ein eigenständiges Werk, stark inspiriert von der wunderbaren Buchla-Modulwelt. Es steht in keiner Verbindung zu Buchla, Tiptop Audio oder einem anderen Hersteller und wird von diesen weder autorisiert noch unterstützt. Erwähnte Produkt- und Firmennamen sind Marken ihrer jeweiligen Inhaber und beschreiben nur, welche funktionalen Konzepte ein Modul inspiriert haben.
 
-Anna-Maria ist ein eigenständiges Werk und steht in keiner Verbindung zu den Herstellern der Vorbilder. Alle Marken und Namen gehören ihren Inhabern.
+Bis zum Hörtest in Rack sind alle Klangaussagen am Modell gemessen, nicht gehört. In Rack noch nicht getestet sind der lineare Gate-Anteil (Abschnitt 5), das Velocity-Ziel „Audio offset“ (Abschnitt 3a) und der gestimmte Resonator mit V/OCT, WET und DRY (Abschnitt 6a). Den Resonator habe ich in Rack gebaut und mit Puls und Rauschen ausprobiert, die Testreihe steht aus. Das Panel mit vier Kanälen ist in Rack bestätigt.
 
 Alle Zahlenwerte stammen, wenn nichts anderes angegeben ist, aus Testprogrammen gegen die Engine. Dabei gelten 48 kHz, kein Oversampling und für das Vactrol der Modus „Reference“. Die Abschnitte 4 bis 8 beschreiben das Paper-Modell, also LOWPASS sowie BOTH und VCA mit „Gate response = Paper circuit“. Was sich mit dem linearen Gate-Anteil ändert, steht in Abschnitt 5. Die Messungen zur Nichtlinearität (Abschnitt 7) nennen jeweils den Solver „Corrected“ oder „Reference“.
 
