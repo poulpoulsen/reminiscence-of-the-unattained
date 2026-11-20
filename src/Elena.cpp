@@ -841,6 +841,22 @@ struct ElenaWidget : ModuleWidget {
 	// [Sektion][Art][Kanal]: alle Widgets liegen uebereinander, step()
 	// blendet alle bis auf den angezeigten Kanal aus.
 	ParamWidget* abWidgets[2][NUM_AB][NUM_CH] = {};
+	// Beschriftung der Regler "0 V"/"10 V" je Sektion, folgt dem Bereich im
+	// Kontextmenue (Session "Elena-Bereichsbeschriftung", 2026-11-20):
+	// [Sektion][0 = unterer, 1 = oberer Punkt][Textsatz]. Alle drei Textsaetze
+	// liegen uebereinander, step() blendet den passenden ein (gleiches Prinzip
+	// wie abWidgets) - so bleibt die Optik exakt die von PanelLabel.
+	Widget* rangeLabels[2][2][3] = {};
+
+	// Textsatz je Bereich: 0 = "0 V/10 V" (0-10 V und Unlimited, das mit der
+	// Skala 0-10 V arbeitet), 1 = "-5 V/+5 V", 2 = "-10 V/+10 V".
+	static int rangeLabelSet(int mode) {
+		switch (mode) {
+			case RANGE_PM5: return 1;
+			case RANGE_PM10: return 2;
+			default: return 0;
+		}
+	}
 
 	void addLabel(Vec posMM, const std::string& text, NVGcolor color, float fontSize = 9.f) {
 		addChild(new PanelLabel(posMM, text, color, fontSize));
@@ -943,7 +959,21 @@ struct ElenaWidget : ModuleWidget {
 					abWidgets[s][kp.type][c] = k;
 					addParam(k);
 				}
-				addLabel(Vec(pos.x, pos.y + 6.2f), kp.label, col);
+				if (kp.type == AB_V0 || kp.type == AB_V10) {
+					// Bereichsabhaengige Beschriftung, siehe rangeLabels
+					static const char* rangeText[3][2] = {
+						{"0 V", "10 V"}, {"-5 V", "+5 V"}, {"-10 V", "+10 V"}};
+					int e = (kp.type == AB_V0) ? 0 : 1;
+					for (int set = 0; set < 3; set++) {
+						PanelLabel* l = new PanelLabel(Vec(pos.x, pos.y + 6.2f), rangeText[set][e], col, 9.f);
+						l->visible = (set == 0);
+						rangeLabels[s][e][set] = l;
+						addChild(l);
+					}
+				}
+				else {
+					addLabel(Vec(pos.x, pos.y + 6.2f), kp.label, col);
+				}
 			}
 
 			// Breakpoint-Schalter zwischen BP IN / BP OUT
@@ -1048,6 +1078,14 @@ struct ElenaWidget : ModuleWidget {
 	void step() override {
 		int shown = mod ? mod->displayedCh : 0;
 		for (int s = 0; s < 2; s++) {
+			// Ohne Modul (Modul-Browser): Standardbereich 0-10 V
+			int set = mod ? rangeLabelSet(mod->inputRange[s]) : 0;
+			for (int e = 0; e < 2; e++) {
+				for (int k = 0; k < 3; k++) {
+					if (rangeLabels[s][e][k])
+						rangeLabels[s][e][k]->visible = (k == set);
+				}
+			}
 			for (int t = 0; t < NUM_AB; t++) {
 				for (int c = 0; c < NUM_CH; c++) {
 					if (abWidgets[s][t][c])

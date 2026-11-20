@@ -94,6 +94,7 @@ By default the sections work unipolar in the range 0–10 V; bipolar input signa
 
 **Input range (context menu, per section)**<br>
 **0 to 10 V** (default): as above, Vin hard-limited. **+/-5 V** and **+/-10 V**: the range is mapped to 0…1 (`(v + 5)/10` or `(v + 10)/20`) and applies to A1, A2, SEL CV **and** to the output (range → range): with +/-5 V, ±5 V go in and ±5 V come out. The curve runs unchanged; the knobs "0 V", "10 V", BP IN, and BP OUT keep their positions (0…1), their tooltips show the voltage in the selected range (e.g., −5…+5 V). With the default values the section is a pass-through in every range. **Unlimited (0-10 V scale)**: scale 0–10 V, but without limiting Vin; the curve continues linearly beyond the endpoints. With the default values a bipolar signal therefore passes through unchanged.
+The labels of the knobs for the lower and upper point of the transfer curve follow the selected range: 0 V/10 V, -5 V/+5 V or -10 V/+10 V (0 V/10 V for Unlimited).
 
 **Notes on the range**<br>
 SEL CV follows the range but is always limited to 0…1 (crossfade weight). Unpatched inputs sit at 0 V; in the bipolar ranges 0 V corresponds to the center of the range (0.5 normalized). An unpatched A1 therefore does not act as 0 in the calculation `InSel·A2` there, but as the midpoint. The range selection does not change knob values, only their meaning in volts.
