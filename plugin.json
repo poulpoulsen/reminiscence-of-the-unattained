@@ -1,14 +1,14 @@
 {
   "slug": "reminiscence-of-the-unattained",
   "name": "reminiscence of the unattained",
-  "version": "2.4.0",
+  "version": "2.1.0",
   "license": "GPL-3.0-or-later",
   "author": "Kinovice",
   "authorEmail": "karlderletzte@holnishaus.de",
   "authorUrl": "",
   "pluginUrl": "",
   "sourceUrl": "https://github.com/poulpoulsen/reminiscence-of-the-unattained",
-  "changelogUrl": "",
+  "changelogUrl": "https://github.com/poulpoulsen/reminiscence-of-the-unattained/blob/main/CHANGELOG.md",
   "modules": [
     {
       "slug": "Marf248",
@@ -87,24 +87,24 @@
       ]
     },
     {
-     "slug": "AnnaMaria",
-     "name": "Anna-Maria",
-     "description": "Quad low-pass gate with VCA mode, vactrol-style response and optional resonance",
-     "tags": [
-     "Low-pass gate",
-     "Filter",
-     "Voltage-controlled amplifier"
-     ]
-   },
-   {
-     "slug": "Marf248LoopExpander",
-     "name": "Ritornello",
-     "description": "Loop expander for Sofonisba and Lucia: per-stage loop begin/end markers with pass counter, nested loops, exit and overall-done triggers, remaining-pass CV and display per section",
-     "tags": [
-     "Expander",
-     "Sequencer",
-     "Utility"
-     ]
-   }
+      "slug": "AnnaMaria",
+      "name": "Anna-Maria",
+      "description": "Quad low-pass gate with VCA mode, vactrol-style response and optional resonance",
+      "tags": [
+        "Low-pass gate",
+        "Filter",
+        "Voltage-controlled amplifier"
+      ]
+    },
+    {
+      "slug": "Marf248LoopExpander",
+      "name": "Ritornello",
+      "description": "Loop expander for Sofonisba and Lucia: per-stage loop begin/end markers with pass counter, nested loops, exit and overall-done triggers, remaining-pass CV and display per section",
+      "tags": [
+        "Expander",
+        "Sequencer",
+        "Utility"
+      ]
+    }
   ]
 }
